@@ -69,6 +69,22 @@ function toReservationDate(dateValue: string, timeValue: string) {
   return new Date(`${dateValue}T${timeValue}:00`);
 }
 
+function isPastTimeSlot(dateValue: string, timeValue: string, now: Date) {
+  return toReservationDate(dateValue, timeValue).getTime() <= now.getTime();
+}
+
+function getNextAvailableSelection(dateOptions: string[], now: Date) {
+  for (const date of dateOptions) {
+    const nextTime = timeSlots.find((time) => !isPastTimeSlot(date, time, now));
+
+    if (nextTime) {
+      return { date, time: nextTime };
+    }
+  }
+
+  return { date: dateOptions[dateOptions.length - 1], time: timeSlots[0] };
+}
+
 function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000);
 }
@@ -96,13 +112,14 @@ function getStatusLabel(status: string | null | undefined, approvalRequired: boo
 
 export default function MemberAppPage() {
   const dateOptions = useMemo(() => [getDateValue(0), getDateValue(1), getDateValue(2)], []);
+  const initialSelection = useMemo(() => getNextAvailableSelection(dateOptions, new Date()), [dateOptions]);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [bays, setBays] = useState<BayRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState(DEFAULT_STORE_ID);
   const [selectedBayId, setSelectedBayId] = useState("auto");
-  const [selectedDate, setSelectedDate] = useState(dateOptions[0]);
-  const [selectedTime, setSelectedTime] = useState(timeSlots[1]);
+  const [selectedDate, setSelectedDate] = useState(initialSelection.date);
+  const [selectedTime, setSelectedTime] = useState(initialSelection.time);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [partySize, setPartySize] = useState(2);
   const [customerName, setCustomerName] = useState("");
@@ -110,10 +127,15 @@ export default function MemberAppPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
   const availableBays = bays.filter((bay) => bay.status === "available" || bay.status === "waiting");
   const approvalRequired = durationMinutes > 60 || partySize >= 5;
+  const availableTimeSlots = useMemo(
+    () => timeSlots.filter((time) => !isPastTimeSlot(selectedDate, time, now)),
+    [now, selectedDate]
+  );
 
   const loadData = async () => {
     setIsLoading(true);
@@ -155,6 +177,27 @@ export default function MemberAppPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 30_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (availableTimeSlots.includes(selectedTime)) return;
+
+    if (availableTimeSlots[0]) {
+      setSelectedTime(availableTimeSlots[0]);
+      return;
+    }
+
+    const nextSelection = getNextAvailableSelection(dateOptions, now);
+    setSelectedDate(nextSelection.date);
+    setSelectedTime(nextSelection.time);
+  }, [availableTimeSlots, dateOptions, now, selectedTime]);
+
   const submitReservation = async () => {
     setError(null);
     setMessage(null);
@@ -174,6 +217,13 @@ export default function MemberAppPage() {
     try {
       const supabase = createBrowserSupabaseClient();
       const startsAt = toReservationDate(selectedDate, selectedTime);
+
+      if (startsAt.getTime() <= Date.now()) {
+        setError("이미 지난 시간은 예약할 수 없습니다. 가능한 시간을 다시 선택해주세요.");
+        setIsLoading(false);
+        return;
+      }
+
       const endsAt = addMinutes(startsAt, durationMinutes);
       const selectedBay = selectedBayId === "auto" ? availableBays[0] : bays.find((bay) => bay.id === selectedBayId);
 
@@ -315,18 +365,28 @@ export default function MemberAppPage() {
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {timeSlots.map((time) => (
-              <button
-                key={time}
-                type="button"
-                onClick={() => setSelectedTime(time)}
-                className={`rounded-md px-3 py-3 text-sm font-extrabold ${
-                  selectedTime === time ? "bg-vista-night text-white" : "border border-[#cad8c6] bg-white"
-                }`}
-              >
-                {time}
-              </button>
-            ))}
+            {timeSlots.map((time) => {
+              const isPast = isPastTimeSlot(selectedDate, time, now);
+
+              return (
+                <button
+                  key={time}
+                  type="button"
+                  onClick={() => setSelectedTime(time)}
+                  disabled={isPast}
+                  aria-disabled={isPast}
+                  className={`rounded-md px-3 py-3 text-sm font-extrabold ${
+                    isPast
+                      ? "cursor-not-allowed border border-[#d8ddd5] bg-[#f0f2ee] text-[#9aa39a] line-through"
+                      : selectedTime === time
+                        ? "bg-vista-night text-white"
+                        : "border border-[#cad8c6] bg-white"
+                  }`}
+                >
+                  {time}
+                </button>
+              );
+            })}
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
