@@ -20,6 +20,7 @@ import { SocialLoginPanel } from "@/components/social-login-panel";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
+const STORE_TIME_ZONE = "Asia/Seoul";
 const timeSlots = ["09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "18:00", "19:00"];
 
 type StoreRow = {
@@ -47,26 +48,50 @@ type ReservationRow = {
   bays?: { bay_code?: string | null } | Array<{ bay_code?: string | null }> | null;
 };
 
-function getDateValue(offsetDays: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
+function getSeoulDateValue(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
 }
 
-function getDateLabel(dateValue: string) {
-  const today = getDateValue(0);
-  const tomorrow = getDateValue(1);
+function getDateValue(offsetDays: number, baseDate = new Date()) {
+  const [year, month, day] = getSeoulDateValue(baseDate).split("-").map(Number);
+  const seoulNoon = new Date(Date.UTC(year, month - 1, day + offsetDays, 12));
+
+  return getSeoulDateValue(seoulNoon);
+}
+
+function getDateOptions(now: Date) {
+  return [getDateValue(0, now), getDateValue(1, now), getDateValue(2, now)];
+}
+
+function getDateLabel(dateValue: string, now: Date) {
+  const today = getDateValue(0, now);
+  const tomorrow = getDateValue(1, now);
 
   if (dateValue === today) return "오늘";
   if (dateValue === tomorrow) return "내일";
 
+  const [year, month, day] = dateValue.split("-").map(Number);
+
   return new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", weekday: "short" }).format(
-    new Date(`${dateValue}T00:00:00`)
+    new Date(Date.UTC(year, month - 1, day, 12))
   );
 }
 
 function toReservationDate(dateValue: string, timeValue: string) {
-  return new Date(`${dateValue}T${timeValue}:00`);
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const [hour, minute] = timeValue.split(":").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day, hour - 9, minute));
 }
 
 function isPastTimeSlot(dateValue: string, timeValue: string, now: Date) {
@@ -111,15 +136,13 @@ function getStatusLabel(status: string | null | undefined, approvalRequired: boo
 }
 
 export default function MemberAppPage() {
-  const dateOptions = useMemo(() => [getDateValue(0), getDateValue(1), getDateValue(2)], []);
-  const initialSelection = useMemo(() => getNextAvailableSelection(dateOptions, new Date()), [dateOptions]);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [bays, setBays] = useState<BayRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState(DEFAULT_STORE_ID);
   const [selectedBayId, setSelectedBayId] = useState("auto");
-  const [selectedDate, setSelectedDate] = useState(initialSelection.date);
-  const [selectedTime, setSelectedTime] = useState(initialSelection.time);
+  const [selectedDate, setSelectedDate] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).date);
+  const [selectedTime, setSelectedTime] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).time);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [partySize, setPartySize] = useState(2);
   const [customerName, setCustomerName] = useState("");
@@ -128,6 +151,7 @@ export default function MemberAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const dateOptions = useMemo(() => getDateOptions(now), [now]);
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
   const availableBays = bays.filter((bay) => bay.status === "available" || bay.status === "waiting");
@@ -188,6 +212,13 @@ export default function MemberAppPage() {
   useEffect(() => {
     if (availableTimeSlots.includes(selectedTime)) return;
 
+    if (!dateOptions.includes(selectedDate)) {
+      const nextSelection = getNextAvailableSelection(dateOptions, now);
+      setSelectedDate(nextSelection.date);
+      setSelectedTime(nextSelection.time);
+      return;
+    }
+
     if (availableTimeSlots[0]) {
       setSelectedTime(availableTimeSlots[0]);
       return;
@@ -196,7 +227,7 @@ export default function MemberAppPage() {
     const nextSelection = getNextAvailableSelection(dateOptions, now);
     setSelectedDate(nextSelection.date);
     setSelectedTime(nextSelection.time);
-  }, [availableTimeSlots, dateOptions, now, selectedTime]);
+  }, [availableTimeSlots, dateOptions, now, selectedDate, selectedTime]);
 
   const submitReservation = async () => {
     setError(null);
@@ -359,7 +390,7 @@ export default function MemberAppPage() {
                   selectedDate === date ? "bg-vista-leaf text-white" : "border border-[#cad8c6] bg-white"
                 }`}
               >
-                {getDateLabel(date)}
+                {getDateLabel(date, now)}
               </button>
             ))}
           </div>
