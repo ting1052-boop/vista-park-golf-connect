@@ -19,7 +19,7 @@ values
   ('ad111111-0102-4000-8000-000000000102', '11111111-1111-4111-8111-111111111111', null, 'hejhome', 'light', '골프룸조명스위치', 'hejhome-golf-room-light-switch', 'unknown', false, '골프룸 조명 제어'),
   ('ad111111-0103-4000-8000-000000000103', '11111111-1111-4111-8111-111111111111', null, 'hejhome', 'hvac', '골프룸 AC', 'hejhome-golf-room-ac', 'unknown', false, '예약 전 냉난방 준비'),
   ('ad111111-0104-4000-8000-000000000104', '11111111-1111-4111-8111-111111111111', null, 'hejhome', 'hvac', '비스타 홀AC', 'hejhome-hall-ac', 'unknown', false, '홀 냉난방'),
-  ('ad111111-0105-4000-8000-000000000105', '11111111-1111-4111-8111-111111111111', null, 'hejhome', 'light', '비스타 홀', 'hejhome-vista-hall', 'unknown', false, '홀 조명 또는 공간 스위치'),
+  ('ad111111-0105-4000-8000-000000000105', '11111111-1111-4111-8111-111111111111', null, 'hejhome', 'light', '비스타 홀.', 'hejhome-vista-hall-light', 'unknown', false, '로비/홀 조명. 공용 ON/OFF 대상'),
   ('ad111111-0106-4000-8000-000000000106', '11111111-1111-4111-8111-111111111111', null, 'hejhome', 'etc', '비스타 입구', 'hejhome-vista-entry', 'unknown', true, '자동문 관련. 1차 MVP에서는 자동 실행 제외'),
   ('ad111111-0107-4000-8000-000000000107', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-0001-4000-8000-000000000001', 'hejhome', 'screen_equipment', '1번타석 프로젝터', 'hejhome-bay-01-projector', 'unknown', false, '프로젝터 전원 ON/OFF'),
   ('ad111111-0108-4000-8000-000000000108', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-0001-4000-8000-000000000001', 'hejhome', 'screen_equipment', '1번타석 리시버', 'hejhome-bay-01-receiver', 'unknown', false, '리시버 전원 ON/OFF'),

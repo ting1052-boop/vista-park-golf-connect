@@ -1,4 +1,5 @@
 import { Lightbulb, Power, ShieldAlert, Snowflake, Timer, Zap } from "lucide-react";
+import { DeviceTestButtons } from "@/components/device-test-buttons";
 import {
   accessSessionRows,
   automationDeviceRows,
@@ -78,6 +79,8 @@ export default function AutomationPage() {
             ))}
           </div>
         </section>
+
+        <DeviceTestButtons />
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
           <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">

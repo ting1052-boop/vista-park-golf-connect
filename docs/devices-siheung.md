@@ -10,6 +10,7 @@ VISTA controls automation through Home Assistant scripts, not by talking to Hejh
 | Area | Device | Provider | Control Role | Notes |
 | --- | --- | --- | --- | --- |
 | Common | Golf room light | Hejhome | Common ON/OFF | Shared device. Turn on for first entry, turn off after last exit. |
+| Common | Lobby/Hall light (`비스타 홀.`) | Hejhome | Common ON/OFF | Shared device. Include in `shared_on` and `shared_off`. |
 | Common | Golf room AC | Hejhome | Common ON/OFF | IR/HVAC device. State read-back may be unreliable. |
 | Common | Lobby/Hall AC | Hejhome | Common ON/OFF | Shared device. Keep state label as requested/assumed unless HA can read state. |
 | Entry | Automatic door | Hejhome | Excluded | Excluded from phase 1 automation for safety and operations. |

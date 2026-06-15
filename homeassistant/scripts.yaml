@@ -2,14 +2,15 @@
 # Replace every entity_id placeholder with the actual HA entity ID.
 # VISTA calls only these script IDs so device/provider changes stay inside HA.
 
-vista_common_on:
-  alias: VISTA Common ON
+shared_on:
+  alias: VISTA Shared ON
   mode: single
   sequence:
     - service: switch.turn_on
       target:
         entity_id:
           - switch.FILL_GOLF_ROOM_LIGHT
+          - switch.FILL_LOBBY_HALL_LIGHT
     # If Hejhome AC is exposed as climate, use climate.set_hvac_mode / climate.set_temperature.
     # If it is exposed as scene, replace these steps with scene.turn_on.
     - service: climate.set_hvac_mode
@@ -27,8 +28,8 @@ vista_common_on:
       data:
         temperature: 24
 
-vista_common_off:
-  alias: VISTA Common OFF
+shared_off:
+  alias: VISTA Shared OFF
   mode: single
   sequence:
     - service: climate.turn_off
@@ -40,9 +41,10 @@ vista_common_off:
       target:
         entity_id:
           - switch.FILL_GOLF_ROOM_LIGHT
+          - switch.FILL_LOBBY_HALL_LIGHT
 
-vista_bay_01_enter:
-  alias: VISTA Bay 1 Enter
+bay1_on:
+  alias: VISTA Bay 1 ON
   mode: single
   sequence:
     - service: switch.turn_on
@@ -52,8 +54,8 @@ vista_bay_01_enter:
           - switch.FILL_HEJHOME_BAY_01_PROJECTOR
           - switch.FILL_HEJHOME_BAY_01_RECEIVER
 
-vista_bay_01_exit:
-  alias: VISTA Bay 1 Exit
+bay1_off:
+  alias: VISTA Bay 1 OFF
   mode: single
   sequence:
     - service: switch.turn_off
@@ -68,8 +70,8 @@ vista_bay_01_exit:
         entity_id:
           - switch.FILL_TAPO_BAY_01_PC
 
-vista_bay_02_enter:
-  alias: VISTA Bay 2 Enter
+bay2_on:
+  alias: VISTA Bay 2 ON
   mode: single
   sequence:
     - service: switch.turn_on
@@ -78,8 +80,8 @@ vista_bay_02_enter:
           - switch.FILL_TAPO_BAY_02_PC
           - switch.FILL_HEJHOME_BAY_02_PROJECTOR
 
-vista_bay_02_exit:
-  alias: VISTA Bay 2 Exit
+bay2_off:
+  alias: VISTA Bay 2 OFF
   mode: single
   sequence:
     - service: switch.turn_off
@@ -92,8 +94,8 @@ vista_bay_02_exit:
         entity_id:
           - switch.FILL_TAPO_BAY_02_PC
 
-vista_bay_03_enter:
-  alias: VISTA Bay 3 Enter
+bay3_on:
+  alias: VISTA Bay 3 ON
   mode: single
   sequence:
     - service: switch.turn_on
@@ -102,8 +104,8 @@ vista_bay_03_enter:
           - switch.FILL_TAPO_BAY_03_PC
           - switch.FILL_HEJHOME_BAY_03_PROJECTOR
 
-vista_bay_03_exit:
-  alias: VISTA Bay 3 Exit
+bay3_off:
+  alias: VISTA Bay 3 OFF
   mode: single
   sequence:
     - service: switch.turn_off
@@ -116,7 +118,7 @@ vista_bay_03_exit:
         entity_id:
           - switch.FILL_TAPO_BAY_03_PC
 
-vista_test_tapo_bay_01_pc_on:
+test_bay1_pc_on:
   alias: VISTA Test Tapo Bay 1 PC ON
   mode: single
   sequence:
@@ -125,7 +127,7 @@ vista_test_tapo_bay_01_pc_on:
         entity_id:
           - switch.FILL_TAPO_BAY_01_PC
 
-vista_test_tapo_bay_01_pc_off:
+test_bay1_pc_off:
   alias: VISTA Test Tapo Bay 1 PC OFF
   mode: single
   sequence:

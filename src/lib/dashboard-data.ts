@@ -208,6 +208,7 @@ export const automationDeviceRows = [
   { zone: "쇼룸", device: "골프룸 켜기", type: "헤이홈 빠른실행", state: "테스트 가능", action: "예약 10분 전 매장 준비" },
   { zone: "입구", device: "비스타 입구", type: "헤이홈 스위치", state: "대기", action: "출입문 제어는 수동 검토" },
   { zone: "골프룸", device: "골프룸조명스위치", type: "헤이홈 스위치", state: "대기", action: "예약 준비 ON / 마감 OFF" },
+  { zone: "로비/홀", device: "비스타 홀.", type: "헤이홈 스위치", state: "대기", action: "공용 ON / 마감 OFF" },
   { zone: "골프룸", device: "골프룸 AC", type: "헤이홈 냉난방", state: "대기", action: "예약 10분 전 ON" },
   { zone: "홀", device: "비스타 홀AC", type: "헤이홈 냉난방", state: "대기", action: "영업시간 또는 예약 준비 ON" },
   { zone: "1번타석", device: "1번타석 PC", type: "Tapo 플러그", state: "테스트 가능", action: "PC 전원 인가 / 자동부팅" },
@@ -231,7 +232,7 @@ export const showroomAutomationScenarios = [
   {
     name: "예약 10분 전 준비",
     trigger: "예약 시간 -10분",
-    steps: "골프룸 조명/AC → 해당 타석 PC(Tapo) → 프로젝터/리시버(헤이홈) ON"
+    steps: "골프룸·로비 조명/AC → 해당 타석 PC(Tapo) → 프로젝터/리시버(헤이홈) ON"
   },
   {
     name: "입장 후 이용 시작",
@@ -241,7 +242,7 @@ export const showroomAutomationScenarios = [
   {
     name: "이용 종료 정리",
     trigger: "예약 종료 시간 +5분",
-    steps: "타석 PC/프로젝터/리시버 OFF → 조명/냉난방 정리 → 로그 저장"
+    steps: "타석 PC/프로젝터/리시버 OFF → 골프룸·로비 조명/냉난방 정리 → 로그 저장"
   },
   {
     name: "마감 전체 OFF",
