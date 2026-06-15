@@ -33,6 +33,7 @@ type StoreRow = {
 
 type BayRow = {
   id: string;
+  store_id: string;
   bay_code: string;
   display_name: string;
   status: string;
@@ -154,7 +155,8 @@ export default function MemberAppPage() {
   const dateOptions = useMemo(() => getDateOptions(now), [now]);
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
-  const availableBays = bays.filter((bay) => bay.status === "available" || bay.status === "waiting");
+  const selectedStoreBays = bays.filter((bay) => bay.store_id === selectedStoreId);
+  const availableBays = selectedStoreBays.filter((bay) => bay.status === "available" || bay.status === "waiting");
   const approvalRequired = durationMinutes > 60 || partySize >= 5;
   const availableTimeSlots = useMemo(
     () => timeSlots.filter((time) => !isPastTimeSlot(selectedDate, time, now)),
@@ -169,7 +171,7 @@ export default function MemberAppPage() {
       const supabase = createBrowserSupabaseClient();
       const [storeResult, bayResult, reservationResult] = await Promise.all([
         supabase.from("stores").select("id, name, address, phone, status").order("name", { ascending: true }),
-        supabase.from("bays").select("id, bay_code, display_name, status").order("bay_code", { ascending: true }),
+        supabase.from("bays").select("id, store_id, bay_code, display_name, status").order("bay_code", { ascending: true }),
         supabase
           .from("reservations")
           .select("id, starts_at, guest_name, party_size, status, approval_required, bays(bay_code)")
@@ -228,6 +230,13 @@ export default function MemberAppPage() {
     setSelectedDate(nextSelection.date);
     setSelectedTime(nextSelection.time);
   }, [availableTimeSlots, dateOptions, now, selectedDate, selectedTime]);
+
+  useEffect(() => {
+    if (selectedBayId === "auto") return;
+    if (availableBays.some((bay) => bay.id === selectedBayId)) return;
+
+    setSelectedBayId("auto");
+  }, [availableBays, selectedBayId]);
 
   const submitReservation = async () => {
     setError(null);
@@ -314,34 +323,38 @@ export default function MemberAppPage() {
             <h2 className="text-lg font-extrabold">예약 매장</h2>
           </div>
 
-          <div className="mt-3 grid gap-3">
-            {stores.length > 0 ? (
-              stores.map((store) => (
-                <button
-                  key={store.id}
-                  type="button"
-                  onClick={() => setSelectedStoreId(store.id)}
-                  className={`rounded-md border p-4 text-left transition ${
-                    selectedStoreId === store.id ? "border-vista-leaf bg-vista-fairway" : "border-[#e5ece1] bg-white"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="grid size-11 shrink-0 place-items-center rounded-md bg-white text-vista-leaf ring-1 ring-[#dfe8dc]">
-                      <Store size={21} aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-extrabold">{store.name}</h3>
-                      <p className="mt-1 text-sm font-semibold text-[#697468]">{store.address ?? "주소 준비 중"}</p>
-                      <p className="mt-2 text-xs font-bold text-vista-leaf">{store.phone ?? "매장 전화 준비 중"}</p>
-                    </div>
-                  </div>
-                </button>
-              ))
-            ) : (
-              <div className="rounded-md border border-[#e5ece1] p-4 text-sm font-bold text-[#697468]">
-                매장 정보를 불러오는 중입니다.
+          <div className="mt-3 rounded-md border border-[#dfe8dc] bg-white p-4">
+            <label className="grid gap-2 text-sm font-bold text-[#4f5b50]">
+              매장 선택
+              <select
+                value={selectedStoreId}
+                onChange={(event) => setSelectedStoreId(event.target.value)}
+                disabled={stores.length === 0 || isLoading}
+                className="rounded-md border border-[#cad8c6] bg-[#fbfcfa] px-3 py-4 text-base font-extrabold outline-none focus:border-vista-leaf disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {stores.length > 0 ? (
+                  stores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))
+                ) : (
+                  <option>매장 정보를 불러오는 중입니다</option>
+                )}
+              </select>
+            </label>
+
+            <div className="mt-3 flex items-start gap-3 rounded-md bg-vista-fairway p-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-md bg-white text-vista-leaf ring-1 ring-[#dfe8dc]">
+                <Store size={20} aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-extrabold">{selectedStore?.name ?? "매장 선택 대기"}</h3>
+                <p className="mt-1 text-sm font-semibold text-[#697468]">{selectedStore?.address ?? "주소 준비 중"}</p>
+                <p className="mt-2 text-xs font-bold text-vista-leaf">{selectedStore?.phone ?? "매장 전화 준비 중"}</p>
+                <p className="mt-2 text-xs font-bold text-[#4f5b50]">예약 가능 타석 {availableBays.length}개</p>
               </div>
-            )}
+            </div>
           </div>
         </section>
 
