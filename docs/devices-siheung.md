@@ -38,6 +38,26 @@ VISTA controls automation through Home Assistant scripts, not by talking to Hejh
    - VISTA calls `script.*`.
    - If a device changes, edit `homeassistant/scripts.yaml` mapping, not VISTA app code.
 
+## Runtime Checks
+
+- VISTA automation API uses the existing `createSupabaseAdminClient()` from `src/lib/supabase/server.ts`.
+- `access_sessions` active counting uses `status in ('active', 'extended')`, matching the current schema.
+- `automation_logs` writes use the current schema columns: `store_id`, `access_session_id`, `reservation_id`, `requested_by_user_id`, `event_name`, `command`, `status`, `request_payload`, `response_payload`, `error_message`.
+- The caller must save the session state before calling `/api/automation/bay`.
+  - Entry: create/update `access_sessions.status = 'active'`, then call automation.
+  - Exit: update `access_sessions.status = 'completed'`, then call automation.
+
+## Next Improvement
+
+Move script/entity mapping from `src/lib/automation/device-map.ts` into database-managed automation scenes.
+Recommended target:
+
+- `automation_scenes`: logical scene such as `shared_on`, `bay1_on`, `bay1_off`.
+- `automation_scene_steps`: ordered steps with `command = 'script.turn_on'` and `command_payload = {"entity_id":"script.bay1_on"}` or direct device commands.
+- `automation_devices`: actual HA entity IDs or device identifiers for editable admin mapping.
+
+This keeps source code stable while allowing the store manager or head admin to edit mappings later from the admin UI.
+
 ## Recommended Field Test Order
 
 1. Install Home Assistant on the showroom network.

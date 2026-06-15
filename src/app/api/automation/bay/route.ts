@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { runBayAutomation } from "@/lib/automation/sessions";
 import type { AutomationAction } from "@/lib/automation/device-map";
+import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 type BayAutomationBody = {
   bayId?: unknown;
@@ -57,12 +57,13 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
-      ok: result.steps.every((step) => step.ok),
+      ok: result.steps.every((step) => step.ok && !step.logError),
       message: "타석 자동화 명령을 처리했습니다.",
       bay: result.bay,
       activeSessionCount: result.activeSessionCount,
       commonAction: result.commonAction,
-      steps: result.steps
+      steps: result.steps,
+      note: "입장/퇴장 자동화는 access_sessions 상태를 먼저 저장한 뒤 호출해야 첫 입장/마지막 퇴장을 정확히 판단합니다."
     });
   } catch (error) {
     return NextResponse.json(

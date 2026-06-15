@@ -8,6 +8,7 @@ type AutomationStepResult = {
   ok: boolean;
   status: number;
   body: string;
+  logError: string | null;
 };
 
 type BayRecord = {
@@ -25,7 +26,7 @@ type RunBayAutomationArgs = {
   requestedByUserId?: string | null;
 };
 
-const ACTIVE_SESSION_STATUSES = ["active", "extended"];
+const ACTIVE_SESSION_STATUSES = ["active", "extended"] as const;
 
 async function getBay(supabase: SupabaseClient, bayId: string) {
   const { data, error } = await supabase.from("bays").select("id, store_id, bay_code").eq("id", bayId).maybeSingle();
@@ -46,7 +47,7 @@ async function getActiveSessionCount(supabase: SupabaseClient, storeId: string) 
     .from("access_sessions")
     .select("id", { count: "exact", head: true })
     .eq("store_id", storeId)
-    .in("status", ACTIVE_SESSION_STATUSES);
+    .in("status", [...ACTIVE_SESSION_STATUSES]);
 
   if (error) {
     throw new Error(error.message);
@@ -70,7 +71,7 @@ async function insertAutomationLog(
     errorMessage?: string | null;
   }
 ) {
-  await supabase.from("automation_logs").insert({
+  const { error } = await supabase.from("automation_logs").insert({
     store_id: args.storeId,
     access_session_id: args.accessSessionId ?? null,
     reservation_id: args.reservationId ?? null,
@@ -82,6 +83,8 @@ async function insertAutomationLog(
     response_payload: args.responsePayload,
     error_message: args.errorMessage ?? null
   });
+
+  return error?.message ?? null;
 }
 
 async function runStep(
@@ -95,7 +98,7 @@ async function runStep(
 ): Promise<AutomationStepResult> {
   try {
     const result = await runHomeAssistantScript(args.script, args.variables);
-    await insertAutomationLog(args.supabase, {
+    const logError = await insertAutomationLog(args.supabase, {
       storeId: args.storeId,
       accessSessionId: args.accessSessionId,
       reservationId: args.reservationId,
@@ -113,11 +116,12 @@ async function runStep(
       script: args.script,
       ok: result.ok,
       status: result.status,
-      body: result.body
+      body: result.body,
+      logError
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "알 수 없는 자동화 오류";
-    await insertAutomationLog(args.supabase, {
+    const logError = await insertAutomationLog(args.supabase, {
       storeId: args.storeId,
       accessSessionId: args.accessSessionId,
       reservationId: args.reservationId,
@@ -135,7 +139,8 @@ async function runStep(
       script: args.script,
       ok: false,
       status: 500,
-      body: errorMessage
+      body: errorMessage,
+      logError
     };
   }
 }
@@ -148,6 +153,8 @@ export async function runBayAutomation(args: RunBayAutomationArgs) {
     throw new Error(`자동화 매핑이 없는 타석입니다: ${bay.bay_code ?? args.bayId}`);
   }
 
+  // Caller must update and commit access_sessions first:
+  // enter -> active session exists, exit -> completed/cancelled session is no longer active.
   const activeSessionCount = await getActiveSessionCount(args.supabase, bay.store_id);
   const shouldRunCommonOn = args.action === "enter" && activeSessionCount <= 1;
   const shouldRunCommonOff = args.action === "exit" && activeSessionCount === 0;
