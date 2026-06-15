@@ -692,7 +692,7 @@ export function AdminCrudPage({
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-7xl">
+      <div className="w-full max-w-[1500px]">
         <section className="rounded-md border border-[#dfe8dc] bg-white p-6 shadow-soft-line">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-4">
@@ -762,7 +762,7 @@ export function AdminCrudPage({
           </section>
         ) : null}
 
-        <section className="mt-5 grid gap-5 xl:grid-cols-[360px_1fr]">
+        <section className="mt-5 grid items-start gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
           <article className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
             <h2 className="text-lg font-extrabold">신규 등록</h2>
             <div className="mt-4 grid gap-3">
@@ -784,7 +784,7 @@ export function AdminCrudPage({
             </button>
           </article>
 
-          <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
+          <article className="min-w-0 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
             <div className="flex flex-col gap-3 border-b border-[#e5ece1] p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-extrabold">목록 및 상태 관리</h2>
@@ -801,7 +801,7 @@ export function AdminCrudPage({
               </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-sm">
+              <table className="min-w-[980px] text-left text-sm">
                 <thead className="bg-vista-fairway text-[#566153]">
                   <tr>
                     {fields.map((field) => (
