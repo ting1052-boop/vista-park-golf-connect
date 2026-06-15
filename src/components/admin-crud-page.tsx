@@ -56,6 +56,12 @@ type StoreOption = {
   bay_count: number | null;
 };
 
+type BaySyncRecord = {
+  id: string;
+  bay_code: string | null;
+  status: string | null;
+};
+
 type ReservationRecord = {
   id: string;
   starts_at: string | null;
@@ -212,16 +218,19 @@ function getAutoBayCode(index: number) {
 }
 
 async function ensureStoreBays(storeId: string, storeName: string, bayCount: number) {
-  if (bayCount <= 0) return;
-
   const supabase = createBrowserSupabaseClient();
-  const { data, error } = await supabase.from("bays").select("bay_code").eq("store_id", storeId);
+  const { data, error } = await supabase
+    .from("bays")
+    .select("id, bay_code, status")
+    .eq("store_id", storeId)
+    .order("bay_code", { ascending: true });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const existingCodes = new Set((data ?? []).map((bay) => bay.bay_code));
+  const existingBays = (data ?? []) as BaySyncRecord[];
+  const existingCodes = new Set(existingBays.map((bay) => bay.bay_code));
   const rowsToInsert = Array.from({ length: bayCount }, (_, index) => {
     const bayNo = index + 1;
     const bayCode = getAutoBayCode(bayNo);
@@ -234,13 +243,54 @@ async function ensureStoreBays(storeId: string, storeName: string, bayCount: num
     };
   }).filter((row) => !existingCodes.has(row.bay_code));
 
-  if (rowsToInsert.length === 0) return;
+  if (rowsToInsert.length > 0) {
+    const { error: insertError } = await supabase.from("bays").insert(rowsToInsert);
 
-  const { error: insertError } = await supabase.from("bays").insert(rowsToInsert);
-
-  if (insertError) {
-    throw new Error(insertError.message);
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
   }
+
+  if (existingBays.length > bayCount) {
+    const removableBays = existingBays
+      .filter((bay) => ["available", "maintenance"].includes(bay.status ?? ""))
+      .sort((first, second) => (second.bay_code ?? "").localeCompare(first.bay_code ?? ""));
+    const removeCount = existingBays.length - bayCount;
+    const bayIdsToDelete = removableBays.slice(0, removeCount).map((bay) => bay.id);
+
+    if (bayIdsToDelete.length < removeCount) {
+      throw new Error("이용 중이거나 입장 대기 중인 타석이 있어 타석수를 줄일 수 없습니다.");
+    }
+
+    const { error: deleteError } = await supabase.from("bays").delete().in("id", bayIdsToDelete);
+
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+  }
+}
+
+async function syncStoreBayCount(storeId: string) {
+  const supabase = createBrowserSupabaseClient();
+  const { count, error } = await supabase.from("bays").select("id", { count: "exact", head: true }).eq("store_id", storeId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const { error: updateError } = await supabase
+    .from("stores")
+    .update({
+      bay_count: count ?? 0,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", storeId);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  return count ?? 0;
 }
 
 export function AdminCrudPage({
@@ -394,6 +444,7 @@ export function AdminCrudPage({
 
         if (insertedStore?.id) {
           await ensureStoreBays(insertedStore.id, insertedStore.name ?? draft.name.trim(), bayCount);
+          await syncStoreBayCount(insertedStore.id);
         }
       }
 
@@ -406,6 +457,7 @@ export function AdminCrudPage({
           memo: draft.memo.trim() || null
         });
         if (insertError) throw new Error(insertError.message);
+        await syncStoreBayCount(selectedStoreId);
       }
 
       if (resource === "reservations") {
@@ -454,6 +506,9 @@ export function AdminCrudPage({
       setDraft(emptyRow);
       setMessage("Supabase에 저장했습니다.");
       await loadRows();
+      if (resource === "bays") {
+        await loadStoreOptions();
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "저장하지 못했습니다.");
     } finally {
@@ -485,7 +540,6 @@ export function AdminCrudPage({
             name: editDraft.name.trim(),
             address: editDraft.address.trim() || null,
             phone: editDraft.phone.trim() || null,
-            bay_count: bayCount,
             status: editDraft.status.trim() || "active",
             updated_at: new Date().toISOString()
           })
@@ -493,6 +547,7 @@ export function AdminCrudPage({
         if (updateError) throw new Error(updateError.message);
 
         await ensureStoreBays(editingId, editDraft.name.trim(), bayCount);
+        await syncStoreBayCount(editingId);
       }
 
       if (resource === "bays") {
@@ -565,6 +620,9 @@ export function AdminCrudPage({
       setEditDraft(emptyRow);
       setMessage("수정 내용을 Supabase에 저장했습니다.");
       await loadRows();
+      if (resource === "bays") {
+        await loadStoreOptions();
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "수정하지 못했습니다.");
     } finally {
@@ -587,8 +645,15 @@ export function AdminCrudPage({
         throw new Error("삭제된 행이 없습니다. Supabase RLS 삭제 정책이 적용됐는지 확인해주세요.");
       }
 
+      if (resource === "bays") {
+        await syncStoreBayCount(selectedStoreId);
+      }
+
       setMessage("Supabase에서 삭제했습니다.");
       await loadRows();
+      if (resource === "bays") {
+        await loadStoreOptions();
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "삭제하지 못했습니다.");
     } finally {
@@ -668,7 +733,7 @@ export function AdminCrudPage({
                 <p className="text-sm font-bold text-vista-leaf">매장별 타석관리</p>
                 <h2 className="mt-1 text-xl font-extrabold">관리할 매장을 선택하세요</h2>
                 <p className="mt-1 text-sm text-[#697468]">
-                  선택한 매장의 타석만 조회, 등록, 수정, 삭제됩니다. 매장관리에서 타석수를 늘리면 부족한 타석이 자동 생성됩니다.
+                  선택한 매장의 타석만 조회, 등록, 수정, 삭제됩니다. 타석 추가·삭제 결과는 매장관리의 타석수와 함께 동기화됩니다.
                 </p>
               </div>
               <label className="grid gap-1 text-sm font-bold text-[#4f5b50] lg:min-w-[320px]">
@@ -691,7 +756,8 @@ export function AdminCrudPage({
               </label>
             </div>
             <div className="mt-4 rounded-md bg-vista-fairway px-4 py-3 text-sm font-semibold text-[#4f5b50]">
-              현재 선택: {selectedStore?.name ?? "비스타파크골프 시흥점"} / 타석 기준 {selectedStore?.bay_count ?? rows.length}개
+              현재 선택: {selectedStore?.name ?? "비스타파크골프 시흥점"} / 등록 타석 {rows.length}개 / 매장관리 기준{" "}
+              {selectedStore?.bay_count ?? rows.length}개
             </div>
           </section>
         ) : null}
