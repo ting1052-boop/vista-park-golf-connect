@@ -18,6 +18,7 @@ create table if not exists public.stores (
   operator_name text not null default 'HH Square',
   address text,
   phone text,
+  bay_count integer not null default 0 check (bay_count between 0 and 99),
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

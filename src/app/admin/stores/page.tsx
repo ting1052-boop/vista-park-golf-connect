@@ -5,6 +5,7 @@ const fields: CrudField[] = [
   { key: "name", label: "매장명", placeholder: "예: 비스타파크골프 시흥점" },
   { key: "address", label: "주소", placeholder: "매장 주소" },
   { key: "phone", label: "전화번호", placeholder: "031-000-0000" },
+  { key: "bay_count", label: "타석수", type: "number", placeholder: "예: 5" },
   { key: "status", label: "운영상태", type: "select", options: ["active", "paused", "closed"] }
 ];
 
@@ -15,6 +16,7 @@ const fallbackRows: CrudRow[] = [
     name: "비스타파크골프 시흥점",
     address: "경기도 시흥시 중심상가로 10",
     phone: "031-100-2000",
+    bay_count: "5",
     status: "active"
   }
 ];

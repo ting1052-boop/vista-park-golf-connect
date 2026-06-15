@@ -40,6 +40,7 @@ create table public.stores (
   business_number text,
   address text,
   phone text,
+  bay_count integer not null default 0 check (bay_count between 0 and 99),
   status public.store_status not null default 'active',
   opened_on date,
   created_at timestamptz not null default now(),

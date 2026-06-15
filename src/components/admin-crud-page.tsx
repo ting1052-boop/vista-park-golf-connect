@@ -36,15 +36,24 @@ type StoreRecord = {
   name: string | null;
   address: string | null;
   phone: string | null;
+  bay_count: number | null;
   status: string | null;
 };
 
 type BayRecord = {
   id: string;
+  store_id: string | null;
   bay_code: string | null;
   display_name: string | null;
   status: string | null;
   memo: string | null;
+};
+
+type StoreOption = {
+  id: string;
+  code: string | null;
+  name: string | null;
+  bay_count: number | null;
 };
 
 type ReservationRecord = {
@@ -115,6 +124,7 @@ function mapStore(record: StoreRecord): CrudRow {
     name: record.name ?? "",
     address: record.address ?? "",
     phone: record.phone ?? "",
+    bay_count: String(record.bay_count ?? 0),
     status: record.status ?? "active"
   };
 }
@@ -122,6 +132,7 @@ function mapStore(record: StoreRecord): CrudRow {
 function mapBay(record: BayRecord): CrudRow {
   return {
     id: record.id,
+    store_id: record.store_id ?? "",
     bay_code: record.bay_code ?? "",
     display_name: record.display_name ?? "",
     status: record.status ?? "available",
@@ -190,6 +201,48 @@ function isApprovalRequired(value: string) {
   return ["승인", "수동", "확인", "매장"].some((keyword) => value.includes(keyword));
 }
 
+function normalizeBayCount(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) return 0;
+  return Math.min(Math.max(parsed, 0), 99);
+}
+
+function getAutoBayCode(index: number) {
+  return `A-${String(index).padStart(2, "0")}`;
+}
+
+async function ensureStoreBays(storeId: string, storeName: string, bayCount: number) {
+  if (bayCount <= 0) return;
+
+  const supabase = createBrowserSupabaseClient();
+  const { data, error } = await supabase.from("bays").select("bay_code").eq("store_id", storeId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const existingCodes = new Set((data ?? []).map((bay) => bay.bay_code));
+  const rowsToInsert = Array.from({ length: bayCount }, (_, index) => {
+    const bayNo = index + 1;
+    const bayCode = getAutoBayCode(bayNo);
+    return {
+      store_id: storeId,
+      bay_code: bayCode,
+      display_name: `A구역 ${bayNo}번 타석`,
+      status: "available",
+      memo: `${storeName || "신규 매장"} 자동 생성`
+    };
+  }).filter((row) => !existingCodes.has(row.bay_code));
+
+  if (rowsToInsert.length === 0) return;
+
+  const { error: insertError } = await supabase.from("bays").insert(rowsToInsert);
+
+  if (insertError) {
+    throw new Error(insertError.message);
+  }
+}
+
 export function AdminCrudPage({
   title,
   description,
@@ -203,9 +256,33 @@ export function AdminCrudPage({
   const [draft, setDraft] = useState(emptyRow);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<CrudRow>(emptyRow);
+  const [storeOptions, setStoreOptions] = useState<StoreOption[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState(DEFAULT_STORE_ID);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedStore = useMemo(
+    () => storeOptions.find((store) => store.id === selectedStoreId),
+    [selectedStoreId, storeOptions]
+  );
+
+  const loadStoreOptions = async () => {
+    const supabase = createBrowserSupabaseClient();
+    const { data, error: queryError } = await supabase
+      .from("stores")
+      .select("id, code, name, bay_count")
+      .order("name", { ascending: true });
+
+    if (queryError) throw new Error(queryError.message);
+
+    const options = (data ?? []) as StoreOption[];
+    setStoreOptions(options);
+
+    if (options.length > 0 && !options.some((store) => store.id === selectedStoreId)) {
+      setSelectedStoreId(options[0].id);
+    }
+  };
 
   const loadRows = async () => {
     setIsLoading(true);
@@ -217,7 +294,7 @@ export function AdminCrudPage({
       if (resource === "stores") {
         const { data, error: queryError } = await supabase
           .from("stores")
-          .select("id, code, name, address, phone, status")
+          .select("id, code, name, address, phone, bay_count, status")
           .order("name", { ascending: true });
 
         if (queryError) throw new Error(queryError.message);
@@ -227,7 +304,8 @@ export function AdminCrudPage({
       if (resource === "bays") {
         const { data, error: queryError } = await supabase
           .from("bays")
-          .select("id, bay_code, display_name, status, memo")
+          .select("id, store_id, bay_code, display_name, status, memo")
+          .eq("store_id", selectedStoreId)
           .order("bay_code", { ascending: true });
 
         if (queryError) throw new Error(queryError.message);
@@ -274,6 +352,15 @@ export function AdminCrudPage({
   useEffect(() => {
     void loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resource, selectedStoreId]);
+
+  useEffect(() => {
+    if (resource !== "bays") return;
+
+    loadStoreOptions().catch((caughtError) => {
+      setError(caughtError instanceof Error ? caughtError.message : "매장 목록을 불러오지 못했습니다.");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resource]);
 
   const addRow = async () => {
@@ -289,19 +376,30 @@ export function AdminCrudPage({
       const supabase = createBrowserSupabaseClient();
 
       if (resource === "stores") {
-        const { error: insertError } = await supabase.from("stores").insert({
-          code: draft.code.trim(),
-          name: draft.name.trim(),
-          address: draft.address.trim() || null,
-          phone: draft.phone.trim() || null,
-          status: draft.status.trim() || "active"
-        });
+        const bayCount = normalizeBayCount(draft.bay_count);
+        const { data: insertedStore, error: insertError } = await supabase
+          .from("stores")
+          .insert({
+            code: draft.code.trim(),
+            name: draft.name.trim(),
+            address: draft.address.trim() || null,
+            phone: draft.phone.trim() || null,
+            bay_count: bayCount,
+            status: draft.status.trim() || "active"
+          })
+          .select("id, name")
+          .single();
+
         if (insertError) throw new Error(insertError.message);
+
+        if (insertedStore?.id) {
+          await ensureStoreBays(insertedStore.id, insertedStore.name ?? draft.name.trim(), bayCount);
+        }
       }
 
       if (resource === "bays") {
         const { error: insertError } = await supabase.from("bays").insert({
-          store_id: DEFAULT_STORE_ID,
+          store_id: selectedStoreId,
           bay_code: draft.bay_code.trim(),
           display_name: draft.display_name.trim() || draft.bay_code.trim(),
           status: draft.status.trim() || "available",
@@ -379,6 +477,7 @@ export function AdminCrudPage({
       const supabase = createBrowserSupabaseClient();
 
       if (resource === "stores") {
+        const bayCount = normalizeBayCount(editDraft.bay_count);
         const { error: updateError } = await supabase
           .from("stores")
           .update({
@@ -386,11 +485,14 @@ export function AdminCrudPage({
             name: editDraft.name.trim(),
             address: editDraft.address.trim() || null,
             phone: editDraft.phone.trim() || null,
+            bay_count: bayCount,
             status: editDraft.status.trim() || "active",
             updated_at: new Date().toISOString()
           })
           .eq("id", editingId);
         if (updateError) throw new Error(updateError.message);
+
+        await ensureStoreBays(editingId, editDraft.name.trim(), bayCount);
       }
 
       if (resource === "bays") {
@@ -556,6 +658,41 @@ export function AdminCrudPage({
           <section className="mt-5 flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
             <CheckCircle2 className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
             <span>{message}</span>
+          </section>
+        ) : null}
+
+        {resource === "bays" ? (
+          <section className="mt-5 rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-bold text-vista-leaf">매장별 타석관리</p>
+                <h2 className="mt-1 text-xl font-extrabold">관리할 매장을 선택하세요</h2>
+                <p className="mt-1 text-sm text-[#697468]">
+                  선택한 매장의 타석만 조회, 등록, 수정, 삭제됩니다. 매장관리에서 타석수를 늘리면 부족한 타석이 자동 생성됩니다.
+                </p>
+              </div>
+              <label className="grid gap-1 text-sm font-bold text-[#4f5b50] lg:min-w-[320px]">
+                관리 매장
+                <select
+                  value={selectedStoreId}
+                  onChange={(event) => setSelectedStoreId(event.target.value)}
+                  className="rounded-md border border-[#cad8c6] bg-[#fbfcfa] px-3 py-3 font-semibold outline-none focus:border-vista-leaf"
+                >
+                  {storeOptions.length === 0 ? (
+                    <option value={DEFAULT_STORE_ID}>비스타파크골프 시흥점</option>
+                  ) : (
+                    storeOptions.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name ?? store.code ?? "이름 없는 매장"} · 타석 {store.bay_count ?? 0}개
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+            </div>
+            <div className="mt-4 rounded-md bg-vista-fairway px-4 py-3 text-sm font-semibold text-[#4f5b50]">
+              현재 선택: {selectedStore?.name ?? "비스타파크골프 시흥점"} / 타석 기준 {selectedStore?.bay_count ?? rows.length}개
+            </div>
           </section>
         ) : null}
 
