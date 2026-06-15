@@ -1,0 +1,135 @@
+# VISTA Park Golf Connect - Home Assistant script draft
+# Replace every entity_id placeholder with the actual HA entity ID.
+# VISTA calls only these script IDs so device/provider changes stay inside HA.
+
+vista_common_on:
+  alias: VISTA Common ON
+  mode: single
+  sequence:
+    - service: switch.turn_on
+      target:
+        entity_id:
+          - switch.FILL_GOLF_ROOM_LIGHT
+    # If Hejhome AC is exposed as climate, use climate.set_hvac_mode / climate.set_temperature.
+    # If it is exposed as scene, replace these steps with scene.turn_on.
+    - service: climate.set_hvac_mode
+      target:
+        entity_id:
+          - climate.FILL_GOLF_ROOM_AC
+          - climate.FILL_LOBBY_HALL_AC
+      data:
+        hvac_mode: cool
+    - service: climate.set_temperature
+      target:
+        entity_id:
+          - climate.FILL_GOLF_ROOM_AC
+          - climate.FILL_LOBBY_HALL_AC
+      data:
+        temperature: 24
+
+vista_common_off:
+  alias: VISTA Common OFF
+  mode: single
+  sequence:
+    - service: climate.turn_off
+      target:
+        entity_id:
+          - climate.FILL_GOLF_ROOM_AC
+          - climate.FILL_LOBBY_HALL_AC
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_GOLF_ROOM_LIGHT
+
+vista_bay_01_enter:
+  alias: VISTA Bay 1 Enter
+  mode: single
+  sequence:
+    - service: switch.turn_on
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_01_PC
+          - switch.FILL_HEJHOME_BAY_01_PROJECTOR
+          - switch.FILL_HEJHOME_BAY_01_RECEIVER
+
+vista_bay_01_exit:
+  alias: VISTA Bay 1 Exit
+  mode: single
+  sequence:
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_HEJHOME_BAY_01_PROJECTOR
+          - switch.FILL_HEJHOME_BAY_01_RECEIVER
+    # PC hard power-off should run only after the golf software/session has ended.
+    - delay: "00:00:10"
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_01_PC
+
+vista_bay_02_enter:
+  alias: VISTA Bay 2 Enter
+  mode: single
+  sequence:
+    - service: switch.turn_on
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_02_PC
+          - switch.FILL_HEJHOME_BAY_02_PROJECTOR
+
+vista_bay_02_exit:
+  alias: VISTA Bay 2 Exit
+  mode: single
+  sequence:
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_HEJHOME_BAY_02_PROJECTOR
+    - delay: "00:00:10"
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_02_PC
+
+vista_bay_03_enter:
+  alias: VISTA Bay 3 Enter
+  mode: single
+  sequence:
+    - service: switch.turn_on
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_03_PC
+          - switch.FILL_HEJHOME_BAY_03_PROJECTOR
+
+vista_bay_03_exit:
+  alias: VISTA Bay 3 Exit
+  mode: single
+  sequence:
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_HEJHOME_BAY_03_PROJECTOR
+    - delay: "00:00:10"
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_03_PC
+
+vista_test_tapo_bay_01_pc_on:
+  alias: VISTA Test Tapo Bay 1 PC ON
+  mode: single
+  sequence:
+    - service: switch.turn_on
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_01_PC
+
+vista_test_tapo_bay_01_pc_off:
+  alias: VISTA Test Tapo Bay 1 PC OFF
+  mode: single
+  sequence:
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.FILL_TAPO_BAY_01_PC
