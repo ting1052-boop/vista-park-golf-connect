@@ -1,5 +1,11 @@
 import { Lightbulb, Power, ShieldAlert, Snowflake, Timer, Zap } from "lucide-react";
-import { accessSessionRows, automationDeviceRows, automationLogRows, entryCheckRows } from "@/lib/dashboard-data";
+import {
+  accessSessionRows,
+  automationDeviceRows,
+  automationLogRows,
+  entryCheckRows,
+  showroomAutomationScenarios
+} from "@/lib/dashboard-data";
 
 const sceneButtons = [
   { label: "예약 입장 준비", description: "로비 조명, 냉난방, 타석 조명, 키오스크 전원 ON", icon: Lightbulb },
@@ -45,6 +51,32 @@ export default function AutomationPage() {
               </button>
             );
           })}
+        </section>
+
+        <section className="mt-6 rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-bold text-vista-leaf">비스타파크골프 시흥점 쇼룸 실증</p>
+              <h2 className="mt-1 text-xl font-extrabold">헤이홈 · Tapo 장비 자동화 테스트 흐름</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#697468]">
+                현재 원격으로 켜고 있는 쇼룸 장비를 기준으로 예약 준비, 이용 시작, 종료 정리 흐름을 먼저 검증합니다.
+                프로젝터는 헤이홈, PC 전원은 Tapo 플러그 중심으로 연결합니다.
+              </p>
+            </div>
+            <span className="rounded-md bg-[#edf6ef] px-3 py-2 text-sm font-extrabold text-vista-leaf">
+              출입문 자동제어는 1차 제외
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-4">
+            {showroomAutomationScenarios.map((scenario) => (
+              <article key={scenario.name} className="rounded-md border border-[#e5ece1] bg-[#fbfcfa] p-4">
+                <p className="text-sm font-extrabold text-vista-leaf">{scenario.trigger}</p>
+                <h3 className="mt-2 font-extrabold">{scenario.name}</h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-[#697468]">{scenario.steps}</p>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">

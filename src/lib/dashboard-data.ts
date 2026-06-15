@@ -205,12 +205,16 @@ export const accessSessionRows = [
 ];
 
 export const automationDeviceRows = [
-  { zone: "로비", device: "로비 조명", type: "헤이홈 스위치", state: "ON", action: "영업시간 자동 ON" },
-  { zone: "로비", device: "로비 키오스크", type: "Tapo 플러그", state: "ON", action: "상시 운영" },
-  { zone: "A-01", device: "타석 조명", type: "Tapo 플러그", state: "ON", action: "세션 종료 후 OFF" },
-  { zone: "A-01", device: "냉난방기", type: "IR 리모컨", state: "냉방 24도", action: "예약 10분 전 ON" },
-  { zone: "A-02", device: "타석 키오스크", type: "스마트 플러그", state: "ON", action: "남은 시간 8분" },
-  { zone: "C-01", device: "타석 전원", type: "Tapo 플러그", state: "OFFLINE", action: "점검 필요" }
+  { zone: "쇼룸", device: "골프룸 켜기", type: "헤이홈 빠른실행", state: "테스트 가능", action: "예약 10분 전 매장 준비" },
+  { zone: "입구", device: "비스타 입구", type: "헤이홈 스위치", state: "대기", action: "출입문 제어는 수동 검토" },
+  { zone: "골프룸", device: "골프룸조명스위치", type: "헤이홈 스위치", state: "대기", action: "예약 준비 ON / 마감 OFF" },
+  { zone: "골프룸", device: "골프룸 AC", type: "헤이홈 냉난방", state: "대기", action: "예약 10분 전 ON" },
+  { zone: "홀", device: "비스타 홀AC", type: "헤이홈 냉난방", state: "대기", action: "영업시간 또는 예약 준비 ON" },
+  { zone: "1번타석", device: "1번타석 골프", type: "Tapo 플러그", state: "테스트 가능", action: "PC 전원 인가 / 자동부팅" },
+  { zone: "1번타석", device: "1번 타석 골프프로젝터", type: "헤이홈 플러그", state: "테스트 가능", action: "프로젝터 전원 ON" },
+  { zone: "2번타석", device: "2번타석", type: "Tapo 플러그", state: "테스트 가능", action: "PC 전원 인가 / 자동부팅" },
+  { zone: "3번타석", device: "3번 타석", type: "Tapo 플러그", state: "테스트 가능", action: "PC 전원 인가 / 자동부팅" },
+  { zone: "스크린", device: "비스타__스크린", type: "Tapo 스마트", state: "대기", action: "스크린 장비 전원 확인" }
 ];
 
 export const automationLogRows: ControlLog[] = [
@@ -219,6 +223,29 @@ export const automationLogRows: ControlLog[] = [
   { id: "log-3", time: "09:31", target: "A-01 키오스크", event: "120분 세션 시작", result: "성공", tone: "control" },
   { id: "log-4", time: "10:52", target: "A-02 키오스크", event: "종료 10분 전 알림", result: "확인 필요", tone: "warning" },
   { id: "log-5", time: "10:55", target: "C-01 타석 전원", event: "오프라인 감지", result: "확인 필요", tone: "danger" }
+];
+
+export const showroomAutomationScenarios = [
+  {
+    name: "예약 10분 전 준비",
+    trigger: "예약 시간 -10분",
+    steps: "골프룸 켜기 → 골프룸 AC → 해당 타석 프로젝터/PC 전원 ON"
+  },
+  {
+    name: "입장 후 이용 시작",
+    trigger: "고객 예약 인증 또는 관리자 승인",
+    steps: "타석 배정 → 키오스크 시간 부여 → 이용 세션 시작"
+  },
+  {
+    name: "이용 종료 정리",
+    trigger: "예약 종료 시간 +5분",
+    steps: "타석 PC/프로젝터 OFF → 조명/냉난방 정리 → 로그 저장"
+  },
+  {
+    name: "마감 전체 OFF",
+    trigger: "관리자 수동 실행",
+    steps: "골프룸/홀/타석 전원 순차 OFF, 자동문은 1차 제외"
+  }
 ];
 
 export const reservationRows = [
