@@ -3,6 +3,9 @@
 -- Purpose: HH Square self-owned web operation program documentation.
 
 create extension if not exists "pgcrypto";
+-- Needed so the reservations exclusion constraint below can index bay_id
+-- equality (=) alongside the tstzrange overlap (&&) operator in a GiST index.
+create extension if not exists "btree_gist";
 
 create type public.app_role as enum ('head_admin', 'store_manager', 'staff', 'member');
 create type public.store_status as enum ('active', 'paused', 'closed');
@@ -127,12 +130,22 @@ create table public.reservations (
   cancel_reason text,
   no_show_reason text,
   approval_required boolean not null default false,
+  automation_prepare_status text not null default 'pending',
+  automation_prepared_at timestamptz,
   created_by_user_id uuid references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint reservations_time_check check (ends_at > starts_at),
   constraint reservations_party_size_check check (party_size between 1 and 8),
-  constraint reservations_member_or_guest_check check (member_id is not null or guest_name is not null)
+  constraint reservations_member_or_guest_check check (member_id is not null or guest_name is not null),
+  constraint reservations_automation_prepare_status_check check (automation_prepare_status in ('pending', 'success', 'failed', 'skipped')),
+  -- Blocks two active (not cancelled/no_show) reservations from overlapping
+  -- on the same bay. See supabase/migrations/202607010001_reservations_bay_time_exclusion.sql
+  -- for the migration that adds this to an already-deployed database.
+  constraint reservations_bay_time_excl exclude using gist (
+    bay_id with =,
+    tstzrange(starts_at, ends_at, '[)') with &&
+  ) where (bay_id is not null and status not in ('cancelled', 'no_show'))
 );
 
 create table public.business_hours (

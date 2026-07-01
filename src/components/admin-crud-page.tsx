@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, Pencil, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { toReservationErrorMessage } from "@/lib/supabase/reservation-errors";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -474,7 +475,7 @@ export function AdminCrudPage({
           approval_required: isApprovalRequired(draft.approval_policy),
           memo: draft.memo.trim() || null
         });
-        if (insertError) throw new Error(insertError.message);
+        if (insertError) throw new Error(toReservationErrorMessage(insertError));
       }
 
       if (resource === "devices") {
@@ -581,7 +582,7 @@ export function AdminCrudPage({
             updated_at: new Date().toISOString()
           })
           .eq("id", editingId);
-        if (updateError) throw new Error(updateError.message);
+        if (updateError) throw new Error(toReservationErrorMessage(updateError));
       }
 
       if (resource === "devices") {

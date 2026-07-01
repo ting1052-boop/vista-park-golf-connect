@@ -16,12 +16,19 @@ import {
   Store,
   UserRound
 } from "lucide-react";
+import { PwaInstallCard } from "@/components/pwa-install-card";
 import { SocialLoginPanel } from "@/components/social-login-panel";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { toReservationErrorMessage } from "@/lib/supabase/reservation-errors";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const STORE_TIME_ZONE = "Asia/Seoul";
 const timeSlots = ["09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "18:00", "19:00"];
+const priceByDuration: Record<number, number> = {
+  60: 11000,
+  90: 16500,
+  120: 22000
+};
 
 type StoreRow = {
   id: string;
@@ -48,6 +55,15 @@ type ReservationRow = {
   approval_required: boolean | null;
   bays?: { bay_code?: string | null } | Array<{ bay_code?: string | null }> | null;
 };
+
+type ActiveReservationRow = {
+  bay_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: string | null;
+};
+
+const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show"];
 
 function getSeoulDateValue(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -115,6 +131,20 @@ function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000);
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("ko-KR", { style: "currency", currency: "KRW", maximumFractionDigits: 0 }).format(value);
+}
+
+function formatReservationDate(dateValue: string) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "long"
+  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
 function maskPhone(phoneLast4: string) {
   return phoneLast4 ? `010-****-${phoneLast4}` : "전화번호 미입력";
 }
@@ -140,6 +170,7 @@ export default function MemberAppPage() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [bays, setBays] = useState<BayRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
+  const [activeReservations, setActiveReservations] = useState<ActiveReservationRow[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState(DEFAULT_STORE_ID);
   const [selectedBayId, setSelectedBayId] = useState("auto");
   const [selectedDate, setSelectedDate] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).date);
@@ -151,17 +182,76 @@ export default function MemberAppPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const dateOptions = useMemo(() => getDateOptions(now), [now]);
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
   const selectedStoreBays = bays.filter((bay) => bay.store_id === selectedStoreId);
-  const availableBays = selectedStoreBays.filter((bay) => bay.status === "available" || bay.status === "waiting");
   const approvalRequired = durationMinutes > 60 || partySize >= 5;
-  const availableTimeSlots = useMemo(
-    () => timeSlots.filter((time) => !isPastTimeSlot(selectedDate, time, now)),
-    [now, selectedDate]
+  const previewStartsAt = useMemo(() => toReservationDate(selectedDate, selectedTime), [selectedDate, selectedTime]);
+  const previewEndsAt = useMemo(
+    () => addMinutes(previewStartsAt, durationMinutes),
+    [previewStartsAt, durationMinutes]
   );
+
+  const getBlockedBayIds = (startsAt: Date, endsAt: Date) => {
+    const blocked = new Set<string>();
+    const previewStart = startsAt.getTime();
+    const previewEnd = endsAt.getTime();
+
+    for (const reservation of activeReservations) {
+      if (!reservation.bay_id) continue;
+      if (INACTIVE_RESERVATION_STATUSES.includes(reservation.status ?? "")) continue;
+
+      const existingStart = new Date(reservation.starts_at).getTime();
+      const existingEnd = new Date(reservation.ends_at).getTime();
+
+      if (previewStart < existingEnd && existingStart < previewEnd) {
+        blocked.add(reservation.bay_id);
+      }
+    }
+
+    return blocked;
+  };
+
+  const timeSlotStates = useMemo(
+    () =>
+      timeSlots.map((time) => {
+        const startsAt = toReservationDate(selectedDate, time);
+        const endsAt = addMinutes(startsAt, durationMinutes);
+        const blockedBayIds = getBlockedBayIds(startsAt, endsAt);
+        const availableCount = selectedStoreBays.filter(
+          (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
+        ).length;
+
+        return {
+          time,
+          isPast: startsAt.getTime() <= now.getTime(),
+          isSoldOut: availableCount === 0,
+          availableCount
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeReservations, durationMinutes, now, selectedDate, selectedStoreBays]
+  );
+
+  const availableTimeSlots = useMemo(
+    () => timeSlotStates.filter((slot) => !slot.isPast && !slot.isSoldOut).map((slot) => slot.time),
+    [timeSlotStates]
+  );
+
+  const blockedBayIds = useMemo(
+    () => getBlockedBayIds(previewStartsAt, previewEndsAt),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeReservations, previewEndsAt, previewStartsAt]
+  );
+
+  const availableBays = selectedStoreBays.filter(
+    (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
+  );
+  const selectedBay = selectedBayId === "auto" ? availableBays[0] : availableBays.find((bay) => bay.id === selectedBayId);
+  const estimatedPrice = priceByDuration[durationMinutes] ?? Math.round((durationMinutes / 60) * priceByDuration[60]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -169,24 +259,35 @@ export default function MemberAppPage() {
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const [storeResult, bayResult, reservationResult] = await Promise.all([
+      const range = getDateOptions(new Date());
+      const rangeStart = toReservationDate(range[0], "00:00");
+      const rangeEnd = addMinutes(toReservationDate(range[range.length - 1], "23:59"), 120);
+
+      const [storeResult, bayResult, reservationResult, activeReservationResult] = await Promise.all([
         supabase.from("stores").select("id, name, address, phone, status").order("name", { ascending: true }),
         supabase.from("bays").select("id, store_id, bay_code, display_name, status").order("bay_code", { ascending: true }),
         supabase
           .from("reservations")
           .select("id, starts_at, guest_name, party_size, status, approval_required, bays(bay_code)")
           .order("starts_at", { ascending: true })
-          .limit(5)
+          .limit(5),
+        supabase
+          .from("reservations")
+          .select("bay_id, starts_at, ends_at, status")
+          .gte("starts_at", rangeStart.toISOString())
+          .lte("starts_at", rangeEnd.toISOString())
       ]);
 
       if (storeResult.error) throw new Error(storeResult.error.message);
       if (bayResult.error) throw new Error(bayResult.error.message);
       if (reservationResult.error) throw new Error(reservationResult.error.message);
+      if (activeReservationResult.error) throw new Error(activeReservationResult.error.message);
 
       const nextStores = (storeResult.data ?? []) as StoreRow[];
       setStores(nextStores);
       setBays((bayResult.data ?? []) as BayRow[]);
       setReservations((reservationResult.data ?? []) as ReservationRow[]);
+      setActiveReservations((activeReservationResult.data ?? []) as ActiveReservationRow[]);
 
       if (nextStores[0] && !nextStores.some((store) => store.id === selectedStoreId)) {
         setSelectedStoreId(nextStores[0].id);
@@ -238,17 +339,56 @@ export default function MemberAppPage() {
     setSelectedBayId("auto");
   }, [availableBays, selectedBayId]);
 
-  const submitReservation = async () => {
+  useEffect(() => {
+    setIsReviewing(false);
+  }, [customerName, durationMinutes, partySize, phoneLast4, selectedBayId, selectedDate, selectedStoreId, selectedTime]);
+
+  const validateReservationInput = () => {
     setError(null);
     setMessage(null);
 
     if (!customerName.trim()) {
       setError("예약자 이름 또는 닉네임을 입력해주세요.");
-      return;
+      return false;
     }
 
     if (!/^\d{4}$/.test(phoneLast4)) {
       setError("전화번호 뒤 4자리를 숫자로 입력해주세요.");
+      return false;
+    }
+
+    if (!selectedStore) {
+      setError("예약할 매장을 선택해주세요.");
+      return false;
+    }
+
+    if (previewStartsAt.getTime() <= Date.now()) {
+      setError("이미 지난 시간은 예약할 수 없습니다. 가능한 시간을 다시 선택해주세요.");
+      return false;
+    }
+
+    if (!selectedBay) {
+      setError("선택하신 시간에 예약 가능한 타석이 없습니다. 다른 시간을 선택해주세요.");
+      return false;
+    }
+
+    return true;
+  };
+
+  const handlePrimaryAction = () => {
+    if (!isReviewing) {
+      if (validateReservationInput()) {
+        setIsReviewing(true);
+      }
+
+      return;
+    }
+
+    void submitReservation();
+  };
+
+  const submitReservation = async () => {
+    if (!validateReservationInput()) {
       return;
     }
 
@@ -267,9 +407,32 @@ export default function MemberAppPage() {
       const endsAt = addMinutes(startsAt, durationMinutes);
       const selectedBay = selectedBayId === "auto" ? availableBays[0] : bays.find((bay) => bay.id === selectedBayId);
 
+      if (!selectedBay) {
+        setError("선택하신 시간에 예약 가능한 타석이 없습니다. 다른 시간을 선택해주세요.");
+        setIsLoading(false);
+        return;
+      }
+
+      const { data: conflictRows, error: conflictError } = await supabase
+        .from("reservations")
+        .select("id")
+        .eq("bay_id", selectedBay.id)
+        .not("status", "in", `(${INACTIVE_RESERVATION_STATUSES.join(",")})`)
+        .lt("starts_at", endsAt.toISOString())
+        .gt("ends_at", startsAt.toISOString());
+
+      if (conflictError) throw new Error(conflictError.message);
+
+      if (conflictRows && conflictRows.length > 0) {
+        setError("방금 다른 예약이 접수되어 선택하신 타석·시간이 마감되었습니다. 다시 선택해주세요.");
+        await loadData();
+        setIsLoading(false);
+        return;
+      }
+
       const { error: insertError } = await supabase.from("reservations").insert({
         store_id: selectedStoreId,
-        bay_id: selectedBay?.id ?? null,
+        bay_id: selectedBay.id,
         guest_name: `${customerName.trim()} / ${maskPhone(phoneLast4)}`,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
@@ -281,6 +444,13 @@ export default function MemberAppPage() {
       });
 
       if (insertError) {
+        if (insertError.code === "23P01") {
+          setError(toReservationErrorMessage(insertError));
+          await loadData();
+          setIsLoading(false);
+          return;
+        }
+
         throw new Error(insertError.message);
       }
 
@@ -288,6 +458,7 @@ export default function MemberAppPage() {
       setCustomerName("");
       setPhoneLast4("");
       setSelectedBayId("auto");
+      setIsReviewing(false);
       await loadData();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "예약 신청에 실패했습니다.");
@@ -297,7 +468,7 @@ export default function MemberAppPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#eef2ec] px-4 py-6 text-vista-ink">
+    <main className="min-h-screen bg-[#eef2ec] px-4 pb-28 pt-6 text-vista-ink">
       <div className="mx-auto max-w-md rounded-[28px] border border-[#d9e3d5] bg-white p-5 shadow-soft-line">
         <header className="flex items-center justify-between gap-3 border-b border-[#e5ece1] pb-4">
           <div>
@@ -309,18 +480,12 @@ export default function MemberAppPage() {
           </div>
         </header>
 
-        <section className="mt-5 rounded-md bg-vista-fairway p-4">
-          <p className="text-sm font-bold text-[#697468]">모바일 예약</p>
-          <h2 className="mt-1 text-xl font-extrabold">예약하면 매장 준비가 자동으로 시작됩니다</h2>
-          <p className="mt-2 text-sm leading-6 text-[#697468]">
-            예약 시간에 맞춰 매장 조명, 프로젝터, PC 전원 자동 준비를 연결하기 위한 고객 예약 화면입니다.
-          </p>
-        </section>
+        <PwaInstallCard />
 
         <section className="mt-5">
           <div className="flex items-center gap-2">
             <Store className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">예약 매장</h2>
+            <h2 className="text-lg font-extrabold">1. 예약 매장</h2>
           </div>
 
           <div className="mt-3 rounded-md border border-[#dfe8dc] bg-white p-4">
@@ -352,6 +517,7 @@ export default function MemberAppPage() {
                 <h3 className="font-extrabold">{selectedStore?.name ?? "매장 선택 대기"}</h3>
                 <p className="mt-1 text-sm font-semibold text-[#697468]">{selectedStore?.address ?? "주소 준비 중"}</p>
                 <p className="mt-2 text-xs font-bold text-vista-leaf">{selectedStore?.phone ?? "매장 전화 준비 중"}</p>
+                <p className="mt-1 text-xs font-bold text-[#4f5b50]">운영시간 09:30 ~ 21:00</p>
                 <p className="mt-2 text-xs font-bold text-[#4f5b50]">예약 가능 타석 {availableBays.length}개</p>
               </div>
             </div>
@@ -361,7 +527,7 @@ export default function MemberAppPage() {
         <section className="mt-5 rounded-md border border-[#dfe8dc] p-4">
           <div className="flex items-center gap-2">
             <CalendarClock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">예약 신청</h2>
+            <h2 className="text-lg font-extrabold">2. 예약자 정보</h2>
           </div>
 
           <div className="mt-4 grid gap-3">
@@ -393,6 +559,11 @@ export default function MemberAppPage() {
             </label>
           </div>
 
+          <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
+            <CalendarClock className="text-vista-leaf" size={21} aria-hidden="true" />
+            <h2 className="text-lg font-extrabold">3. 날짜와 시간</h2>
+          </div>
+
           <div className="mt-4 grid grid-cols-3 gap-2">
             {dateOptions.map((date) => (
               <button
@@ -409,28 +580,34 @@ export default function MemberAppPage() {
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {timeSlots.map((time) => {
-              const isPast = isPastTimeSlot(selectedDate, time, now);
+            {timeSlotStates.map((slot) => {
+              const isDisabled = slot.isPast || slot.isSoldOut;
 
               return (
                 <button
-                  key={time}
+                  key={slot.time}
                   type="button"
-                  onClick={() => setSelectedTime(time)}
-                  disabled={isPast}
-                  aria-disabled={isPast}
-                  className={`rounded-md px-3 py-3 text-sm font-extrabold ${
-                    isPast
+                  onClick={() => setSelectedTime(slot.time)}
+                  disabled={isDisabled}
+                  aria-disabled={isDisabled}
+                  className={`min-h-[54px] rounded-md px-3 py-2 text-sm font-extrabold ${
+                    isDisabled
                       ? "cursor-not-allowed border border-[#d8ddd5] bg-[#f0f2ee] text-[#9aa39a] line-through"
-                      : selectedTime === time
+                      : selectedTime === slot.time
                         ? "bg-vista-night text-white"
                         : "border border-[#cad8c6] bg-white"
                   }`}
                 >
-                  {time}
+                  <span className="block">{slot.time}</span>
+                  {slot.isSoldOut && !slot.isPast ? <span className="mt-0.5 block text-[11px] no-underline">마감</span> : null}
                 </button>
               );
             })}
+          </div>
+
+          <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
+            <UserRound className="text-vista-leaf" size={21} aria-hidden="true" />
+            <h2 className="text-lg font-extrabold">4. 인원과 이용시간</h2>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -463,6 +640,22 @@ export default function MemberAppPage() {
             ))}
           </div>
 
+          <div className="mt-3 rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-extrabold">예상 이용요금</p>
+              <strong className="text-lg text-vista-leaf">{formatCurrency(estimatedPrice)}</strong>
+            </div>
+            <p className="mt-1 text-xs font-semibold leading-5 text-[#697468]">
+              온라인 결제는 1차 MVP 범위에서 제외되어 있으며, 실제 결제 방식은 매장 정책에 따릅니다.
+            </p>
+          </div>
+
+          {durationMinutes >= 90 ? (
+            <p className="mt-3 rounded-md bg-[#eef5ff] px-3 py-2 text-xs font-bold leading-5 text-[#28516f]">
+              선택한 시작 시간부터 {durationMinutes}분 전체 구간이 한 번에 예약됩니다.
+            </p>
+          ) : null}
+
           <label className="mt-3 grid gap-1 text-sm font-bold text-[#4f5b50]">
             타석 선택
             <select
@@ -489,6 +682,33 @@ export default function MemberAppPage() {
             </p>
           )}
 
+          {isReviewing ? (
+            <section className="mt-5 rounded-md border border-vista-mint bg-vista-fairway p-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="text-vista-leaf" size={21} aria-hidden="true" />
+                <h2 className="text-lg font-extrabold">5. 예약 확인</h2>
+              </div>
+              <dl className="mt-4 grid gap-2 text-sm">
+                {[
+                  ["매장", selectedStore?.name ?? "매장 선택 대기"],
+                  ["주소", selectedStore?.address ?? "주소 준비 중"],
+                  ["날짜", formatReservationDate(selectedDate)],
+                  ["시간", `${selectedTime} ~ ${new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(previewEndsAt)}`],
+                  ["이용시간", `${durationMinutes}분`],
+                  ["인원", `${partySize}명`],
+                  ["타석", selectedBay ? `${selectedBay.bay_code} · ${selectedBay.display_name}` : "자동 배정"],
+                  ["예상요금", formatCurrency(estimatedPrice)],
+                  ["취소안내", "예약 시간 1시간 전까지 매장에 연락해 취소할 수 있습니다."]
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-4 rounded-md bg-white/80 px-3 py-2">
+                    <dt className="shrink-0 font-bold text-[#697468]">{label}</dt>
+                    <dd className="text-right font-extrabold">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+
           {error ? (
             <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
               {error}
@@ -501,16 +721,6 @@ export default function MemberAppPage() {
             </p>
           ) : null}
 
-          <button
-            type="button"
-            onClick={submitReservation}
-            disabled={isLoading || !selectedStore}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-vista-leaf px-4 py-4 text-base font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isLoading ? <Loader2 className="animate-spin" size={20} aria-hidden="true" /> : null}
-            예약 신청
-            <ChevronRight size={20} aria-hidden="true" />
-          </button>
         </section>
 
         <section className="mt-5">
@@ -592,6 +802,27 @@ export default function MemberAppPage() {
             내역
           </span>
         </footer>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#d9e3d5] bg-white/95 px-4 py-3 shadow-[0_-12px_30px_rgba(25,33,28,0.12)] backdrop-blur">
+        <div className="mx-auto flex max-w-md items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-bold text-[#697468]">
+              {selectedStore?.name ?? "매장 선택"} · {selectedTime} · {durationMinutes}분
+            </p>
+            <p className="mt-0.5 text-sm font-extrabold text-vista-ink">{formatCurrency(estimatedPrice)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrimaryAction}
+            disabled={isLoading || !selectedStore}
+            className="flex min-h-[52px] min-w-[156px] items-center justify-center gap-2 rounded-md bg-vista-leaf px-4 py-3 text-base font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? <Loader2 className="animate-spin" size={20} aria-hidden="true" /> : null}
+            {isReviewing ? "예약 확정" : "예약 내용 확인"}
+            <ChevronRight size={20} aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </main>
   );

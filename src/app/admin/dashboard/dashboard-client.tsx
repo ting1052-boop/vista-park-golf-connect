@@ -119,19 +119,34 @@ function addMinutesToClock(time: string | undefined, minutes: number) {
 
 type DashboardClientProps = {
   initialBays: LiveBay[];
+  initialStoreSummaries?: DashboardStoreSummary[];
   initialError?: string | null;
 };
 
-export function DashboardClient({ initialBays, initialError = null }: DashboardClientProps) {
+type DashboardStoreSummary = {
+  id?: string;
+  store: string;
+  address?: string;
+  phone?: string;
+  bayCount?: number;
+  region?: string;
+  reservations?: string;
+  status: string;
+};
+
+export function DashboardClient({ initialBays, initialStoreSummaries, initialError = null }: DashboardClientProps) {
   const [bays, setBays] = useState<LiveBay[]>(initialBays.length > 0 ? initialBays : liveBayRows);
   const [alerts, setAlerts] = useState<AdminAlert[]>(adminAlertRows);
   const [logs, setLogs] = useState<ControlLog[]>(automationLogRows);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(initialError);
   const [isSyncing, setIsSyncing] = useState(false);
+  const storeSummaries: DashboardStoreSummary[] =
+    initialStoreSummaries && initialStoreSummaries.length > 0 ? initialStoreSummaries : storeSummaryRows.map((row) => ({ ...row }));
 
   useEffect(() => {
+    setNow(new Date());
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -193,19 +208,23 @@ export function DashboardClient({ initialBays, initialError = null }: DashboardC
     [bays]
   );
 
-  const nowText = now.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  });
+  const nowText = now
+    ? now.toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      })
+    : "--:--:--";
 
-  const todayText = now.toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long"
-  });
+  const todayText = now
+    ? now.toLocaleDateString("ko-KR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        weekday: "long"
+      })
+    : "";
 
   const addLog = (target: string, event: string, result = "완료", tone: LogTone = "control") => {
     setLogs((prev) => [
@@ -667,13 +686,17 @@ export function DashboardClient({ initialBays, initialError = null }: DashboardC
               <article className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
                 <h3 className="text-lg font-extrabold">본사 매장 현황</h3>
                 <div className="mt-4 grid gap-3">
-                  {storeSummaryRows.map((row) => (
+                  {storeSummaries.map((row) => (
                     <div key={row.store} className="rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-extrabold">{row.store}</p>
                         <span className="text-xs font-bold text-vista-leaf">{row.status}</span>
                       </div>
                       <p className="mt-2 text-xs font-semibold text-[#697468]">
+                        {row.address ?? row.region ?? "주소 미등록"} · 타석 {row.bayCount ?? row.reservations ?? 0}
+                        {row.phone ? ` · ${row.phone}` : ""}
+                      </p>
+                      <p className="hidden">
                         {row.region} · 오늘 예약 {row.reservations}
                       </p>
                     </div>
