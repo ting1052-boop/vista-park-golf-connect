@@ -24,11 +24,18 @@ import { toReservationErrorMessage } from "@/lib/supabase/reservation-errors";
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const STORE_TIME_ZONE = "Asia/Seoul";
 const timeSlots = ["09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "18:00", "19:00"];
-const priceByDuration: Record<number, number> = {
-  60: 11000,
-  90: 16500,
-  120: 22000
-};
+const durationOptions = [
+  { minutes: 30, price: 6000, bonusMinutes: 0 },
+  { minutes: 60, price: 10000, bonusMinutes: 10 },
+  { minutes: 90, price: 16000, bonusMinutes: 0 },
+  { minutes: 120, price: 20000, bonusMinutes: 0 }
+] as const;
+
+const priceByDuration = Object.fromEntries(durationOptions.map((option) => [option.minutes, option.price])) as Record<number, number>;
+const bonusMinutesByDuration = Object.fromEntries(durationOptions.map((option) => [option.minutes, option.bonusMinutes])) as Record<
+  number,
+  number
+>;
 
 type StoreRow = {
   id: string;
@@ -131,6 +138,20 @@ function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000);
 }
 
+function getBonusMinutes(durationMinutes: number) {
+  return bonusMinutesByDuration[durationMinutes] ?? 0;
+}
+
+function getReservedMinutes(durationMinutes: number) {
+  return durationMinutes + getBonusMinutes(durationMinutes);
+}
+
+function formatDurationLabel(durationMinutes: number) {
+  const bonusMinutes = getBonusMinutes(durationMinutes);
+
+  return bonusMinutes > 0 ? `${durationMinutes}분 + ${bonusMinutes}분` : `${durationMinutes}분`;
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("ko-KR", { style: "currency", currency: "KRW", maximumFractionDigits: 0 }).format(value);
 }
@@ -189,10 +210,12 @@ export default function MemberAppPage() {
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
   const selectedStoreBays = bays.filter((bay) => bay.store_id === selectedStoreId);
   const approvalRequired = durationMinutes > 60 || partySize >= 5;
+  const reservedMinutes = getReservedMinutes(durationMinutes);
+  const bonusMinutes = getBonusMinutes(durationMinutes);
   const previewStartsAt = useMemo(() => toReservationDate(selectedDate, selectedTime), [selectedDate, selectedTime]);
   const previewEndsAt = useMemo(
-    () => addMinutes(previewStartsAt, durationMinutes),
-    [previewStartsAt, durationMinutes]
+    () => addMinutes(previewStartsAt, reservedMinutes),
+    [previewStartsAt, reservedMinutes]
   );
 
   const getBlockedBayIds = (startsAt: Date, endsAt: Date) => {
@@ -219,7 +242,7 @@ export default function MemberAppPage() {
     () =>
       timeSlots.map((time) => {
         const startsAt = toReservationDate(selectedDate, time);
-        const endsAt = addMinutes(startsAt, durationMinutes);
+        const endsAt = addMinutes(startsAt, reservedMinutes);
         const blockedBayIds = getBlockedBayIds(startsAt, endsAt);
         const availableCount = selectedStoreBays.filter(
           (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
@@ -233,7 +256,7 @@ export default function MemberAppPage() {
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeReservations, durationMinutes, now, selectedDate, selectedStoreBays]
+    [activeReservations, now, reservedMinutes, selectedDate, selectedStoreBays]
   );
 
   const availableTimeSlots = useMemo(
@@ -251,7 +274,7 @@ export default function MemberAppPage() {
     (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
   );
   const selectedBay = selectedBayId === "auto" ? availableBays[0] : availableBays.find((bay) => bay.id === selectedBayId);
-  const estimatedPrice = priceByDuration[durationMinutes] ?? Math.round((durationMinutes / 60) * priceByDuration[60]);
+  const estimatedPrice = priceByDuration[durationMinutes] ?? Math.round((durationMinutes / 30) * priceByDuration[30]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -404,7 +427,7 @@ export default function MemberAppPage() {
         return;
       }
 
-      const endsAt = addMinutes(startsAt, durationMinutes);
+      const endsAt = addMinutes(startsAt, reservedMinutes);
       const selectedBay = selectedBayId === "auto" ? availableBays[0] : bays.find((bay) => bay.id === selectedBayId);
 
       if (!selectedBay) {
@@ -625,17 +648,20 @@ export default function MemberAppPage() {
             ))}
           </div>
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {[60, 90, 120].map((minutes) => (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {durationOptions.map((option) => (
               <button
-                key={minutes}
+                key={option.minutes}
                 type="button"
-                onClick={() => setDurationMinutes(minutes)}
-                className={`rounded-md px-3 py-3 text-sm font-extrabold ${
-                  durationMinutes === minutes ? "bg-vista-night text-white" : "border border-[#cad8c6] bg-white"
+                onClick={() => setDurationMinutes(option.minutes)}
+                className={`min-h-[68px] rounded-md px-3 py-3 text-sm font-extrabold ${
+                  durationMinutes === option.minutes ? "bg-vista-night text-white" : "border border-[#cad8c6] bg-white"
                 }`}
               >
-                {minutes}분
+                <span className="block">{formatDurationLabel(option.minutes)}</span>
+                <span className={`mt-1 block text-xs ${durationMinutes === option.minutes ? "text-white/80" : "text-[#697468]"}`}>
+                  {formatCurrency(option.price)}
+                </span>
               </button>
             ))}
           </div>
@@ -650,9 +676,13 @@ export default function MemberAppPage() {
             </p>
           </div>
 
-          {durationMinutes >= 90 ? (
+          <p className="mt-3 rounded-md bg-[#edf6ef] px-3 py-2 text-xs font-bold leading-5 text-vista-leaf">
+            1시간 예약은 서비스 시간 10분을 더해 총 70분 이용으로 배정됩니다.
+          </p>
+
+          {durationMinutes >= 90 || bonusMinutes > 0 ? (
             <p className="mt-3 rounded-md bg-[#eef5ff] px-3 py-2 text-xs font-bold leading-5 text-[#28516f]">
-              선택한 시작 시간부터 {durationMinutes}분 전체 구간이 한 번에 예약됩니다.
+              선택한 시작 시간부터 총 {reservedMinutes}분 구간이 한 번에 예약됩니다.
             </p>
           ) : null}
 
@@ -694,7 +724,7 @@ export default function MemberAppPage() {
                   ["주소", selectedStore?.address ?? "주소 준비 중"],
                   ["날짜", formatReservationDate(selectedDate)],
                   ["시간", `${selectedTime} ~ ${new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(previewEndsAt)}`],
-                  ["이용시간", `${durationMinutes}분`],
+                  ["이용시간", formatDurationLabel(durationMinutes)],
                   ["인원", `${partySize}명`],
                   ["타석", selectedBay ? `${selectedBay.bay_code} · ${selectedBay.display_name}` : "자동 배정"],
                   ["예상요금", formatCurrency(estimatedPrice)],
@@ -808,7 +838,7 @@ export default function MemberAppPage() {
         <div className="mx-auto flex max-w-md items-center gap-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-bold text-[#697468]">
-              {selectedStore?.name ?? "매장 선택"} · {selectedTime} · {durationMinutes}분
+              {selectedStore?.name ?? "매장 선택"} · {selectedTime} · {formatDurationLabel(durationMinutes)}
             </p>
             <p className="mt-0.5 text-sm font-extrabold text-vista-ink">{formatCurrency(estimatedPrice)}</p>
           </div>
