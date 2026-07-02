@@ -662,7 +662,7 @@ export default function MemberAppPage() {
           </div>
 
           <p className="mt-3 rounded-md bg-[#edf6ef] px-3 py-2 text-xs font-bold leading-5 text-vista-leaf">
-            1시간 예약은 서비스 시간 10분을 더해 총 70분 이용으로 배정됩니다.
+            1시간부터 서비스 시간이 적용되며, 30분 추가마다 서비스 10분이 함께 제공됩니다.
           </p>
 
           {durationMinutes >= 90 || bonusMinutes > 0 ? (

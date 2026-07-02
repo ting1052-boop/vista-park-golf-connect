@@ -5,8 +5,8 @@
 export const durationOptions = [
   { minutes: 30, price: 6000, bonusMinutes: 0 },
   { minutes: 60, price: 10000, bonusMinutes: 10 },
-  { minutes: 90, price: 16000, bonusMinutes: 0 },
-  { minutes: 120, price: 20000, bonusMinutes: 0 }
+  { minutes: 90, price: 16000, bonusMinutes: 20 },
+  { minutes: 120, price: 22000, bonusMinutes: 30 }
 ] as const;
 
 export type DurationOption = (typeof durationOptions)[number];
@@ -24,7 +24,8 @@ export function isSupportedDuration(minutes: number): boolean {
   return durationOptions.some((option) => option.minutes === minutes);
 }
 
-// 실제 타석을 점유하는 시간 (60분 예약은 서비스 10분을 더해 70분 차단)
+// 실제 타석을 점유하는 시간.
+// 60분부터는 서비스 시간이 누적되어 60분=70분, 90분=110분, 120분=150분을 차단한다.
 export function getBlockMinutes(durationMinutes: number): number {
   return durationMinutes + (bonusMinutesByDuration[durationMinutes] ?? 0);
 }
