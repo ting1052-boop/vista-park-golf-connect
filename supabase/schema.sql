@@ -689,6 +689,11 @@ as $$
   );
 $$;
 
+-- NOTE: the policies below are the full role-based design (head_admin /
+-- store_manager / staff / member). The MVP deployment uses the simplified
+-- policy set in migrations/202607010003_tighten_rls_and_grants.sql instead;
+-- that file is what is applied to the live database until store-level role
+-- separation ships in 2차.
 alter table public.users enable row level security;
 alter table public.stores enable row level security;
 alter table public.store_users enable row level security;

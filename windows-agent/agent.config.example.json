@@ -1,0 +1,15 @@
+{
+  "agentId": "vista-siheung-bay-01",
+  "storeId": "11111111-1111-4111-8111-111111111111",
+  "bayId": "aaaaaaaa-0001-4000-8000-000000000001",
+  "bayCode": "A-01",
+  "pcName": "VISTA-BAY-01",
+  "apiBaseUrl": "https://vista-park-golf-connect.vercel.app",
+  "agentSecret": "change-me",
+  "heartbeatIntervalSeconds": 15,
+  "warningBeforeMinutes": 10,
+  "gameProcessNames": ["ParkGolf.exe", "chrome.exe"],
+  "openWarningScreen": true,
+  "openLockScreen": true,
+  "sessionFile": "agent-session.json"
+}

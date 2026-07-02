@@ -1,0 +1,13 @@
+{
+  "name": "vista-windows-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Windows bay agent for VISTA Park Golf Connect",
+  "scripts": {
+    "start": "node vista-agent.js",
+    "check": "node --check vista-agent.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VISTA 이용 종료</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --green: #2f7d50;
+        --ink: #111827;
+        --muted: #52625b;
+        --red: #dc2626;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #edf4ef;
+        color: var(--ink);
+        font-family: "Malgun Gothic", "Segoe UI", Arial, sans-serif;
+      }
+
+      main {
+        width: min(960px, calc(100vw - 48px));
+        padding: 64px;
+        border: 1px solid #cfe2d4;
+        border-radius: 28px;
+        background: #fff;
+        box-shadow: 0 24px 80px rgba(30, 67, 42, 0.18);
+        text-align: center;
+      }
+
+      .brand {
+        margin-bottom: 20px;
+        color: var(--green);
+        font-weight: 800;
+      }
+
+      .status {
+        display: inline-flex;
+        margin-bottom: 28px;
+        padding: 12px 24px;
+        border-radius: 999px;
+        background: #fee2e2;
+        color: var(--red);
+        font-size: 24px;
+        font-weight: 900;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(48px, 7vw, 82px);
+        line-height: 1.08;
+      }
+
+      p {
+        margin: 24px auto 0;
+        max-width: 760px;
+        color: var(--muted);
+        font-size: clamp(24px, 3vw, 34px);
+        line-height: 1.55;
+        word-break: keep-all;
+      }
+
+      .bay {
+        margin-top: 40px;
+        padding: 24px;
+        border-radius: 20px;
+        background: #f2f7f1;
+        color: var(--green);
+        font-size: 34px;
+        font-weight: 900;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">VISTA Park Golf Connect</div>
+      <div class="status">이용시간 종료</div>
+      <h1>이용이 종료되었습니다</h1>
+      <p>추가 이용을 원하시면 입구 키오스크에서 연장하거나 관리자에게 문의해 주세요.</p>
+      <div class="bay" id="bay">타석</div>
+    </main>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      document.getElementById("bay").textContent = params.get("bay") || "타석";
+    </script>
+  </body>
+</html>

@@ -20,22 +20,11 @@ import { PwaInstallCard } from "@/components/pwa-install-card";
 import { SocialLoginPanel } from "@/components/social-login-panel";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { toReservationErrorMessage } from "@/lib/supabase/reservation-errors";
+import { bonusMinutesByDuration, durationOptions, priceByDuration } from "@/lib/reservation-policy";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const STORE_TIME_ZONE = "Asia/Seoul";
 const timeSlots = ["09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "18:00", "19:00"];
-const durationOptions = [
-  { minutes: 30, price: 6000, bonusMinutes: 0 },
-  { minutes: 60, price: 10000, bonusMinutes: 10 },
-  { minutes: 90, price: 16000, bonusMinutes: 0 },
-  { minutes: 120, price: 20000, bonusMinutes: 0 }
-] as const;
-
-const priceByDuration = Object.fromEntries(durationOptions.map((option) => [option.minutes, option.price])) as Record<number, number>;
-const bonusMinutesByDuration = Object.fromEntries(durationOptions.map((option) => [option.minutes, option.bonusMinutes])) as Record<
-  number,
-  number
->;
 
 type StoreRow = {
   id: string;

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VISTA 이용시간 안내</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --green: #2f7d50;
+        --ink: #111827;
+        --muted: #52625b;
+        --soft: #f2f7f1;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #eef6ef, #ffffff);
+        color: var(--ink);
+        font-family: "Malgun Gothic", "Segoe UI", Arial, sans-serif;
+      }
+
+      main {
+        width: min(920px, calc(100vw - 48px));
+        padding: 56px;
+        border: 1px solid #cfe2d4;
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 24px 80px rgba(30, 67, 42, 0.18);
+        text-align: center;
+      }
+
+      .brand {
+        margin-bottom: 20px;
+        color: var(--green);
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 160px;
+        margin-bottom: 28px;
+        padding: 12px 22px;
+        border-radius: 999px;
+        background: #fff7ed;
+        color: #9a3412;
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(42px, 6vw, 72px);
+        line-height: 1.1;
+      }
+
+      p {
+        margin: 22px auto 0;
+        max-width: 720px;
+        color: var(--muted);
+        font-size: clamp(22px, 3vw, 32px);
+        line-height: 1.55;
+        word-break: keep-all;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 40px;
+      }
+
+      .action {
+        padding: 22px;
+        border-radius: 18px;
+        background: var(--soft);
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      .primary {
+        background: var(--green);
+        color: #fff;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding: 36px 24px;
+          border-radius: 22px;
+        }
+
+        .actions {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">VISTA Park Golf Connect</div>
+      <div class="badge" id="bay">타석</div>
+      <h1>이용 종료가 가까워졌습니다</h1>
+      <p>
+        남은 시간은 <strong id="remaining">10</strong>분입니다. 이용 연장을 원하시면 입구 키오스크 또는
+        관리자에게 문의해 주세요.
+      </p>
+      <div class="actions">
+        <div class="action primary">연장 안내 확인</div>
+        <div class="action">종료 전 정리 준비</div>
+      </div>
+    </main>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const bay = params.get("bay") || "타석";
+      const remaining = params.get("remaining") || "10";
+      document.getElementById("bay").textContent = bay;
+      document.getElementById("remaining").textContent = remaining;
+    </script>
+  </body>
+</html>
