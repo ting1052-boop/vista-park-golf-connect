@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Delete, Loader2, MonitorPlay, Phone, Store, UserRound } from "lucide-react";
+import { CalendarCheck, Delete, Loader2, MonitorPlay, Phone, Store } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { durationOptions, getDurationLabel, priceByDuration } from "@/lib/reservation-policy";
 
@@ -36,7 +36,6 @@ type Screen =
   | "home"
   | "phone"
   | "select"
-  | "walkin-party"
   | "walkin-duration"
   | "walkin-confirm"
   | "processing"
@@ -90,7 +89,6 @@ export default function KioskEntrancePage() {
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [phoneLast4, setPhoneLast4] = useState("");
   const [reservations, setReservations] = useState<KioskReservation[]>([]);
-  const [partySize, setPartySize] = useState(2);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [processingText, setProcessingText] = useState("처리 중입니다");
   const [done, setDone] = useState<DoneInfo | null>(null);
@@ -113,7 +111,6 @@ export default function KioskEntrancePage() {
     setScreen("home");
     setPhoneLast4("");
     setReservations([]);
-    setPartySize(2);
     setDurationMinutes(60);
     setDone(null);
     setError(null);
@@ -190,7 +187,7 @@ export default function KioskEntrancePage() {
     try {
       const data = await callKioskApi<DoneInfo>("/api/kiosk/walk-in/start", {
         storeId: DEFAULT_STORE_ID,
-        partySize,
+        partySize: 1,
         durationMinutes,
         paymentStatus: "mock_paid"
       });
@@ -230,7 +227,7 @@ export default function KioskEntrancePage() {
             </button>
             <button
               type="button"
-              onClick={() => setScreen("walkin-party")}
+              onClick={() => setScreen("walkin-duration")}
               className="flex min-h-[220px] w-full items-center justify-center gap-5 rounded-[28px] border-2 border-vista-leaf bg-white px-8 text-[30px] font-extrabold text-vista-leaf shadow-soft-line md:h-[50vh] md:min-h-[320px] md:w-[40%] md:flex-col md:text-[34px]"
             >
               <MonitorPlay className="size-12 md:size-16" aria-hidden="true" />
@@ -319,30 +316,6 @@ export default function KioskEntrancePage() {
           </section>
         ) : null}
 
-        {screen === "walkin-party" ? (
-          <section className="rounded-[24px] border border-[#d9e3d5] bg-white p-8 shadow-soft-line">
-            <h2 className="flex items-center justify-center gap-3 text-center text-[30px] font-extrabold">
-              <UserRound size={30} className="text-vista-leaf" aria-hidden="true" />
-              몇 명이 이용하시나요?
-            </h2>
-            <div className="mt-6 grid grid-cols-2 gap-4">
-              {[1, 2, 3, 4, 5, 6].map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  onClick={() => {
-                    setPartySize(count);
-                    setScreen("walkin-duration");
-                  }}
-                  className="min-h-[88px] rounded-[20px] border-2 border-[#cad8c6] bg-white text-[26px] font-extrabold active:bg-vista-fairway"
-                >
-                  {count}명
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
         {screen === "walkin-duration" ? (
           <section className="rounded-[24px] border border-[#d9e3d5] bg-white p-8 shadow-soft-line">
             <h2 className="text-center text-[30px] font-extrabold">이용시간을 선택해주세요</h2>
@@ -371,7 +344,6 @@ export default function KioskEntrancePage() {
             <dl className="mt-6 grid gap-3 text-[22px]">
               {[
                 ["매장", store?.name ?? "비스타파크골프"],
-                ["인원", `${partySize}명`],
                 ["이용시간", getDurationLabel(durationMinutes)],
                 ["요금", `${priceByDuration[durationMinutes].toLocaleString("ko-KR")}원`],
                 ["배정 방식", "빈 타석 자동 배정"]
