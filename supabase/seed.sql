@@ -9,6 +9,21 @@ values
   ('22222222-2222-4222-8222-222222222222', 'VISTA-BD', '비스타파크골프 분당점', 'HH Square', '123-45-67891', '경기도 성남시 분당구 정자로 20', '031-700-2000', 'active', '2026-02-15')
 on conflict (id) do nothing;
 
+insert into public.store_settings (
+  store_id,
+  extension_mode,
+  extension_minutes,
+  extension_notice_minutes,
+  extension_deadline_minutes,
+  extension_buffer_minutes,
+  extension_price,
+  conflict_policy
+)
+values
+  ('11111111-1111-4111-8111-111111111111', 'auto', 30, 10, 3, 10, 6000, 'partial'),
+  ('22222222-2222-4222-8222-222222222222', 'manual', 30, 10, 3, 10, 6000, 'manual_review')
+on conflict (store_id) do nothing;
+
 insert into public.bays (id, store_id, bay_code, display_name, status, memo)
 values
   ('aaaaaaaa-0001-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'A-01', 'A구역 1번 타석', 'in_use', '오전 예약 우선 타석'),

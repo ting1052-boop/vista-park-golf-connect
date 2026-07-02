@@ -50,6 +50,28 @@ create table public.stores (
   updated_at timestamptz not null default now()
 );
 
+create table public.store_settings (
+  store_id uuid primary key references public.stores(id) on delete cascade,
+  extension_mode text not null default 'auto',
+  extension_minutes integer not null default 30,
+  extension_notice_minutes integer not null default 10,
+  extension_deadline_minutes integer,
+  extension_buffer_minutes integer not null default 10,
+  extension_price integer not null default 6000,
+  conflict_policy text not null default 'partial',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint store_settings_extension_mode_check check (extension_mode in ('auto', 'manual')),
+  constraint store_settings_extension_minutes_check check (extension_minutes between 5 and 240),
+  constraint store_settings_extension_notice_minutes_check check (extension_notice_minutes between 1 and 120),
+  constraint store_settings_extension_deadline_minutes_check check (
+    extension_deadline_minutes is null or extension_deadline_minutes between 0 and 120
+  ),
+  constraint store_settings_extension_buffer_minutes_check check (extension_buffer_minutes between 0 and 240),
+  constraint store_settings_extension_price_check check (extension_price >= 0),
+  constraint store_settings_conflict_policy_check check (conflict_policy in ('reject', 'partial', 'manual_review'))
+);
+
 create table public.store_users (
   store_id uuid not null references public.stores(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
@@ -275,6 +297,58 @@ create table public.kiosk_sessions (
   constraint kiosk_sessions_remaining_seconds_check check (remaining_seconds >= 0)
 );
 
+create table public.extension_requests (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  access_session_id uuid not null references public.access_sessions(id) on delete cascade,
+  reservation_id uuid references public.reservations(id) on delete set null,
+  bay_id uuid references public.bays(id) on delete set null,
+  requested_minutes integer not null default 30,
+  approved_minutes integer,
+  status text not null default 'requested',
+  decision_source text,
+  requested_at timestamptz not null default now(),
+  decided_at timestamptz,
+  decided_by_user_id uuid references public.users(id) on delete set null,
+  requested_ends_at timestamptz,
+  approved_ends_at timestamptz,
+  price_amount integer not null default 0,
+  price_currency text not null default 'KRW',
+  conflict_policy text not null default 'partial',
+  memo text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint extension_requests_requested_minutes_check check (requested_minutes between 1 and 240),
+  constraint extension_requests_approved_minutes_check check (
+    approved_minutes is null or approved_minutes between 0 and 240
+  ),
+  constraint extension_requests_status_check check (status in ('requested', 'approved', 'rejected', 'expired')),
+  constraint extension_requests_decision_source_check check (
+    decision_source is null or decision_source in ('auto', 'manual', 'system')
+  ),
+  constraint extension_requests_price_amount_check check (price_amount >= 0),
+  constraint extension_requests_conflict_policy_check check (conflict_policy in ('reject', 'partial', 'manual_review')),
+  constraint extension_requests_decision_check check (
+    (status = 'requested' and decided_at is null)
+    or (status <> 'requested' and decided_at is not null)
+  )
+);
+
+create table public.agent_devices (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  bay_id uuid not null references public.bays(id) on delete cascade,
+  label text not null default 'VISTA Bay Agent',
+  token_hash text not null unique,
+  is_active boolean not null default true,
+  last_seen_at timestamptz,
+  agent_version text,
+  pc_name text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (bay_id)
+);
+
 create table public.automation_logs (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
@@ -484,6 +558,10 @@ create index automation_scene_steps_scene_idx on public.automation_scene_steps(s
 create index access_sessions_store_status_idx on public.access_sessions(store_id, status, started_at desc);
 create index access_sessions_reservation_idx on public.access_sessions(reservation_id);
 create index kiosk_sessions_access_idx on public.kiosk_sessions(access_session_id);
+create index extension_requests_store_status_idx on public.extension_requests(store_id, status, requested_at desc);
+create index extension_requests_session_idx on public.extension_requests(access_session_id, requested_at desc);
+create index extension_requests_bay_status_idx on public.extension_requests(bay_id, status, requested_at desc);
+create index agent_devices_store_active_idx on public.agent_devices(store_id, is_active, last_seen_at desc);
 create index automation_logs_store_created_idx on public.automation_logs(store_id, created_at desc);
 create index device_logs_store_created_idx on public.device_logs(store_id, created_at desc);
 create index device_logs_bay_created_idx on public.device_logs(bay_id, created_at desc);
@@ -512,6 +590,8 @@ create trigger users_set_updated_at before update on public.users
   for each row execute function public.set_updated_at();
 create trigger stores_set_updated_at before update on public.stores
   for each row execute function public.set_updated_at();
+create trigger store_settings_set_updated_at before update on public.store_settings
+  for each row execute function public.set_updated_at();
 create trigger bays_set_updated_at before update on public.bays
   for each row execute function public.set_updated_at();
 create trigger reservations_set_updated_at before update on public.reservations
@@ -527,6 +607,10 @@ create trigger automation_scenes_set_updated_at before update on public.automati
 create trigger access_sessions_set_updated_at before update on public.access_sessions
   for each row execute function public.set_updated_at();
 create trigger kiosk_sessions_set_updated_at before update on public.kiosk_sessions
+  for each row execute function public.set_updated_at();
+create trigger extension_requests_set_updated_at before update on public.extension_requests
+  for each row execute function public.set_updated_at();
+create trigger agent_devices_set_updated_at before update on public.agent_devices
   for each row execute function public.set_updated_at();
 create trigger devices_set_updated_at before update on public.devices
   for each row execute function public.set_updated_at();
@@ -696,6 +780,7 @@ $$;
 -- separation ships in 2차.
 alter table public.users enable row level security;
 alter table public.stores enable row level security;
+alter table public.store_settings enable row level security;
 alter table public.store_users enable row level security;
 alter table public.bays enable row level security;
 alter table public.reservations enable row level security;
@@ -708,6 +793,8 @@ alter table public.automation_scenes enable row level security;
 alter table public.automation_scene_steps enable row level security;
 alter table public.access_sessions enable row level security;
 alter table public.kiosk_sessions enable row level security;
+alter table public.extension_requests enable row level security;
+alter table public.agent_devices enable row level security;
 alter table public.automation_logs enable row level security;
 alter table public.device_logs enable row level security;
 alter table public.devices enable row level security;
@@ -741,6 +828,21 @@ create policy stores_select_allowed on public.stores
 create policy stores_write_head_only on public.stores
   for all using (public.is_head_admin())
   with check (public.is_head_admin());
+
+create policy store_settings_select_staff on public.store_settings
+  for select using (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager', 'staff']::public.app_role[])
+  );
+create policy store_settings_manage_manager on public.store_settings
+  for all using (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager']::public.app_role[])
+  )
+  with check (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager']::public.app_role[])
+  );
 
 create policy store_users_select_allowed on public.store_users
   for select using (
@@ -873,6 +975,36 @@ create policy kiosk_sessions_manage_staff on public.kiosk_sessions
       where s.id = kiosk_sessions.access_session_id
         and public.has_store_role(s.store_id, array['store_manager', 'staff']::public.app_role[])
     )
+  );
+
+create policy extension_requests_select_staff on public.extension_requests
+  for select using (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager', 'staff']::public.app_role[])
+  );
+create policy extension_requests_manage_staff on public.extension_requests
+  for all using (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager', 'staff']::public.app_role[])
+  )
+  with check (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager', 'staff']::public.app_role[])
+  );
+
+create policy agent_devices_select_staff on public.agent_devices
+  for select using (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager', 'staff']::public.app_role[])
+  );
+create policy agent_devices_manage_manager on public.agent_devices
+  for all using (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager']::public.app_role[])
+  )
+  with check (
+    public.is_head_admin()
+    or public.has_store_role(store_id, array['store_manager']::public.app_role[])
   );
 
 create policy automation_logs_select_staff on public.automation_logs
