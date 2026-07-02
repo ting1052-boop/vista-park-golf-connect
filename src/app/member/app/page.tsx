@@ -56,7 +56,6 @@ type BayRow = {
 type ReservationRow = {
   id: string;
   starts_at: string;
-  guest_name: string | null;
   party_size: number | null;
   status: string | null;
   approval_required: boolean | null;
@@ -164,10 +163,6 @@ function formatReservationDate(dateValue: string) {
     day: "numeric",
     weekday: "long"
   }).format(new Date(Date.UTC(year, month - 1, day, 12)));
-}
-
-function maskPhone(phoneLast4: string) {
-  return phoneLast4 ? `010-****-${phoneLast4}` : "전화번호 미입력";
 }
 
 function getBayCode(row: ReservationRow) {
@@ -291,7 +286,7 @@ export default function MemberAppPage() {
         supabase.from("bays").select("id, store_id, bay_code, display_name, status").order("bay_code", { ascending: true }),
         supabase
           .from("reservations")
-          .select("id, starts_at, guest_name, party_size, status, approval_required, bays(bay_code)")
+          .select("id, starts_at, party_size, status, approval_required, bays(bay_code)")
           .order("starts_at", { ascending: true })
           .limit(5),
         supabase
@@ -456,7 +451,8 @@ export default function MemberAppPage() {
       const { error: insertError } = await supabase.from("reservations").insert({
         store_id: selectedStoreId,
         bay_id: selectedBay.id,
-        guest_name: `${customerName.trim()} / ${maskPhone(phoneLast4)}`,
+        guest_name: customerName.trim(),
+        guest_phone_last4: phoneLast4,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
         party_size: partySize,
@@ -756,8 +752,11 @@ export default function MemberAppPage() {
         <section className="mt-5">
           <div className="flex items-center gap-2">
             <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">최근 예약</h2>
+            <h2 className="text-lg font-extrabold">예약 현황</h2>
           </div>
+          <p className="mt-1 text-xs font-semibold text-[#697468]">
+            개인정보 보호를 위해 예약자 정보는 표시하지 않습니다.
+          </p>
           <div className="mt-3 grid gap-3">
             {reservations.length > 0 ? (
               reservations.map((reservation) => (
@@ -773,14 +772,13 @@ export default function MemberAppPage() {
                         }).format(new Date(reservation.starts_at))}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-[#697468]">
-                        {reservation.guest_name ?? "예약 고객"} · {reservation.party_size ?? 1}명
+                        타석 {getBayCode(reservation)} · {reservation.party_size ?? 1}명
                       </p>
                     </div>
                     <span className="rounded-md bg-[#edf6ef] px-3 py-1 text-xs font-bold text-vista-leaf">
                       {getStatusLabel(reservation.status, reservation.approval_required)}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm font-bold text-[#4f5b50]">타석 {getBayCode(reservation)}</p>
                 </article>
               ))
             ) : (

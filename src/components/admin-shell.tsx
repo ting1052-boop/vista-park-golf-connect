@@ -2,7 +2,8 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   ArrowRight,
   Bell,
@@ -38,6 +39,14 @@ const navIconMap = {
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    router.replace("/admin/login");
+    router.refresh();
+  };
 
   if (pathname === "/admin/login" || pathname === "/admin/dashboard") {
     return children;
@@ -99,7 +108,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     <p className="text-xs font-semibold text-[#697468]">권한 적용 완료</p>
                   </div>
                 </div>
-                <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-bold text-[#384437]">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-bold text-[#384437]"
+                >
                   <LogOut size={16} aria-hidden="true" />
                   로그아웃
                 </button>

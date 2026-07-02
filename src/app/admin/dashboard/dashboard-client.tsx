@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -135,6 +137,7 @@ type DashboardStoreSummary = {
 };
 
 export function DashboardClient({ initialBays, initialStoreSummaries, initialError = null }: DashboardClientProps) {
+  const router = useRouter();
   const [bays, setBays] = useState<LiveBay[]>(initialBays.length > 0 ? initialBays : liveBayRows);
   const [alerts, setAlerts] = useState<AdminAlert[]>(adminAlertRows);
   const [logs, setLogs] = useState<ControlLog[]>(automationLogRows);
@@ -401,7 +404,16 @@ export function DashboardClient({ initialBays, initialStoreSummaries, initialErr
                     <p className="text-xs font-semibold text-[#697468]">본사관리자 권한 적용 완료</p>
                   </div>
                 </div>
-                <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-bold text-[#384437]">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const supabase = createBrowserSupabaseClient();
+                    await supabase.auth.signOut();
+                    router.replace("/admin/login");
+                    router.refresh();
+                  }}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-bold text-[#384437]"
+                >
                   <LogOut size={16} aria-hidden="true" />
                   로그아웃
                 </button>
