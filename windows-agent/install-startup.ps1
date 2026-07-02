@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $agentDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$target = Join-Path $agentDir "start-agent.cmd"
+$target = Join-Path $agentDir "start-overlay.cmd"
 $startup = [Environment]::GetFolderPath("Startup")
 $shortcut = Join-Path $startup "VISTA Windows Agent.lnk"
 

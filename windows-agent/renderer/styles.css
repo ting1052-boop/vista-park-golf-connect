@@ -1,0 +1,270 @@
+:root {
+  --vista-green: #2f7d4f;
+  --vista-deep: #101713;
+  --vista-mint: #dff3e6;
+  --vista-warn: #f59e0b;
+  --vista-danger: #e11d48;
+  --surface: rgba(255, 255, 255, 0.96);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family:
+    "Pretendard",
+    "Segoe UI",
+    "Malgun Gothic",
+    system-ui,
+    sans-serif;
+  color: var(--vista-deep);
+  background: transparent;
+}
+
+button {
+  font: inherit;
+}
+
+.agent-shell {
+  width: 100vw;
+  height: 100vh;
+}
+
+.mini-card,
+.warning-card,
+.lock-card {
+  display: none;
+}
+
+.mini-shell {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  background: transparent;
+}
+
+.mini-shell .mini-card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 2px solid rgba(47, 125, 79, 0.45);
+  border-radius: 18px;
+  background: rgba(16, 23, 19, 0.88);
+  padding: 12px 16px;
+  color: #fff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--vista-green);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.mini-card .eyebrow {
+  color: #9ef0b9;
+}
+
+.mini-card h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.mini-time {
+  text-align: right;
+}
+
+.mini-time strong {
+  display: block;
+  font-size: 30px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-time span {
+  display: block;
+  margin-top: 4px;
+  color: #b8c8be;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.warning-shell {
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(238, 242, 236, 0.35);
+}
+
+.warning-shell .warning-card {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 3px solid var(--vista-warn);
+  border-radius: 26px;
+  background: var(--surface);
+  padding: 30px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+}
+
+.warning-card h2 {
+  margin: 0;
+  font-size: 36px;
+  letter-spacing: 0;
+}
+
+.warning-body {
+  margin: 12px 0 0;
+  color: #47534b;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.session-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.session-grid div,
+.lock-info {
+  border-radius: 16px;
+  background: #eef5ef;
+  padding: 16px;
+}
+
+.session-grid span,
+.lock-info span {
+  display: block;
+  color: #657168;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.session-grid strong,
+.lock-info strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.extension-message {
+  min-height: 24px;
+  margin: 14px 0 0;
+  color: var(--vista-green);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 66px;
+  border-radius: 18px;
+  border: 0;
+  font-size: 25px;
+  font-weight: 950;
+}
+
+.primary-button {
+  background: var(--vista-green);
+  color: #fff;
+}
+
+.secondary-button {
+  border: 2px solid #c7d8cc;
+  background: #fff;
+  color: var(--vista-deep);
+}
+
+.critical .warning-card {
+  border-color: var(--vista-danger);
+  animation: warning-pulse 1.2s infinite;
+}
+
+.critical .warning-card h2,
+.critical .session-grid strong {
+  color: var(--vista-danger);
+}
+
+.lock-shell {
+  display: grid;
+  place-items: center;
+  padding: 50px;
+  background: rgba(8, 13, 10, 0.94);
+  color: #fff;
+}
+
+.lock-shell .lock-card {
+  display: block;
+  width: min(100%, 980px);
+  border: 4px solid var(--vista-danger);
+  border-radius: 34px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 58px;
+  text-align: center;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+}
+
+.lock-card .eyebrow {
+  color: #a7f3bd;
+  font-size: 19px;
+}
+
+.lock-card h2 {
+  margin: 10px 0 0;
+  font-size: 58px;
+}
+
+.lock-body {
+  margin: 24px 0 0;
+  color: #d7e0da;
+  font-size: 30px;
+  font-weight: 850;
+  line-height: 1.55;
+}
+
+.lock-info {
+  margin-top: 34px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lock-info span {
+  color: #cde7d5;
+  font-size: 22px;
+}
+
+.lock-info strong {
+  color: #fff;
+  font-size: 34px;
+}
+
+@keyframes warning-pulse {
+  0%,
+  100% {
+    box-shadow: 0 24px 70px rgba(225, 29, 72, 0.24);
+  }
+  50% {
+    box-shadow: 0 24px 90px rgba(225, 29, 72, 0.52);
+  }
+}

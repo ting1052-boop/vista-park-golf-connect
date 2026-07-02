@@ -3,11 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "description": "Windows bay agent for VISTA Park Golf Connect",
+  "main": "electron-main.js",
   "scripts": {
-    "start": "node vista-agent.js",
-    "check": "node --check vista-agent.js"
+    "start": "electron .",
+    "start:overlay": "electron .",
+    "start:legacy": "node vista-agent.js",
+    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
   }
 }

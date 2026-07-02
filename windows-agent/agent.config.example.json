@@ -6,10 +6,17 @@
   "pcName": "VISTA-BAY-01",
   "apiBaseUrl": "https://vista-park-golf-connect.vercel.app",
   "agentSecret": "change-me",
+  "agentToken": "change-me-later",
+  "sessionSource": "local",
   "heartbeatIntervalSeconds": 15,
+  "pollIntervalSeconds": 3,
   "warningBeforeMinutes": 10,
+  "criticalBeforeMinutes": 3,
+  "extensionMinutes": 30,
+  "extensionPrice": 6000,
   "gameProcessNames": ["ParkGolf.exe", "chrome.exe"],
   "openWarningScreen": true,
   "openLockScreen": true,
-  "sessionFile": "agent-session.json"
+  "sessionFile": "agent-session.json",
+  "allowCloseWithEsc": true
 }
