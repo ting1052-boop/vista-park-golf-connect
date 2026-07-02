@@ -3,8 +3,10 @@ import { getBays } from "@/lib/supabase/bays";
 import { getStoreSummaries } from "@/lib/supabase/stores";
 import { DashboardClient } from "./dashboard-client";
 
+const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
+
 export default async function AdminDashboardPage() {
-  const [bayResult, storeResult] = await Promise.allSettled([getBays(), getStoreSummaries()]);
+  const [bayResult, storeResult] = await Promise.allSettled([getBays(CURRENT_STORE_ID), getStoreSummaries()]);
   const bays = bayResult.status === "fulfilled" && bayResult.value.length > 0 ? bayResult.value : liveBayRows;
   const stores = storeResult.status === "fulfilled" && storeResult.value.length > 0 ? storeResult.value : storeSummaryRows;
   const errors = [
@@ -18,6 +20,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <DashboardClient
+      currentStoreId={CURRENT_STORE_ID}
       initialBays={bays}
       initialStoreSummaries={stores}
       initialError={errors.length > 0 ? `${errors.join(" / ")} 기존 샘플 데이터를 표시합니다.` : null}

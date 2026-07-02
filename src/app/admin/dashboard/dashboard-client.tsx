@@ -120,6 +120,7 @@ function addMinutesToClock(time: string | undefined, minutes: number) {
 }
 
 type DashboardClientProps = {
+  currentStoreId: string;
   initialBays: LiveBay[];
   initialStoreSummaries?: DashboardStoreSummary[];
   initialError?: string | null;
@@ -136,7 +137,7 @@ type DashboardStoreSummary = {
   status: string;
 };
 
-export function DashboardClient({ initialBays, initialStoreSummaries, initialError = null }: DashboardClientProps) {
+export function DashboardClient({ currentStoreId, initialBays, initialStoreSummaries, initialError = null }: DashboardClientProps) {
   const router = useRouter();
   const [bays, setBays] = useState<LiveBay[]>(initialBays.length > 0 ? initialBays : liveBayRows);
   const [alerts, setAlerts] = useState<AdminAlert[]>(adminAlertRows);
@@ -172,12 +173,12 @@ export function DashboardClient({ initialBays, initialStoreSummaries, initialErr
           return current.map((bay) => (bay.id === updatedBay.id ? { ...bay, ...updatedBay } : bay));
         });
         setDataError(null);
-      });
+      }, currentStoreId);
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "타석 실시간 구독을 시작하지 못했습니다.");
       return undefined;
     }
-  }, []);
+  }, [currentStoreId]);
 
   useEffect(() => {
     if (!toast) return;

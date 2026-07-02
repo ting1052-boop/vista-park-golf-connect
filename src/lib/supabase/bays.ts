@@ -90,13 +90,19 @@ function mapBayRow(row: BayRow): LiveBay {
   };
 }
 
-export async function getBays(): Promise<LiveBay[]> {
+export async function getBays(storeId?: string): Promise<LiveBay[]> {
   const supabase = createSupabaseDataClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("bays")
     .select("id, store_id, bay_code, display_name, status, memo, last_checked_at, created_at, updated_at")
     .order("bay_code", { ascending: true });
+
+  if (storeId) {
+    query = query.eq("store_id", storeId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(error.message);
@@ -131,17 +137,19 @@ export async function updateBayStatus(bayId: string, status: LiveBayStatus): Pro
   }
 }
 
-export function subscribeToBays(callback: (bay: LiveBay) => void): () => void {
+export function subscribeToBays(callback: (bay: LiveBay) => void, storeId?: string): () => void {
   const supabase = createSupabaseDataClient();
+  const postgresChangesConfig = {
+    event: "*",
+    schema: "public",
+    table: "bays",
+    ...(storeId ? { filter: `store_id=eq.${storeId}` } : {})
+  } as const;
   let channel: RealtimeChannel | null = supabase
-    .channel("vista-bays-realtime")
+    .channel(storeId ? `vista-bays-realtime-${storeId}` : "vista-bays-realtime")
     .on(
       "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "bays"
-      },
+      postgresChangesConfig,
       (payload) => {
         if (!payload.new || !("id" in payload.new)) {
           return;
