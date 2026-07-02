@@ -17,6 +17,11 @@ function getHomeAssistantConfig() {
   return { baseUrl, token };
 }
 
+function getHomeAssistantTimeoutMs() {
+  const value = Number(process.env.HOME_ASSISTANT_TIMEOUT_MS ?? 3500);
+  return Number.isFinite(value) && value > 0 ? value : 3500;
+}
+
 async function readBody(response: Response) {
   try {
     return (await response.text()).slice(0, 2000);
@@ -31,6 +36,9 @@ export async function callHomeAssistantService(
   payload: HomeAssistantServicePayload = {}
 ): Promise<HomeAssistantServiceResult> {
   const { baseUrl, token } = getHomeAssistantConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), getHomeAssistantTimeoutMs());
+
   const response = await fetch(`${baseUrl}/api/services/${domain}/${service}`, {
     method: "POST",
     headers: {
@@ -38,8 +46,9 @@ export async function callHomeAssistantService(
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload),
-    cache: "no-store"
-  });
+    cache: "no-store",
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
 
   return {
     ok: response.ok,
@@ -57,12 +66,16 @@ export async function runHomeAssistantScript(scriptEntityId: string, variables: 
 
 export async function pingHomeAssistant() {
   const { baseUrl, token } = getHomeAssistantConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), getHomeAssistantTimeoutMs());
+
   const response = await fetch(`${baseUrl}/api/`, {
     headers: {
       Authorization: `Bearer ${token}`
     },
-    cache: "no-store"
-  });
+    cache: "no-store",
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
 
   return {
     ok: response.ok,
