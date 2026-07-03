@@ -11,9 +11,9 @@ const DONE_AUTO_RESET_SECONDS = 30;
 // 후불(계좌이체) 안내 계좌. 지금은 코드에 두고, 이후 매장설정(store_settings)
 // 으로 옮긴다. ⚠️ 아래 값을 실제 매장 입금 계좌로 바꿔야 합니다.
 const STORE_BANK_ACCOUNT = {
-  bank: "국민은행",
-  number: "000000-00-000000",
-  holder: "비스타파크골프 시흥점"
+  bank: "카카오뱅크",
+  number: "3333-36-2921743",
+  holder: "김흥수"
 };
 
 type StoreInfo = {
