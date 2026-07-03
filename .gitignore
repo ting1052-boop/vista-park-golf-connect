@@ -3,6 +3,12 @@ node_modules/
 dev-server*.log
 *.tsbuildinfo
 
+# 빌드 산출물 (Electron Agent exe/zip 등). 커밋하지 않음.
+dist/
+windows-agent/logs/
+windows-agent/agent.config.json
+windows-agent/agent-session.json
+
 .env
 .env.*
 !.env.example

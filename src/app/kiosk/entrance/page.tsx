@@ -8,6 +8,14 @@ import { durationOptions, getDurationLabel, priceByDuration } from "@/lib/reserv
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const DONE_AUTO_RESET_SECONDS = 30;
 
+// 후불(계좌이체) 안내 계좌. 지금은 코드에 두고, 이후 매장설정(store_settings)
+// 으로 옮긴다. ⚠️ 아래 값을 실제 매장 입금 계좌로 바꿔야 합니다.
+const STORE_BANK_ACCOUNT = {
+  bank: "국민은행",
+  number: "000000-00-000000",
+  holder: "비스타파크골프 시흥점"
+};
+
 type StoreInfo = {
   id: string;
   name: string;
@@ -30,6 +38,8 @@ type DoneInfo = {
   startsAt: string;
   endsAt: string;
   automationStatus: string;
+  // 후불 계좌이체 안내용. 예약 입장(이미 확정)에는 없고, 현장 이용에만 채워진다.
+  amountDue?: number | null;
 };
 
 type Screen =
@@ -37,9 +47,18 @@ type Screen =
   | "phone"
   | "select"
   | "walkin-duration"
+  | "walkin-bay"
   | "walkin-confirm"
   | "processing"
   | "done";
+
+type KioskBayInfo = {
+  id: string;
+  bayCode: string;
+  displayName: string;
+  status: string;
+  isFree: boolean;
+};
 
 function formatClock(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
@@ -90,6 +109,8 @@ export default function KioskEntrancePage() {
   const [phoneLast4, setPhoneLast4] = useState("");
   const [reservations, setReservations] = useState<KioskReservation[]>([]);
   const [durationMinutes, setDurationMinutes] = useState(60);
+  const [bays, setBays] = useState<KioskBayInfo[]>([]);
+  const [selectedBay, setSelectedBay] = useState<KioskBayInfo | null>(null);
   const [processingText, setProcessingText] = useState("처리 중입니다");
   const [done, setDone] = useState<DoneInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,10 +133,31 @@ export default function KioskEntrancePage() {
     setPhoneLast4("");
     setReservations([]);
     setDurationMinutes(60);
+    setBays([]);
+    setSelectedBay(null);
     setDone(null);
     setError(null);
     setIsLoading(false);
   }, []);
+
+  // 이용시간 선택 후 타석 배치도(가용성)를 불러온다.
+  const loadBays = async (minutes: number) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const data = await callKioskApi<{ bays: KioskBayInfo[] }>("/api/kiosk/bays", {
+        storeId: DEFAULT_STORE_ID,
+        durationMinutes: minutes
+      });
+      setBays(data.bays);
+      setScreen("walkin-bay");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "타석 정보를 불러오지 못했습니다.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (screen !== "done") return;
@@ -189,14 +231,17 @@ export default function KioskEntrancePage() {
         storeId: DEFAULT_STORE_ID,
         partySize: 1,
         durationMinutes,
-        paymentStatus: "mock_paid"
+        bayId: selectedBay?.id ?? null,
+        paymentStatus: "postpaid"
       });
 
-      setDone(data);
+      // 후불이므로 완료 화면에서 입금 안내를 위해 금액을 함께 전달한다.
+      setDone({ ...data, amountDue: priceByDuration[durationMinutes] });
       setScreen("done");
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "현장 이용 처리에 실패했습니다.");
-      setScreen("walkin-confirm");
+      // 선택한 타석이 마감됐을 수 있으니 타석 선택 화면으로 되돌려 다시 고르게 한다.
+      await loadBays(durationMinutes);
     }
   };
 
@@ -326,9 +371,11 @@ export default function KioskEntrancePage() {
                   type="button"
                   onClick={() => {
                     setDurationMinutes(option.minutes);
-                    setScreen("walkin-confirm");
+                    setSelectedBay(null);
+                    void loadBays(option.minutes);
                   }}
-                  className="flex min-h-[88px] items-center justify-between rounded-[20px] border-2 border-[#cad8c6] bg-white px-6 text-[24px] font-extrabold active:bg-vista-fairway"
+                  disabled={isLoading}
+                  className="flex min-h-[88px] items-center justify-between rounded-[20px] border-2 border-[#cad8c6] bg-white px-6 text-[24px] font-extrabold active:bg-vista-fairway disabled:opacity-60"
                 >
                   <span>{getDurationLabel(option.minutes)}</span>
                   <span className="text-vista-leaf">{option.price.toLocaleString("ko-KR")}원</span>
@@ -338,15 +385,53 @@ export default function KioskEntrancePage() {
           </section>
         ) : null}
 
+        {screen === "walkin-bay" ? (
+          <section className="rounded-[24px] border border-[#d9e3d5] bg-white p-8 shadow-soft-line">
+            <h2 className="text-center text-[30px] font-extrabold">타석을 선택해주세요</h2>
+            <p className="mt-2 text-center text-[18px] font-semibold text-[#4f5b50]">
+              초록색 타석을 눌러 자리를 선택하세요.
+            </p>
+
+            <div className="mt-8 grid grid-cols-3 gap-4">
+              {bays.map((bay) => (
+                <button
+                  key={bay.id}
+                  type="button"
+                  disabled={!bay.isFree}
+                  onClick={() => {
+                    setSelectedBay(bay);
+                    setScreen("walkin-confirm");
+                  }}
+                  className={`flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-[20px] border-2 text-center ${
+                    bay.isFree
+                      ? "border-vista-leaf bg-vista-fairway active:scale-[0.98]"
+                      : "cursor-not-allowed border-[#d8ddd5] bg-[#f0f2ee]"
+                  }`}
+                >
+                  <span className={`text-[40px] font-extrabold ${bay.isFree ? "text-vista-ink" : "text-[#9aa39a]"}`}>
+                    {bay.bayCode}
+                  </span>
+                  <span className={`text-[18px] font-bold ${bay.isFree ? "text-vista-leaf" : "text-[#9aa39a]"}`}>
+                    {bay.isFree ? "선택 가능" : bay.status === "maintenance" ? "점검 중" : "이용 중"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-6 text-center text-[15px] font-semibold text-[#697468]">← 안내 데스크 방향 · 창측 →</p>
+          </section>
+        ) : null}
+
         {screen === "walkin-confirm" ? (
           <section className="rounded-[24px] border border-[#d9e3d5] bg-white p-8 shadow-soft-line">
             <h2 className="text-center text-[30px] font-extrabold">이용 내용을 확인해주세요</h2>
             <dl className="mt-6 grid gap-3 text-[22px]">
               {[
                 ["매장", store?.name ?? "비스타파크골프"],
+                ["타석", selectedBay ? `${selectedBay.bayCode} · ${selectedBay.displayName}` : "빈 타석 자동 배정"],
                 ["이용시간", getDurationLabel(durationMinutes)],
                 ["요금", `${priceByDuration[durationMinutes].toLocaleString("ko-KR")}원`],
-                ["배정 방식", "빈 타석 자동 배정"]
+                ["결제 방식", "후불 · 계좌이체"]
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between rounded-[14px] bg-vista-fairway px-5 py-4">
                   <dt className="font-bold text-[#4f5b50]">{label}</dt>
@@ -355,14 +440,14 @@ export default function KioskEntrancePage() {
               ))}
             </dl>
             <p className="mt-4 text-center text-[17px] font-semibold text-[#8a5a21]">
-              결제 연동 전 단계로, 요금은 매장에서 결제해주세요.
+              지금 이용을 시작하고, 요금은 이용 후 계좌로 입금해주세요.
             </p>
             <button
               type="button"
               onClick={startWalkIn}
               className="mt-5 flex min-h-[88px] w-full items-center justify-center rounded-[20px] bg-vista-leaf text-[26px] font-extrabold text-white"
             >
-              결제 완료 처리
+              이용 시작하기
             </button>
           </section>
         ) : null}
@@ -392,6 +477,31 @@ export default function KioskEntrancePage() {
                 ? "장비를 준비하고 있습니다. 타석으로 이동해주세요."
                 : "타석으로 이동해주세요. 화면이 켜지지 않으면 매장에 연락해주세요."}
             </p>
+
+            {done.amountDue != null ? (
+              <div className="mt-8 rounded-[20px] border-2 border-vista-leaf bg-vista-fairway p-6 text-left">
+                <p className="text-center text-[20px] font-extrabold text-vista-leaf">이용 후 아래 계좌로 입금해주세요</p>
+                <div className="mt-4 grid gap-2 text-[22px]">
+                  <div className="flex justify-between">
+                    <span className="font-bold text-[#4f5b50]">입금 계좌</span>
+                    <span className="font-extrabold">
+                      {STORE_BANK_ACCOUNT.bank} {STORE_BANK_ACCOUNT.number}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-[#4f5b50]">예금주</span>
+                    <span className="font-extrabold">{STORE_BANK_ACCOUNT.holder}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-[#4f5b50]">입금 금액</span>
+                    <span className="text-[26px] font-extrabold text-vista-leaf">
+                      {done.amountDue.toLocaleString("ko-KR")}원
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={resetToHome}

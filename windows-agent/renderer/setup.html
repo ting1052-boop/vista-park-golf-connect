@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VISTA Bay Agent 설정</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
+        background: #eef2ec;
+        color: #19211c;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .card {
+        width: 100%;
+        max-width: 560px;
+        background: #fff;
+        border: 1px solid #d9e3d5;
+        border-radius: 24px;
+        padding: 32px;
+        box-shadow: 0 20px 50px rgba(25, 33, 28, 0.1);
+        text-align: center;
+      }
+      .eyebrow {
+        color: #4e8969;
+        font-weight: 800;
+        font-size: 14px;
+      }
+      h1 {
+        margin-top: 8px;
+        font-size: 26px;
+        font-weight: 800;
+      }
+      p.desc {
+        margin-top: 10px;
+        color: #697468;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .bay-grid {
+        margin-top: 24px;
+        display: grid;
+        gap: 14px;
+      }
+      button.bay {
+        min-height: 84px;
+        border: 2px solid #cad8c6;
+        background: #fbfcfa;
+        border-radius: 18px;
+        font-size: 24px;
+        font-weight: 800;
+        color: #19211c;
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+      button.bay:hover {
+        border-color: #4e8969;
+        background: #edf6ef;
+      }
+      button.bay:active {
+        transform: scale(0.98);
+      }
+      .hint {
+        margin-top: 20px;
+        font-size: 13px;
+        color: #9aa39a;
+        font-weight: 600;
+      }
+      .status {
+        margin-top: 16px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #4e8969;
+        min-height: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <p class="eyebrow">VISTA Park Golf Connect</p>
+      <h1>이 PC는 몇 번 타석인가요?</h1>
+      <p class="desc">한 번만 선택하면 됩니다. 다음부터는 자동으로 실행됩니다.</p>
+      <div id="bayGrid" class="bay-grid"></div>
+      <p id="status" class="status"></p>
+      <p class="hint">잘못 선택했다면 설정 폴더의 agent.config.json을 지우고 다시 실행하세요.</p>
+    </div>
+
+    <script>
+      const grid = document.getElementById("bayGrid");
+      const status = document.getElementById("status");
+
+      async function init() {
+        const bays = await window.vistaAgent.getBays();
+        grid.innerHTML = "";
+        for (const bay of bays) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "bay";
+          button.textContent = bay.label;
+          button.addEventListener("click", async () => {
+            status.textContent = `${bay.label} 설정 중...`;
+            const result = await window.vistaAgent.selectBay(bay.bayCode);
+            if (!result?.ok) {
+              status.textContent = result?.message ?? "설정에 실패했습니다.";
+            }
+          });
+          grid.appendChild(button);
+        }
+      }
+
+      void init();
+    </script>
+  </body>
+</html>

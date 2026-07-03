@@ -1,19 +1,41 @@
 {
   "name": "vista-windows-agent",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Windows bay agent for VISTA Park Golf Connect",
   "main": "electron-main.js",
   "scripts": {
     "start": "electron .",
     "start:overlay": "electron .",
     "start:legacy": "node vista-agent.js",
-    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js"
+    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js",
+    "dist": "electron-builder --win portable"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.vista.bayagent",
+    "productName": "VISTA Bay Agent",
+    "files": [
+      "electron-main.js",
+      "electron-preload.js",
+      "renderer/**",
+      "screens/**",
+      "bays.config.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "VISTA-Bay-Agent.exe"
+    }
   }
 }

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("vistaAgent", {
@@ -12,5 +14,11 @@ contextBridge.exposeInMainWorld("vistaAgent", {
   },
   closeAgent() {
     return ipcRenderer.invoke("close-agent");
+  },
+  getBays() {
+    return ipcRenderer.invoke("get-bays");
+  },
+  selectBay(bayCode) {
+    return ipcRenderer.invoke("select-bay", bayCode);
   }
 });

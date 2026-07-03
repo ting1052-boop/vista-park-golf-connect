@@ -45,7 +45,7 @@ button {
 .mini-shell {
   display: grid;
   place-items: center;
-  padding: 8px;
+  padding: 12px;
   background: transparent;
 }
 
@@ -55,11 +55,11 @@ button {
   height: 100%;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  border: 2px solid rgba(47, 125, 79, 0.45);
-  border-radius: 18px;
+  gap: 28px;
+  border: 3px solid rgba(47, 125, 79, 0.55);
+  border-radius: 28px;
   background: rgba(16, 23, 19, 0.88);
-  padding: 12px 16px;
+  padding: 24px 32px;
   color: #fff;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
 }
@@ -73,11 +73,12 @@ button {
 
 .mini-card .eyebrow {
   color: #9ef0b9;
+  font-size: 21px;
 }
 
 .mini-card h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 46px;
   line-height: 1;
 }
 
@@ -87,16 +88,16 @@ button {
 
 .mini-time strong {
   display: block;
-  font-size: 30px;
+  font-size: 62px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .mini-time span {
   display: block;
-  margin-top: 4px;
+  margin-top: 8px;
   color: #b8c8be;
-  font-size: 13px;
+  font-size: 22px;
   font-weight: 800;
 }
 

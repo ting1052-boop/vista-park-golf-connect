@@ -68,6 +68,44 @@ export async function findFreeBays(
   return (bays as KioskBay[]).filter((bay) => !blocked.has(bay.id));
 }
 
+export type BayAvailability = KioskBay & { isFree: boolean };
+
+// 매장의 모든 타석을 배치도 표시용으로 반환한다. 각 타석이 주어진 시간
+// 구간에 이용 가능한지(isFree)를 함께 계산한다. findFreeBays와 달리
+// in_use/maintenance 타석도 포함하므로 키오스크가 3자리를 항상 그릴 수 있다.
+export async function listBaysWithAvailability(
+  supabase: SupabaseClient,
+  storeId: string,
+  startsAt: Date,
+  endsAt: Date
+): Promise<BayAvailability[]> {
+  const { data: bays, error: bayError } = await supabase
+    .from("bays")
+    .select("id, bay_code, display_name, status")
+    .eq("store_id", storeId)
+    .order("bay_code", { ascending: true });
+
+  if (bayError) throw new Error(bayError.message);
+  if (!bays || bays.length === 0) return [];
+
+  const { data: overlapping, error: overlapError } = await supabase
+    .from("reservations")
+    .select("bay_id")
+    .eq("store_id", storeId)
+    .not("status", "in", `(${INACTIVE_RESERVATION_STATUSES.join(",")})`)
+    .lt("starts_at", endsAt.toISOString())
+    .gt("ends_at", startsAt.toISOString());
+
+  if (overlapError) throw new Error(overlapError.message);
+
+  const blocked = new Set((overlapping ?? []).map((row) => row.bay_id).filter(Boolean));
+
+  return (bays as KioskBay[]).map((bay) => ({
+    ...bay,
+    isFree: (bay.status === "available" || bay.status === "waiting") && !blocked.has(bay.id)
+  }));
+}
+
 export type StartKioskSessionArgs = {
   supabase: SupabaseClient;
   storeId: string;

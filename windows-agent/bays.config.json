@@ -1,0 +1,43 @@
+{
+  "_comment": "빌드 전에 한 번만 확인하세요. 매장 공통 설정(shared)과 타석 목록(bays)입니다. 각 PC에서는 앱을 처음 켤 때 타석 번호만 고르면 되고, JSON을 직접 고칠 필요가 없습니다.",
+  "shared": {
+    "apiBaseUrl": "https://vista-park-golf-connect.vercel.app",
+    "agentSecret": "change-me",
+    "agentToken": "change-me-later",
+    "sessionSource": "local",
+    "pollIntervalSeconds": 3,
+    "warningBeforeMinutes": 10,
+    "criticalBeforeMinutes": 3,
+    "extensionMinutes": 30,
+    "extensionPrice": 6000,
+    "gameProcessNames": ["ParkGolf.exe"],
+    "sessionFile": "agent-session.json",
+    "allowCloseWithEsc": true
+  },
+  "bays": [
+    {
+      "agentId": "vista-siheung-bay-01",
+      "storeId": "11111111-1111-4111-8111-111111111111",
+      "bayId": "aaaaaaaa-0001-4000-8000-000000000001",
+      "bayCode": "A-01",
+      "label": "1번 타석",
+      "pcName": "VISTA-BAY-01"
+    },
+    {
+      "agentId": "vista-siheung-bay-02",
+      "storeId": "11111111-1111-4111-8111-111111111111",
+      "bayId": "aaaaaaaa-0002-4000-8000-000000000002",
+      "bayCode": "A-02",
+      "label": "2번 타석",
+      "pcName": "VISTA-BAY-02"
+    },
+    {
+      "agentId": "vista-siheung-bay-03",
+      "storeId": "11111111-1111-4111-8111-111111111111",
+      "bayId": "f306b4ce-e34e-407f-bd45-814731ed482a",
+      "bayCode": "A-03",
+      "label": "3번 타석",
+      "pcName": "VISTA-BAY-03"
+    }
+  ]
+}

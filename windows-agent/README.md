@@ -33,56 +33,42 @@ VISTA Park Golf Connect의 각 타석 PC에 설치하는 Windows용 시간제어
 - `install-startup.ps1`: Windows 시작프로그램 등록
 - `vista-agent.js`: 기존 Node 초안. 참고용으로 보존
 
-## 1. 타석 PC 준비
+## 실행파일(.exe) 배포 — 각 PC에서 JSON 편집 불필요
 
-타석 PC에는 Node.js가 필요합니다.
+각 타석 PC에 Node.js를 설치하거나 JSON을 손으로 고칠 필요가 없습니다.
+빌드된 `VISTA-Bay-Agent.exe` 하나를 복사하고, **처음 실행할 때 화면에서
+타석 번호만 한 번 고르면** 됩니다. 그 선택은 PC에 저장되어 다음부터
+자동으로 적용됩니다.
 
-- 권장: Node.js 20 LTS 이상
-- 설치 후 명령 프롬프트에서 확인:
-
-```cmd
-node -v
-npm -v
-```
-
-## 2. PC별 설정 만들기
-
-`windows-agent` 폴더에서 아래 파일을 복사합니다.
+### 빌드 (개발 PC에서 한 번)
 
 ```powershell
-Copy-Item .\agent.config.example.json .\agent.config.json
-Copy-Item .\agent-session.example.json .\agent-session.json
+cd windows-agent
+npm install
+npm run dist
 ```
 
-`agent.config.json`에서 타석별 값을 수정합니다.
+결과물: `windows-agent\dist\VISTA-Bay-Agent.exe`
 
-```json
-{
-  "agentId": "vista-siheung-bay-01",
-  "storeId": "11111111-1111-4111-8111-111111111111",
-  "bayId": "aaaaaaaa-0001-4000-8000-000000000001",
-  "bayCode": "A-01",
-  "pcName": "VISTA-BAY-01",
-  "apiBaseUrl": "https://vista-park-golf-connect.vercel.app",
-  "agentSecret": "change-me",
-  "agentToken": "change-me-later",
-  "sessionSource": "local",
-  "pollIntervalSeconds": 3,
-  "warningBeforeMinutes": 10,
-  "criticalBeforeMinutes": 3,
-  "extensionMinutes": 30,
-  "extensionPrice": 6000,
-  "gameProcessNames": ["ParkGolf.exe"],
-  "sessionFile": "agent-session.json",
-  "allowCloseWithEsc": true
-}
-```
+빌드 전에 매장 공통값을 확인할 파일은 **`bays.config.json` 하나뿐**입니다.
+- `shared`: 서버 주소, 시크릿/토큰, 정책(경고 시점·연장 시간·요금), 게임
+  프로세스명 등 모든 타석 공통값
+- `bays`: 타석 목록(1/2/3번). 타석이 늘면 여기에 항목만 추가하고 다시 빌드
 
-초기 실증은 `sessionSource: "local"`로 둡니다. 서버 API가 완성되면 `server`로 바꿉니다.
+### 각 타석 PC에서
 
-## 3. 로컬 테스트
+1. `VISTA-Bay-Agent.exe`를 PC로 복사
+2. 더블클릭 실행
+3. **"이 PC는 몇 번 타석인가요?"** 화면에서 해당 타석 버튼 클릭 → 끝
+4. 잘못 골랐으면: 아래 설정 폴더의 `agent.config.json`을 지우고 다시 실행
+   - 설정/로그 폴더: `%APPDATA%\VISTA Bay Agent`
 
-`agent-session.json`의 `endsAt`을 현재 시간 기준 10분 이내로 바꿉니다.
+## 로컬 테스트 (서버 API 완성 전)
+
+서버 API가 아직 없으므로, 세션 파일을 직접 넣어 오버레이 동작을 확인합니다.
+설정 폴더(`%APPDATA%\VISTA Bay Agent`)에 `agent-session.json`을 만들고
+`endsAt`을 현재 시간 기준 몇 분 이내로 바꿉니다. (개발 중 소스로 실행할
+때는 `windows-agent` 폴더의 `agent-session.json`도 인식합니다.)
 
 예:
 

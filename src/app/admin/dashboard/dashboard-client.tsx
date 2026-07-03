@@ -27,16 +27,10 @@ import {
   Wrench
 } from "lucide-react";
 import {
-  adminAlertRows,
   adminNavItems,
   automationDeviceRows,
-  automationLogRows,
   featureChecks,
-  liveBayRows,
-  noShowRows,
   quickActions,
-  reservationRows,
-  storeSummaryRows,
   type AdminAlert,
   type ControlLog,
   type LiveBay,
@@ -44,6 +38,7 @@ import {
   type LogTone
 } from "@/lib/dashboard-data";
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
+import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
 
 const VISTA_GREEN = "#4E8969";
 const RING_SIZE = 132;
@@ -123,6 +118,10 @@ type DashboardClientProps = {
   currentStoreId: string;
   initialBays: LiveBay[];
   initialStoreSummaries?: DashboardStoreSummary[];
+  initialReservations?: DashboardReservationRow[];
+  initialAlerts?: AdminAlert[];
+  initialNoShows?: NoShowRow[];
+  initialTodayReservationSummary?: DashboardReservationSummary;
   initialError?: string | null;
 };
 
@@ -137,17 +136,44 @@ type DashboardStoreSummary = {
   status: string;
 };
 
-export function DashboardClient({ currentStoreId, initialBays, initialStoreSummaries, initialError = null }: DashboardClientProps) {
+type NoShowRow = {
+  id: string;
+  time: string;
+  member: string;
+  bay: string;
+  action: string;
+};
+
+const emptyTodayReservationSummary: DashboardReservationSummary = {
+  total: 0,
+  app: 0,
+  walkInPhone: 0
+};
+
+export function DashboardClient({
+  currentStoreId,
+  initialBays,
+  initialStoreSummaries = [],
+  initialReservations = [],
+  initialAlerts = [],
+  initialNoShows = [],
+  initialTodayReservationSummary = emptyTodayReservationSummary,
+  initialError = null
+}: DashboardClientProps) {
   const router = useRouter();
-  const [bays, setBays] = useState<LiveBay[]>(initialBays.length > 0 ? initialBays : liveBayRows);
-  const [alerts, setAlerts] = useState<AdminAlert[]>(adminAlertRows);
-  const [logs, setLogs] = useState<ControlLog[]>(automationLogRows);
+  const [bays, setBays] = useState<LiveBay[]>(initialBays);
+  const [alerts, setAlerts] = useState<AdminAlert[]>(initialAlerts);
+  const [noShows, setNoShows] = useState<NoShowRow[]>(initialNoShows);
+  const [reservations, setReservations] = useState<DashboardReservationRow[]>(initialReservations);
+  const [todayReservationSummary, setTodayReservationSummary] = useState<DashboardReservationSummary>(
+    initialTodayReservationSummary
+  );
+  const [logs, setLogs] = useState<ControlLog[]>([]);
   const [now, setNow] = useState<Date | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(initialError);
   const [isSyncing, setIsSyncing] = useState(false);
-  const storeSummaries: DashboardStoreSummary[] =
-    initialStoreSummaries && initialStoreSummaries.length > 0 ? initialStoreSummaries : storeSummaryRows.map((row) => ({ ...row }));
+  const storeSummaries: DashboardStoreSummary[] = initialStoreSummaries;
 
   useEffect(() => {
     setNow(new Date());
@@ -156,9 +182,13 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
   }, []);
 
   useEffect(() => {
-    setBays(initialBays.length > 0 ? initialBays : liveBayRows);
+    setBays(initialBays);
+    setAlerts(initialAlerts);
+    setNoShows(initialNoShows);
+    setReservations(initialReservations);
+    setTodayReservationSummary(initialTodayReservationSummary);
     setDataError(initialError);
-  }, [initialBays, initialError]);
+  }, [initialAlerts, initialBays, initialError, initialNoShows, initialReservations, initialTodayReservationSummary]);
 
   useEffect(() => {
     try {
@@ -351,12 +381,21 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
     { label: "현재 이용 중", value: `${summary.inUse} / ${bays.length}`, helper: `${summary.people}명 플레이 중`, icon: Activity, className: "border-sky-200 bg-sky-50 text-sky-700" },
     { label: "입장 대기", value: `${summary.waiting}`, helper: "키오스크 인증 또는 승인 필요", icon: Clock3, className: "border-amber-200 bg-amber-50 text-amber-700" },
     { label: "사용 가능", value: `${summary.available}`, helper: "즉시 배정 가능한 타석", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { label: "점검/알림", value: `${summary.maintenance + alerts.length + noShowRows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
-    { label: "오늘 예약", value: "38", helper: "앱 27건, 현장/전화 11건", icon: CalendarClock, className: "border-slate-200 bg-slate-50 text-slate-700" }
+    { label: "점검/알림", value: `${summary.maintenance + alerts.length + noShows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
+    {
+      label: "오늘 예약",
+      value: `${todayReservationSummary.total}`,
+      helper:
+        todayReservationSummary.total > 0
+          ? `앱 ${todayReservationSummary.app}건, 현장/전화 ${todayReservationSummary.walkInPhone}건`
+          : "오늘 접수된 예약 없음",
+      icon: CalendarClock,
+      className: "border-slate-200 bg-slate-50 text-slate-700"
+    }
   ];
 
   const showWarningBanner =
-    alerts.length > 0 || soonEndingBays.length > 0 || overtimeBays.length > 0 || noShowRows.length > 0;
+    alerts.length > 0 || soonEndingBays.length > 0 || overtimeBays.length > 0 || noShows.length > 0;
 
   return (
     <main className="min-h-screen bg-[#eef2ec] text-vista-ink">
@@ -463,7 +502,7 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
           <div className="px-4 py-6 sm:px-6 lg:px-8">
             {dataError ? (
               <section className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900 shadow-soft-line">
-                Supabase 연결 안내: {dataError} 현재 화면은 기존 샘플 데이터로 계속 표시됩니다.
+                Supabase 연결 안내: {dataError} 실제 데이터를 불러오지 못한 영역은 빈 상태로 표시됩니다.
               </section>
             ) : null}
 
@@ -522,7 +561,7 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
                     </div>
                   </div>
                   <span className="rounded-md bg-white px-3 py-1 text-sm font-extrabold text-amber-800">
-                    {alerts.length + soonEndingBays.length + overtimeBays.length + noShowRows.length}건
+                    {alerts.length + soonEndingBays.length + overtimeBays.length + noShows.length}건
                   </span>
                 </div>
                 <div className="grid gap-3 lg:grid-cols-2">
@@ -544,7 +583,7 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
                       onAction={() => handleExtendTime(bay)}
                     />
                   ))}
-                  {noShowRows.map((row) => (
+                  {noShows.map((row) => (
                     <WarningItem
                       key={row.id}
                       title={`${row.time} 예약 노쇼 확인`}
@@ -600,16 +639,22 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  {bays.map((bay) => (
-                    <BayCard
-                      key={bay.id}
-                      bay={bay}
-                      onPowerOff={handlePowerOff}
-                      onExtendTime={handleExtendTime}
-                      onCheckIn={handleCheckIn}
-                      onMaintenanceDone={handleMaintenanceDone}
-                    />
-                  ))}
+                  {bays.length > 0 ? (
+                    bays.map((bay) => (
+                      <BayCard
+                        key={bay.id}
+                        bay={bay}
+                        onPowerOff={handlePowerOff}
+                        onExtendTime={handleExtendTime}
+                        onCheckIn={handleCheckIn}
+                        onMaintenanceDone={handleMaintenanceDone}
+                      />
+                    ))
+                  ) : (
+                    <div className="rounded-md border border-[#dfe8dc] bg-white p-5 text-sm font-bold text-[#697468] shadow-soft-line md:col-span-2">
+                      표시할 타석 데이터가 없습니다. 타석관리에서 시흥점 타석을 등록하거나 Supabase 연결 상태를 확인해주세요.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -625,19 +670,25 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
                 <div className="mb-5 grid grid-cols-3 gap-3">
                   <MiniStatus label="전원" value="정상" />
                   <MiniStatus label="냉난방" value="연결" />
-                  <MiniStatus label="키오스크" value="3건" />
+                  <MiniStatus label="오늘 예약" value={`${todayReservationSummary.total}건`} />
                 </div>
 
                 <div className="space-y-3">
-                  {logs.map((log) => (
-                    <div key={log.id} className={cn("rounded-md border p-3", logToneClass[log.tone])}>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-extrabold">{log.time} · {log.target}</p>
-                        <span className="text-xs font-extrabold">{log.result}</span>
+                  {logs.length > 0 ? (
+                    logs.map((log) => (
+                      <div key={log.id} className={cn("rounded-md border p-3", logToneClass[log.tone])}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-extrabold">{log.time} · {log.target}</p>
+                          <span className="text-xs font-extrabold">{log.result}</span>
+                        </div>
+                        <p className="mt-2 text-xs font-semibold opacity-80">{log.event}</p>
                       </div>
-                      <p className="mt-2 text-xs font-semibold opacity-80">{log.event}</p>
+                    ))
+                  ) : (
+                    <div className="rounded-md border border-[#e5ece1] bg-[#fbfcfa] p-4 text-sm font-bold text-[#697468]">
+                      아직 오늘 기록된 제어 로그가 없습니다.
                     </div>
-                  ))}
+                  )}
                 </div>
               </aside>
             </section>
@@ -680,17 +731,21 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
                   <p className="mt-1 text-sm text-[#697468]">예약과 무예약 입장을 자동화 실행 조건으로 사용합니다.</p>
                 </div>
                 <div className="divide-y divide-[#edf2ea]">
-                  {reservationRows.map((row) => (
-                    <div key={`${row.time}-${row.member}`} className="p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-extrabold">{row.time} · {row.member}</p>
-                        <span className="rounded-md bg-[#edf6ef] px-2 py-1 text-xs font-bold text-vista-leaf">{row.status}</span>
+                  {reservations.length > 0 ? (
+                    reservations.map((row) => (
+                      <div key={row.id} className="p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-extrabold">{row.time} · {row.member}</p>
+                          <span className="rounded-md bg-[#edf6ef] px-2 py-1 text-xs font-bold text-vista-leaf">{row.status}</span>
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-[#697468]">
+                          {row.bay} · {row.channel} · {row.approval}
+                        </p>
                       </div>
-                      <p className="mt-2 text-sm font-semibold text-[#697468]">
-                        {row.bay} · {row.channel} · {row.approval}
-                      </p>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="p-5 text-sm font-bold text-[#697468]">오늘 예약·입장 예정이 없습니다.</div>
+                  )}
                 </div>
               </article>
             </section>
@@ -699,21 +754,24 @@ export function DashboardClient({ currentStoreId, initialBays, initialStoreSumma
               <article className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
                 <h3 className="text-lg font-extrabold">본사 매장 현황</h3>
                 <div className="mt-4 grid gap-3">
-                  {storeSummaries.map((row) => (
-                    <div key={row.store} className="rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-extrabold">{row.store}</p>
-                        <span className="text-xs font-bold text-vista-leaf">{row.status}</span>
+                  {storeSummaries.length > 0 ? (
+                    storeSummaries.map((row) => (
+                      <div key={row.id ?? row.store} className="rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-extrabold">{row.store}</p>
+                          <span className="text-xs font-bold text-vista-leaf">{row.status}</span>
+                        </div>
+                        <p className="mt-2 text-xs font-semibold text-[#697468]">
+                          {row.address ?? row.region ?? "주소 미등록"} · 타석 {row.bayCount ?? row.reservations ?? 0}
+                          {row.phone ? ` · ${row.phone}` : ""}
+                        </p>
                       </div>
-                      <p className="mt-2 text-xs font-semibold text-[#697468]">
-                        {row.address ?? row.region ?? "주소 미등록"} · 타석 {row.bayCount ?? row.reservations ?? 0}
-                        {row.phone ? ` · ${row.phone}` : ""}
-                      </p>
-                      <p className="hidden">
-                        {row.region} · 오늘 예약 {row.reservations}
-                      </p>
+                    ))
+                  ) : (
+                    <div className="rounded-md bg-[#fbfcfa] p-3 text-sm font-bold text-[#697468] ring-1 ring-[#e5ece1]">
+                      표시할 매장 데이터가 없습니다.
                     </div>
-                  ))}
+                  )}
                 </div>
               </article>
 

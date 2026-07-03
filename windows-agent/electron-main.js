@@ -6,15 +6,21 @@ const path = require("node:path");
 const os = require("node:os");
 const { execFile } = require("node:child_process");
 
-const ROOT = __dirname;
-const CONFIG_PATH = path.join(ROOT, "agent.config.json");
-const DEFAULT_CONFIG_PATH = path.join(ROOT, "agent.config.example.json");
-const LOG_DIR = path.join(ROOT, "logs");
-const VERSION = "0.2.0";
+const ROOT = __dirname; // bundled, read-only when packaged (asar)
+const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
+const VERSION = "0.3.0";
+
+// Writable locations. In a packaged exe, ROOT is inside a read-only archive,
+// so the selected bay, the local test session, and logs all live in userData.
+let USER_DATA = ROOT;
+let USER_CONFIG_PATH = path.join(ROOT, "agent.config.json");
+let LOG_DIR = path.join(ROOT, "logs");
 
 let mainWindow = null;
+let setupWindow = null;
 let currentMode = null;
 let config = null;
+let baysConfig = null;
 let activeSessionId = null;
 let dismissedWarningSessionId = null;
 let dismissedCriticalSessionId = null;
@@ -35,34 +41,72 @@ function log(message, extra = undefined) {
   ensureLogDir();
   const line = `[${nowIso()}] ${message}${extra === undefined ? "" : ` ${JSON.stringify(extra)}`}`;
   console.log(line);
-  fs.appendFileSync(path.join(LOG_DIR, "vista-agent-overlay.log"), `${line}\n`, "utf8");
+  try {
+    fs.appendFileSync(path.join(LOG_DIR, "vista-agent-overlay.log"), `${line}\n`, "utf8");
+  } catch {
+    // logging must never crash the agent
+  }
 }
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function loadBaysConfig() {
+  const raw = readJson(BAYS_CONFIG_PATH);
+  const shared = raw.shared ?? {};
+  const bays = Array.isArray(raw.bays) ? raw.bays : [];
+  return { shared, bays };
+}
+
+// The selected bay is stored as { bayCode } in userData. We merge shared
+// settings + the matching bay preset at load time, so updating shared config
+// only requires a new build, never per-PC editing.
 function loadConfig() {
-  const source = fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : DEFAULT_CONFIG_PATH;
-  const raw = readJson(source);
+  let selectedBayCode = null;
+
+  if (fs.existsSync(USER_CONFIG_PATH)) {
+    try {
+      selectedBayCode = readJson(USER_CONFIG_PATH).bayCode ?? null;
+    } catch (error) {
+      log("Failed to read selected bay, will ask again", { error: error.message });
+    }
+  }
+
+  const bay = baysConfig.bays.find((entry) => entry.bayCode === selectedBayCode);
+  if (!bay) return null;
+
+  const merged = { ...baysConfig.shared, ...bay };
 
   return {
-    ...raw,
-    pcName: raw.pcName || os.hostname(),
-    sessionSource: raw.sessionSource || "local",
-    sessionFile: raw.sessionFile || "agent-session.json",
-    pollIntervalSeconds: Number(raw.pollIntervalSeconds || 3),
-    warningBeforeMinutes: Number(raw.warningBeforeMinutes || 10),
-    criticalBeforeMinutes: Number(raw.criticalBeforeMinutes || 3),
-    extensionMinutes: Number(raw.extensionMinutes || 30),
-    extensionPrice: Number(raw.extensionPrice || 6000),
-    gameProcessNames: Array.isArray(raw.gameProcessNames) ? raw.gameProcessNames : [],
-    allowCloseWithEsc: raw.allowCloseWithEsc !== false
+    ...merged,
+    pcName: merged.pcName || os.hostname(),
+    sessionSource: merged.sessionSource || "local",
+    sessionFile: merged.sessionFile || "agent-session.json",
+    pollIntervalSeconds: Number(merged.pollIntervalSeconds || 3),
+    warningBeforeMinutes: Number(merged.warningBeforeMinutes || 10),
+    criticalBeforeMinutes: Number(merged.criticalBeforeMinutes || 3),
+    extensionMinutes: Number(merged.extensionMinutes || 30),
+    extensionPrice: Number(merged.extensionPrice || 6000),
+    gameProcessNames: Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
+    allowCloseWithEsc: merged.allowCloseWithEsc !== false
   };
 }
 
+function saveSelectedBay(bayCode) {
+  fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify({ bayCode }, null, 2), "utf8");
+}
+
+// Local test session: prefer userData (writable in packaged exe), fall back to
+// the bundled example folder so pre-package dev testing still works.
+function resolveSessionPath() {
+  const inUserData = path.join(USER_DATA, config.sessionFile);
+  if (fs.existsSync(inUserData)) return inUserData;
+  return path.join(ROOT, config.sessionFile);
+}
+
 function loadLocalSession() {
-  const sessionPath = path.join(ROOT, config.sessionFile);
+  const sessionPath = resolveSessionPath();
 
   if (!fs.existsSync(sessionPath)) {
     return null;
@@ -178,10 +222,10 @@ function getWindowBounds(mode) {
   }
 
   return {
-    x: workArea.x + workArea.width - 330,
+    x: workArea.x + Math.round((workArea.width - 600) / 2),
     y: workArea.y + 24,
-    width: 300,
-    height: 86
+    width: 600,
+    height: 172
   };
 }
 
@@ -399,13 +443,77 @@ ipcMain.handle("request-extension", async () => {
 });
 
 ipcMain.handle("close-agent", () => {
-  if (config.allowCloseWithEsc) {
+  if (config?.allowCloseWithEsc) {
     app.quit();
   }
 });
 
-app.whenReady().then(async () => {
+// --- First-run bay picker -------------------------------------------------
+
+function createSetupWindow() {
+  const window = new BrowserWindow({
+    width: 720,
+    height: 560,
+    frame: true,
+    resizable: false,
+    title: "VISTA Bay Agent 설정",
+    webPreferences: {
+      preload: path.join(ROOT, "electron-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  window.loadFile(path.join(ROOT, "renderer", "setup.html"));
+  return window;
+}
+
+ipcMain.handle("get-bays", () => {
+  return baysConfig.bays.map((bay) => ({
+    bayCode: bay.bayCode,
+    label: bay.label ?? bay.bayCode
+  }));
+});
+
+ipcMain.handle("select-bay", (_event, bayCode) => {
+  const exists = baysConfig.bays.some((bay) => bay.bayCode === bayCode);
+  if (!exists) return { ok: false, message: "알 수 없는 타석입니다." };
+
+  saveSelectedBay(bayCode);
   config = loadConfig();
+  log("Bay selected", { bayCode });
+
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.destroy();
+    setupWindow = null;
+  }
+
+  void startAgentLoop();
+  return { ok: true };
+});
+
+async function startAgentLoop() {
+  await tick();
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    void tick();
+  }, Math.max(1, config.pollIntervalSeconds) * 1000);
+}
+
+app.whenReady().then(async () => {
+  USER_DATA = app.getPath("userData");
+  USER_CONFIG_PATH = path.join(USER_DATA, "agent.config.json");
+  LOG_DIR = path.join(USER_DATA, "logs");
+
+  baysConfig = loadBaysConfig();
+  config = loadConfig();
+
+  if (!config) {
+    log("No bay selected yet, opening setup window");
+    setupWindow = createSetupWindow();
+    return;
+  }
+
   log("VISTA Electron Agent started", {
     agentId: config.agentId,
     bayCode: config.bayCode,
@@ -413,14 +521,15 @@ app.whenReady().then(async () => {
     sessionSource: config.sessionSource
   });
 
-  await tick();
-  pollTimer = setInterval(() => {
-    void tick();
-  }, Math.max(1, config.pollIntervalSeconds) * 1000);
+  await startAgentLoop();
 });
 
 app.on("window-all-closed", () => {
   // Keep the agent process alive. The window is recreated whenever the mode changes.
+  // Exception: if we are still in setup (no bay chosen) and the user closes it, quit.
+  if (!config) {
+    app.quit();
+  }
 });
 
 app.on("before-quit", () => {
