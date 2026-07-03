@@ -64,6 +64,7 @@ export type NoShowRow = {
 export const adminNavItems = [
   { label: "대시보드", href: "/admin/dashboard", active: true },
   { label: "예약관리", href: "/admin/reservations", active: false },
+  { label: "미수금", href: "/admin/unpaid", active: false },
   { label: "무인제어", href: "/admin/automation", active: false },
   { label: "매장관리", href: "/admin/stores", active: false },
   { label: "타석관리", href: "/admin/bays", active: false },

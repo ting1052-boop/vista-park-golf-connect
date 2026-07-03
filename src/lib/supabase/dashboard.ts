@@ -141,6 +141,63 @@ function buildNoShows(rows: ReservationRecord[]): NoShowRow[] {
     }));
 }
 
+export type UnpaidWalkinRow = {
+  id: string;
+  time: string;
+  bay: string;
+  partySize: number;
+  amount: number;
+};
+
+export type UnpaidWalkinsResult = {
+  rows: UnpaidWalkinRow[];
+  totalAmount: number;
+};
+
+type UnpaidRecord = ReservationRecord & { memo: string | null };
+
+// 메모 형식 "현장 이용 · 후불 계좌이체 · 미결제 10,000원"에서 금액을 뽑는다.
+// (추후 payment_status/payment_amount 컬럼으로 이전하면 파싱을 제거한다)
+function parseUnpaidAmount(memo: string | null): number {
+  if (!memo) return 0;
+  const match = memo.match(/미결제\s*([\d,]+)\s*원/);
+  if (!match) return 0;
+  return Number(match[1].replace(/,/g, "")) || 0;
+}
+
+// 오늘 접수된 후불(계좌이체) 미결제 현장 이용 내역. 매장 마감 정산용.
+export async function getUnpaidWalkins(storeId: string): Promise<UnpaidWalkinsResult> {
+  const supabase = createSupabaseAdminClient();
+  const { startIso, endIso } = getKstTodayRange();
+
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("id, starts_at, ends_at, party_size, channel, status, approval_required, guest_name, guest_phone_last4, memo, bays(bay_code, display_name)")
+    .eq("store_id", storeId)
+    .eq("channel", "walk_in")
+    .gte("starts_at", startIso)
+    .lt("starts_at", endIso)
+    .order("starts_at", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = ((data ?? []) as UnpaidRecord[])
+    .filter((row) => row.status !== "cancelled" && (row.memo ?? "").includes("미결제"))
+    .map((row) => ({
+      id: row.id,
+      time: formatKstTime(row.starts_at),
+      bay: getBayLabel(row),
+      partySize: row.party_size ?? 1,
+      amount: parseUnpaidAmount(row.memo)
+    }));
+
+  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
+
+  return { rows, totalAmount };
+}
+
 export async function getDashboardOperationalRows(storeId: string): Promise<DashboardOperationalRows> {
   const supabase = createSupabaseAdminClient();
   const { startIso, endIso } = getKstTodayRange();

@@ -18,13 +18,15 @@ import {
   PackageCheck,
   ShieldCheck,
   Trophy,
-  Users
+  Users,
+  Wallet
 } from "lucide-react";
 import { adminNavItems } from "@/lib/dashboard-data";
 
 const navIconMap = {
   "/admin/dashboard": LayoutDashboard,
   "/admin/reservations": CalendarClock,
+  "/admin/unpaid": Wallet,
   "/admin/automation": MonitorCog,
   "/admin/stores": MapPin,
   "/admin/bays": LayoutDashboard,
