@@ -8,6 +8,7 @@ dist/
 windows-agent/logs/
 windows-agent/agent.config.json
 windows-agent/agent-session.json
+windows-agent/bays.config.local.json
 
 .env
 .env.*

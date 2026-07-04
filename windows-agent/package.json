@@ -26,7 +26,8 @@
       "electron-preload.js",
       "renderer/**",
       "screens/**",
-      "bays.config.json"
+      "bays.config.json",
+      "bays.config.local.json"
     ],
     "directories": {
       "output": "dist"

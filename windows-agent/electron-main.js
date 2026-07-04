@@ -8,6 +8,7 @@ const { execFile } = require("node:child_process");
 
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
+const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
 const VERSION = "0.3.0";
 
 // Writable locations. In a packaged exe, ROOT is inside a read-only archive,
@@ -53,7 +54,8 @@ function readJson(filePath) {
 }
 
 function loadBaysConfig() {
-  const raw = readJson(BAYS_CONFIG_PATH);
+  const configPath = fs.existsSync(LOCAL_BAYS_CONFIG_PATH) ? LOCAL_BAYS_CONFIG_PATH : BAYS_CONFIG_PATH;
+  const raw = readJson(configPath);
   const shared = raw.shared ?? {};
   const bays = Array.isArray(raw.bays) ? raw.bays : [];
   return { shared, bays };
