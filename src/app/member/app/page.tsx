@@ -24,7 +24,15 @@ import { bonusMinutesByDuration, durationOptions, priceByDuration } from "@/lib/
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const STORE_TIME_ZONE = "Asia/Seoul";
-const timeSlots = ["09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "18:00", "19:00"];
+const BUSINESS_OPEN_TIME = "08:00";
+const BUSINESS_CLOSE_TIME = "21:00";
+const timeSlots = Array.from({ length: 26 }, (_, index) => {
+  const totalMinutes = 8 * 60 + index * 30;
+  const hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+});
 
 type StoreRow = {
   id: string;
@@ -45,7 +53,6 @@ type BayRow = {
 type ReservationRow = {
   id: string;
   starts_at: string;
-  party_size: number | null;
   status: string | null;
   approval_required: boolean | null;
   bays?: { bay_code?: string | null } | Array<{ bay_code?: string | null }> | null;
@@ -108,6 +115,13 @@ function toReservationDate(dateValue: string, timeValue: string) {
 
 function isPastTimeSlot(dateValue: string, timeValue: string, now: Date) {
   return toReservationDate(dateValue, timeValue).getTime() <= now.getTime();
+}
+
+function isBeyondBusinessHours(dateValue: string, startsAt: Date, reservedMinutes: number) {
+  const businessCloseAt = toReservationDate(dateValue, BUSINESS_CLOSE_TIME);
+  const endsAt = addMinutes(startsAt, reservedMinutes);
+
+  return endsAt.getTime() > businessCloseAt.getTime();
 }
 
 function getNextAvailableSelection(dateOptions: string[], now: Date) {
@@ -181,7 +195,6 @@ export default function MemberAppPage() {
   const [selectedDate, setSelectedDate] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).date);
   const [selectedTime, setSelectedTime] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).time);
   const [durationMinutes, setDurationMinutes] = useState(60);
-  const [partySize, setPartySize] = useState(2);
   const [customerName, setCustomerName] = useState("");
   const [phoneLast4, setPhoneLast4] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -193,7 +206,7 @@ export default function MemberAppPage() {
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
   const selectedStoreBays = bays.filter((bay) => bay.store_id === selectedStoreId);
-  const approvalRequired = durationMinutes > 60 || partySize >= 5;
+  const approvalRequired = durationMinutes > 60;
   const reservedMinutes = getReservedMinutes(durationMinutes);
   const bonusMinutes = getBonusMinutes(durationMinutes);
   const previewStartsAt = useMemo(() => toReservationDate(selectedDate, selectedTime), [selectedDate, selectedTime]);
@@ -227,6 +240,7 @@ export default function MemberAppPage() {
       timeSlots.map((time) => {
         const startsAt = toReservationDate(selectedDate, time);
         const endsAt = addMinutes(startsAt, reservedMinutes);
+        const isClosed = isBeyondBusinessHours(selectedDate, startsAt, reservedMinutes);
         const blockedBayIds = getBlockedBayIds(startsAt, endsAt);
         const availableCount = selectedStoreBays.filter(
           (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
@@ -235,6 +249,7 @@ export default function MemberAppPage() {
         return {
           time,
           isPast: startsAt.getTime() <= now.getTime(),
+          isClosed,
           isSoldOut: availableCount === 0,
           availableCount
         };
@@ -244,7 +259,7 @@ export default function MemberAppPage() {
   );
 
   const availableTimeSlots = useMemo(
-    () => timeSlotStates.filter((slot) => !slot.isPast && !slot.isSoldOut).map((slot) => slot.time),
+    () => timeSlotStates.filter((slot) => !slot.isPast && !slot.isClosed && !slot.isSoldOut).map((slot) => slot.time),
     [timeSlotStates]
   );
 
@@ -275,7 +290,7 @@ export default function MemberAppPage() {
         supabase.from("bays").select("id, store_id, bay_code, display_name, status").order("bay_code", { ascending: true }),
         supabase
           .from("reservations")
-          .select("id, starts_at, party_size, status, approval_required, bays(bay_code)")
+          .select("id, starts_at, status, approval_required, bays(bay_code)")
           .order("starts_at", { ascending: true })
           .limit(5),
         supabase
@@ -348,7 +363,7 @@ export default function MemberAppPage() {
 
   useEffect(() => {
     setIsReviewing(false);
-  }, [customerName, durationMinutes, partySize, phoneLast4, selectedBayId, selectedDate, selectedStoreId, selectedTime]);
+  }, [customerName, durationMinutes, phoneLast4, selectedBayId, selectedDate, selectedStoreId, selectedTime]);
 
   const validateReservationInput = () => {
     setError(null);
@@ -371,6 +386,11 @@ export default function MemberAppPage() {
 
     if (previewStartsAt.getTime() <= Date.now()) {
       setError("이미 지난 시간은 예약할 수 없습니다. 가능한 시간을 다시 선택해주세요.");
+      return false;
+    }
+
+    if (isBeyondBusinessHours(selectedDate, previewStartsAt, reservedMinutes)) {
+      setError("운영시간은 오전 8시부터 오후 9시까지입니다. 종료 시간이 21:00을 넘지 않도록 선택해주세요.");
       return false;
     }
 
@@ -444,7 +464,7 @@ export default function MemberAppPage() {
         guest_phone_last4: phoneLast4,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
-        party_size: partySize,
+        party_size: 1,
         channel: "member_app",
         status: approvalRequired ? "requested" : "confirmed",
         approval_required: approvalRequired,
@@ -525,7 +545,9 @@ export default function MemberAppPage() {
                 <h3 className="font-extrabold">{selectedStore?.name ?? "매장 선택 대기"}</h3>
                 <p className="mt-1 text-sm font-semibold text-[#697468]">{selectedStore?.address ?? "주소 준비 중"}</p>
                 <p className="mt-2 text-xs font-bold text-vista-leaf">{selectedStore?.phone ?? "매장 전화 준비 중"}</p>
-                <p className="mt-1 text-xs font-bold text-[#4f5b50]">운영시간 09:30 ~ 21:00</p>
+                <p className="mt-1 text-xs font-bold text-[#4f5b50]">
+                  운영시간 {BUSINESS_OPEN_TIME} ~ {BUSINESS_CLOSE_TIME}
+                </p>
                 <p className="mt-2 text-xs font-bold text-[#4f5b50]">예약 가능 타석 {availableBays.length}개</p>
               </div>
             </div>
@@ -589,7 +611,7 @@ export default function MemberAppPage() {
 
           <div className="mt-3 grid grid-cols-3 gap-2">
             {timeSlotStates.map((slot) => {
-              const isDisabled = slot.isPast || slot.isSoldOut;
+              const isDisabled = slot.isPast || slot.isClosed || slot.isSoldOut;
 
               return (
                 <button
@@ -607,30 +629,18 @@ export default function MemberAppPage() {
                   }`}
                 >
                   <span className="block">{slot.time}</span>
-                  {slot.isSoldOut && !slot.isPast ? <span className="mt-0.5 block text-[11px] no-underline">마감</span> : null}
+                  {slot.isClosed && !slot.isPast ? <span className="mt-0.5 block text-[11px] no-underline">운영종료</span> : null}
+                  {slot.isSoldOut && !slot.isPast && !slot.isClosed ? (
+                    <span className="mt-0.5 block text-[11px] no-underline">마감</span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
 
           <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
-            <UserRound className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">4. 인원과 이용시간</h2>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {[1, 2, 3, 4, 5, 6].map((count) => (
-              <button
-                key={count}
-                type="button"
-                onClick={() => setPartySize(count)}
-                className={`rounded-md px-3 py-3 text-sm font-extrabold ${
-                  partySize === count ? "bg-vista-leaf text-white" : "border border-[#cad8c6] bg-white"
-                }`}
-              >
-                {count}명
-              </button>
-            ))}
+            <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
+            <h2 className="text-lg font-extrabold">4. 이용시간</h2>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -689,7 +699,7 @@ export default function MemberAppPage() {
 
           {approvalRequired ? (
             <p className="mt-3 rounded-md bg-[#fff9f0] px-3 py-2 text-xs font-bold leading-5 text-[#8a5a21]">
-              90분 이상 또는 5명 이상 예약은 매장 승인 후 확정됩니다.
+              90분 이상 예약은 매장 승인 후 확정됩니다.
             </p>
           ) : (
             <p className="mt-3 rounded-md bg-[#edf6ef] px-3 py-2 text-xs font-bold leading-5 text-vista-leaf">
@@ -710,7 +720,6 @@ export default function MemberAppPage() {
                   ["날짜", formatReservationDate(selectedDate)],
                   ["시간", `${selectedTime} ~ ${new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(previewEndsAt)}`],
                   ["이용시간", formatDurationLabel(durationMinutes)],
-                  ["인원", `${partySize}명`],
                   ["타석", selectedBay ? `${selectedBay.bay_code} · ${selectedBay.display_name}` : "자동 배정"],
                   ["예상요금", formatCurrency(estimatedPrice)],
                   ["취소안내", "예약 시간 1시간 전까지 매장에 연락해 취소할 수 있습니다."]
@@ -761,7 +770,7 @@ export default function MemberAppPage() {
                         }).format(new Date(reservation.starts_at))}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-[#697468]">
-                        타석 {getBayCode(reservation)} · {reservation.party_size ?? 1}명
+                        타석 {getBayCode(reservation)}
                       </p>
                     </div>
                     <span className="rounded-md bg-[#edf6ef] px-3 py-1 text-xs font-bold text-vista-leaf">
