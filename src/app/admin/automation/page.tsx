@@ -1,7 +1,6 @@
 import { Lightbulb, Power, ShieldAlert, Snowflake, Timer, Zap } from "lucide-react";
 import { DeviceTestButtons } from "@/components/device-test-buttons";
 import {
-  accessSessionRows,
   automationDeviceRows,
   automationLogRows,
   entryCheckRows,
@@ -82,7 +81,7 @@ export default function AutomationPage() {
 
         <DeviceTestButtons />
 
-        <section className="mt-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+        <section className="mt-6">
           <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
             <div className="border-b border-[#e5ece1] p-5">
               <h2 className="text-lg font-extrabold">입장 인증</h2>
@@ -117,40 +116,6 @@ export default function AutomationPage() {
             </div>
           </article>
 
-          <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
-            <div className="border-b border-[#e5ece1] p-5">
-              <h2 className="text-lg font-extrabold">입장 · 키오스크 세션</h2>
-              <p className="mt-1 text-sm text-[#697468]">
-                인원수 또는 업주 지정 시간에 따라 키오스크 이용 시간을 부여합니다.
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="bg-vista-fairway text-[#566153]">
-                  <tr>
-                    <th className="px-5 py-3 font-bold">입장</th>
-                    <th className="px-5 py-3 font-bold">고객</th>
-                    <th className="px-5 py-3 font-bold">타석</th>
-                    <th className="px-5 py-3 font-bold">인원</th>
-                    <th className="px-5 py-3 font-bold">잔여 시간</th>
-                    <th className="px-5 py-3 font-bold">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#edf2ea]">
-                  {accessSessionRows.map((row) => (
-                    <tr key={`${row.time}-${row.member}`} className="hover:bg-[#fbfcfa]">
-                      <td className="px-5 py-4 font-extrabold">{row.time}</td>
-                      <td className="px-5 py-4">{row.member}</td>
-                      <td className="px-5 py-4 font-bold">{row.bay}</td>
-                      <td className="px-5 py-4">{row.people}</td>
-                      <td className="px-5 py-4 font-bold text-vista-leaf">{row.remaining}</td>
-                      <td className="px-5 py-4">{row.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
         </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
