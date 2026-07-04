@@ -42,9 +42,10 @@ export const siheungBayAutomation: BayAutomationConfig[] = [
     enterScript: "script.bay1_on",
     exitScript: "script.bay1_off",
     devices: [
-      { name: "1번타석 PC", provider: "tapo", stateReadable: true, safetyNote: "세션 종료 후 전원 OFF" },
-      { name: "1번타석 프로젝터", provider: "hejhome", stateReadable: false },
-      { name: "1번타석 리시버", provider: "hejhome", stateReadable: false }
+      { name: "1번타석 PC", provider: "tapo", stateReadable: true, safetyNote: "WOL로 부팅, 세션 종료 후 전원 OFF" },
+      { name: "1번타석 TV 모니터", provider: "hejhome", stateReadable: false },
+      { name: "1번타석 데논 리시버", provider: "hejhome", stateReadable: false },
+      { name: "1번타석 프로젝터", provider: "hejhome", stateReadable: false }
     ]
   },
   {

@@ -283,7 +283,7 @@ function ensureWindow(mode) {
 }
 
 async function postHeartbeat(payload) {
-  if (!config.apiBaseUrl || !config.agentSecret || config.agentSecret === "change-me") {
+  if (!config.apiBaseUrl || !config.agentToken || config.agentToken.startsWith("change-me")) {
     return { ok: false, skipped: true };
   }
 
@@ -292,7 +292,9 @@ async function postHeartbeat(payload) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-vista-agent-secret": config.agentSecret
+      Authorization: `Bearer ${config.agentToken}`,
+      "x-vista-agent-id": config.agentId,
+      "x-vista-agent-version": VERSION
     },
     body: JSON.stringify(payload)
   });
