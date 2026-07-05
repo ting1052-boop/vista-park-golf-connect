@@ -272,7 +272,7 @@ export default function KioskEntrancePage() {
             </button>
             <button
               type="button"
-              onClick={() => setScreen("walkin-duration")}
+              onClick={() => void loadBays(durationMinutes)}
               className="flex min-h-[220px] w-full items-center justify-center gap-5 rounded-[28px] border-2 border-vista-leaf bg-white px-8 text-[30px] font-extrabold text-vista-leaf shadow-soft-line md:h-[50vh] md:min-h-[320px] md:w-[40%] md:flex-col md:text-[34px]"
             >
               <MonitorPlay className="size-12 md:size-16" aria-hidden="true" />
@@ -387,35 +387,83 @@ export default function KioskEntrancePage() {
 
         {screen === "walkin-bay" ? (
           <section className="rounded-[24px] border border-[#d9e3d5] bg-white p-8 shadow-soft-line">
-            <h2 className="text-center text-[30px] font-extrabold">타석을 선택해주세요</h2>
+            <h2 className="text-center text-[30px] font-extrabold">이용시간과 타석을 선택해주세요</h2>
             <p className="mt-2 text-center text-[18px] font-semibold text-[#4f5b50]">
               초록색 타석을 눌러 자리를 선택하세요.
             </p>
 
-            <div className="mt-8 grid grid-cols-3 gap-4">
-              {bays.map((bay) => (
+            <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+              {durationOptions.map((option) => (
                 <button
-                  key={bay.id}
+                  key={option.minutes}
                   type="button"
-                  disabled={!bay.isFree}
                   onClick={() => {
-                    setSelectedBay(bay);
-                    setScreen("walkin-confirm");
+                    setDurationMinutes(option.minutes);
+                    setSelectedBay(null);
+                    void loadBays(option.minutes);
                   }}
-                  className={`flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-[20px] border-2 text-center ${
-                    bay.isFree
-                      ? "border-vista-leaf bg-vista-fairway active:scale-[0.98]"
-                      : "cursor-not-allowed border-[#d8ddd5] bg-[#f0f2ee]"
+                  disabled={isLoading}
+                  className={`min-h-[84px] rounded-[18px] border-2 px-4 text-[20px] font-extrabold disabled:opacity-60 ${
+                    durationMinutes === option.minutes
+                      ? "border-vista-leaf bg-vista-leaf text-white"
+                      : "border-[#cad8c6] bg-white text-vista-ink"
                   }`}
                 >
-                  <span className={`text-[40px] font-extrabold ${bay.isFree ? "text-vista-ink" : "text-[#9aa39a]"}`}>
-                    {bay.bayCode}
-                  </span>
-                  <span className={`text-[18px] font-bold ${bay.isFree ? "text-vista-leaf" : "text-[#9aa39a]"}`}>
-                    {bay.isFree ? "선택 가능" : bay.status === "maintenance" ? "점검 중" : "이용 중"}
+                  <span className="block">{getDurationLabel(option.minutes)}</span>
+                  <span className={`mt-1 block text-[15px] ${durationMinutes === option.minutes ? "text-white/85" : "text-vista-leaf"}`}>
+                    {option.price.toLocaleString("ko-KR")}원
                   </span>
                 </button>
               ))}
+            </div>
+
+            <div className="mt-8 rounded-[20px] bg-vista-fairway p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[24px] font-extrabold">타석 선택 그리드</h3>
+                <span className="rounded-full bg-white px-4 py-2 text-[16px] font-extrabold text-vista-leaf">
+                  선택 가능 {bays.filter((bay) => bay.isFree).length}개
+                </span>
+              </div>
+
+              {bays.length > 0 ? (
+                <div className="mt-5 grid grid-cols-3 gap-4">
+                  {bays.map((bay) => (
+                    <button
+                      key={bay.id}
+                      type="button"
+                      disabled={!bay.isFree}
+                      onClick={() => {
+                        setSelectedBay(bay);
+                        setScreen("walkin-confirm");
+                      }}
+                      className={`flex min-h-[190px] flex-col items-center justify-center gap-2 rounded-[20px] border-2 text-center ${
+                        bay.isFree
+                          ? "border-vista-leaf bg-white active:scale-[0.98]"
+                          : "cursor-not-allowed border-[#d8ddd5] bg-[#f0f2ee]"
+                      }`}
+                    >
+                      <span className={`text-[42px] font-extrabold ${bay.isFree ? "text-vista-ink" : "text-[#9aa39a]"}`}>
+                        {bay.bayCode}
+                      </span>
+                      <span className={`text-[18px] font-bold ${bay.isFree ? "text-vista-leaf" : "text-[#9aa39a]"}`}>
+                        {bay.isFree ? "선택 가능" : bay.status === "maintenance" ? "점검 중" : "이용 중"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-[18px] border-2 border-dashed border-[#cad8c6] bg-white p-8 text-center">
+                  <p className="text-[22px] font-extrabold">표시할 타석이 없습니다</p>
+                  <p className="mt-2 text-[17px] font-semibold text-[#697468]">네트워크 또는 매장 타석 설정을 확인해주세요.</p>
+                  <button
+                    type="button"
+                    onClick={() => void loadBays(durationMinutes)}
+                    className="mt-5 min-h-[64px] rounded-[16px] bg-vista-leaf px-8 text-[20px] font-extrabold text-white"
+                  >
+                    다시 불러오기
+                  </button>
+                </div>
+              )}
             </div>
 
             <p className="mt-6 text-center text-[15px] font-semibold text-[#697468]">← 안내 데스크 방향 · 창측 →</p>
