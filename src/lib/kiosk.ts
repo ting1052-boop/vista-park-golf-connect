@@ -12,10 +12,10 @@ export type KioskBay = {
 };
 
 // 키오스크 API 보호: KIOSK_ACCESS_KEY가 설정되어 있으면 요청 헤더와
-// 일치해야 한다. 미설정이면 개발 편의를 위해 통과시킨다.
+// 일치해야 한다. 개발 환경에서만 미설정 통과를 허용한다.
 export function checkKioskKey(request: NextRequest): boolean {
   const expected = process.env.KIOSK_ACCESS_KEY;
-  if (!expected) return true;
+  if (!expected) return process.env.NODE_ENV !== "production";
 
   return request.headers.get("x-kiosk-key") === expected;
 }
@@ -124,6 +124,41 @@ export type StartKioskSessionResult = {
   automationDetail: string | null;
 };
 
+type ExistingActiveSession = {
+  id: string;
+  bay_id: string | null;
+  ends_at: string | null;
+};
+
+async function findExistingActiveSession(supabase: SupabaseClient, reservationId: string) {
+  const { data, error } = await supabase
+    .from("access_sessions")
+    .select("id, bay_id, ends_at")
+    .eq("reservation_id", reservationId)
+    .in("status", ["active", "extended"])
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return (data as ExistingActiveSession | null) ?? null;
+}
+
+async function findKioskSessionId(supabase: SupabaseClient, accessSessionId: string) {
+  const { data, error } = await supabase
+    .from("kiosk_sessions")
+    .select("id")
+    .eq("access_session_id", accessSessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return null;
+
+  return data?.id ?? null;
+}
+
 // 입장 확정 후 공통 처리: access_session 생성 → kiosk_session 생성 →
 // 타석 in_use → Home Assistant 자동화 호출.
 // 자동화 실패는 입장 자체를 막지 않는다 (장비는 매장에서 수동 대응 가능).
@@ -131,6 +166,23 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
   const now = new Date();
   const allowedMinutes = Math.max(1, Math.round((args.endsAt.getTime() - args.startsAt.getTime()) / 60_000));
   const remainingSeconds = Math.max(0, Math.floor((args.endsAt.getTime() - now.getTime()) / 1000));
+  const existingSession = await findExistingActiveSession(args.supabase, args.reservationId);
+
+  if (existingSession) {
+    if (existingSession.bay_id) {
+      await args.supabase
+        .from("bays")
+        .update({ status: "in_use", updated_at: now.toISOString() })
+        .eq("id", existingSession.bay_id);
+    }
+
+    return {
+      accessSessionId: existingSession.id,
+      kioskSessionId: await findKioskSessionId(args.supabase, existingSession.id),
+      automationStatus: "skipped",
+      automationDetail: "이미 입장 처리된 세션을 다시 사용했습니다."
+    };
+  }
 
   const { data: accessSession, error: accessError } = await args.supabase
     .from("access_sessions")
@@ -148,7 +200,21 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
     .select("id")
     .single();
 
-  if (accessError) throw new Error(accessError.message);
+  if (accessError) {
+    if (accessError.code === "23505") {
+      const racedSession = await findExistingActiveSession(args.supabase, args.reservationId);
+      if (racedSession) {
+        return {
+          accessSessionId: racedSession.id,
+          kioskSessionId: await findKioskSessionId(args.supabase, racedSession.id),
+          automationStatus: "skipped",
+          automationDetail: "동시에 처리된 입장 세션을 다시 사용했습니다."
+        };
+      }
+    }
+
+    throw new Error(accessError.message);
+  }
 
   const { data: kioskSession, error: kioskError } = await args.supabase
     .from("kiosk_sessions")

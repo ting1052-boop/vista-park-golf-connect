@@ -103,10 +103,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, message: "예약을 찾을 수 없습니다. 전화번호 뒤 4자리를 다시 확인해주세요." }, { status: 404 });
   }
 
-  if (reservation.status === "checked_in") {
-    return NextResponse.json({ ok: false, message: "이미 입장 처리된 예약입니다. 타석으로 이동해주세요." }, { status: 409 });
-  }
-
   if (reservation.status === "requested" || reservation.approval_required) {
     return NextResponse.json(
       { ok: false, message: "매장 승인 대기 중인 예약입니다. 매장에 문의해주세요." },
