@@ -200,7 +200,7 @@ export function DashboardClient({
             return [...current, updatedBay].sort((a, b) => a.name.localeCompare(b.name, "ko-KR"));
           }
 
-          return current.map((bay) => (bay.id === updatedBay.id ? { ...bay, ...updatedBay } : bay));
+          return current.map((bay) => (bay.id === updatedBay.id ? mergeBayRealtimeUpdate(bay, updatedBay) : bay));
         });
         setDataError(null);
       }, currentStoreId);
@@ -378,7 +378,7 @@ export function DashboardClient({
   };
 
   const metrics = [
-    { label: "현재 이용 중", value: `${summary.inUse} / ${bays.length}`, helper: `${summary.people}명 플레이 중`, icon: Activity, className: "border-sky-200 bg-sky-50 text-sky-700" },
+    { label: "현재 이용 중", value: `${summary.inUse} / ${bays.length}`, helper: "", icon: Activity, className: "border-sky-200 bg-sky-50 text-sky-700" },
     { label: "입장 대기", value: `${summary.waiting}`, helper: "키오스크 인증 또는 승인 필요", icon: Clock3, className: "border-amber-200 bg-amber-50 text-amber-700" },
     { label: "사용 가능", value: `${summary.available}`, helper: "즉시 배정 가능한 타석", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
     { label: "점검/알림", value: `${summary.maintenance + alerts.length + noShows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
@@ -544,7 +544,7 @@ export function DashboardClient({
                         <Icon size={21} aria-hidden="true" />
                       </span>
                     </div>
-                    <p className="mt-4 text-sm font-semibold text-[#5f6b5e]">{item.helper}</p>
+                    {item.helper ? <p className="mt-4 text-sm font-semibold text-[#5f6b5e]">{item.helper}</p> : null}
                   </article>
                 );
               })}
@@ -858,6 +858,7 @@ function BayCard({
 }) {
   const meta = statusMeta[bay.status];
   const StatusIcon = meta.icon;
+  const usageText = getBayUsageText(bay);
 
   return (
     <article className={cn("rounded-md border bg-white p-5 shadow-soft-line", meta.card)}>
@@ -873,6 +874,7 @@ function BayCard({
         <div>
           <h4 className="text-3xl font-extrabold">{bay.name}</h4>
           <p className="mt-2 text-sm font-bold text-[#5f6b5e]">{bay.mode}</p>
+          {usageText ? <p className="mt-2 text-lg font-extrabold text-sky-800">{usageText}</p> : null}
         </div>
         <div className={cn("grid size-14 shrink-0 place-items-center rounded-md", meta.iconBox)}>
           <StatusIcon size={28} aria-hidden="true" />
@@ -962,6 +964,43 @@ function BayCard({
       </div>
     </article>
   );
+}
+
+function mergeBayRealtimeUpdate(current: LiveBay, updated: LiveBay): LiveBay {
+  if (updated.status !== "in_use") {
+    return updated;
+  }
+
+  return {
+    ...current,
+    ...updated,
+    customer: updated.customer ?? current.customer,
+    people: updated.people ?? current.people,
+    totalMinutes: updated.totalMinutes ?? current.totalMinutes,
+    remainingMinutes: updated.remainingMinutes ?? current.remainingMinutes,
+    startedAt: updated.startedAt ?? current.startedAt,
+    endsAt: updated.endsAt ?? current.endsAt
+  };
+}
+
+function getBayUsageText(bay: LiveBay) {
+  if (bay.status !== "in_use") {
+    return "";
+  }
+
+  const totalMinutes = bay.totalMinutes;
+  const remainingMinutes = bay.remainingMinutes;
+
+  if (typeof totalMinutes === "number" && typeof remainingMinutes === "number") {
+    const usedMinutes = Math.max(0, totalMinutes - Math.max(0, remainingMinutes));
+    return `${usedMinutes}분 이용 중`;
+  }
+
+  if (typeof remainingMinutes === "number") {
+    return remainingMinutes <= 0 ? "이용 시간 초과" : `${remainingMinutes}분 남음`;
+  }
+
+  return "이용 시간 확인 중";
 }
 
 function CircularTimer({ remainingMinutes, totalMinutes }: { remainingMinutes: number; totalMinutes: number }) {

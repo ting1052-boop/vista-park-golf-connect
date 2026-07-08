@@ -1,4 +1,4 @@
-import { getBays } from "@/lib/supabase/bays";
+import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
 import { getStoreSummaries } from "@/lib/supabase/stores";
 import { DashboardClient } from "./dashboard-client";
@@ -7,7 +7,7 @@ const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
 export default async function AdminDashboardPage() {
   const [bayResult, storeResult, dashboardResult] = await Promise.allSettled([
-    getBays(CURRENT_STORE_ID),
+    getDashboardBays(CURRENT_STORE_ID),
     getStoreSummaries(),
     getDashboardOperationalRows(CURRENT_STORE_ID)
   ]);
