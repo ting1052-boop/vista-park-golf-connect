@@ -60,6 +60,26 @@ function applySessionToBay(bay: LiveBay, session: ActiveSessionRow, now: Date): 
   };
 }
 
+function clearStaleInUseBay(bay: LiveBay): LiveBay {
+  if (bay.status !== "in_use") {
+    return bay;
+  }
+
+  return {
+    ...bay,
+    status: "available",
+    customer: undefined,
+    people: undefined,
+    totalMinutes: undefined,
+    remainingMinutes: undefined,
+    startedAt: undefined,
+    endsAt: undefined,
+    nextReservation: bay.nextReservation ?? "예약 배정 가능",
+    mode: "즉시 배정 가능",
+    note: "활성 입장 세션이 없어 사용 가능 상태로 표시합니다."
+  };
+}
+
 export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   const [bays, sessionResult] = await Promise.all([
     getBays(storeId),
@@ -87,6 +107,6 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
 
   return bays.map((bay) => {
     const session = sessionsByBayId.get(bay.id);
-    return session ? applySessionToBay(bay, session, now) : bay;
+    return session ? applySessionToBay(bay, session, now) : clearStaleInUseBay(bay);
   });
 }
