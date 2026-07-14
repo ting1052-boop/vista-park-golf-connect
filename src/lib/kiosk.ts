@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { runBayAutomation } from "@/lib/automation/sessions";
+import { getBlockMinutes, priceByDuration } from "@/lib/reservation-policy";
 
 export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show"];
 
@@ -121,6 +122,29 @@ export type StartKioskSessionResult = {
   accessSessionId: string;
   kioskSessionId: string | null;
   automationStatus: "requested" | "failed" | "skipped";
+  automationDetail: string | null;
+};
+
+export type StartWalkInSessionArgs = {
+  supabase: SupabaseClient;
+  storeId: string;
+  durationMinutes: number;
+  partySize?: number;
+  bayId?: string | null;
+  guestName?: string | null;
+  memoPrefix?: string;
+};
+
+export type StartWalkInSessionResult = {
+  bayId: string;
+  bayCode: string;
+  startsAt: Date;
+  endsAt: Date;
+  durationMinutes: number;
+  price: number;
+  reservationId: string;
+  accessSessionId: string;
+  automationStatus: StartKioskSessionResult["automationStatus"];
   automationDetail: string | null;
 };
 
@@ -256,5 +280,95 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
     kioskSessionId: kioskError ? null : kioskSession.id,
     automationStatus,
     automationDetail
+  };
+}
+
+export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<StartWalkInSessionResult> {
+  const startsAt = new Date();
+  const endsAt = new Date(startsAt.getTime() + getBlockMinutes(args.durationMinutes) * 60_000);
+  const partySize = args.partySize ?? 1;
+  const guestName = args.guestName?.trim() || "현장 고객";
+  const memoPrefix = args.memoPrefix?.trim() || "현장 이용";
+  const price = priceByDuration[args.durationMinutes];
+  const freeBays = await findFreeBays(args.supabase, args.storeId, startsAt, endsAt);
+
+  if (freeBays.length === 0) {
+    throw new Error("현재 이용 가능한 타석이 없습니다. 잠시 후 다시 시도해주세요.");
+  }
+
+  if (args.bayId) {
+    const chosen = freeBays.find((bay) => bay.id === args.bayId);
+    if (!chosen) {
+      const error = new Error("선택하신 타석이 방금 사용 중으로 바뀌었습니다. 다른 타석을 선택해주세요.");
+      error.name = "BayUnavailableError";
+      throw error;
+    }
+  }
+
+  const candidates = args.bayId ? freeBays.filter((bay) => bay.id === args.bayId) : freeBays.slice(0, 3);
+  let reservationId: string | null = null;
+  let assignedBay: (typeof freeBays)[number] | null = null;
+
+  for (const bay of candidates) {
+    const { data: inserted, error: insertError } = await args.supabase
+      .from("reservations")
+      .insert({
+        store_id: args.storeId,
+        bay_id: bay.id,
+        guest_name: guestName,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        party_size: partySize,
+        channel: "walk_in",
+        status: "checked_in",
+        approval_required: false,
+        memo: `${memoPrefix} · 후불 계좌이체 · 미결제 ${price.toLocaleString("ko-KR")}원`
+      })
+      .select("id")
+      .single();
+
+    if (!insertError && inserted) {
+      reservationId = inserted.id;
+      assignedBay = bay;
+      break;
+    }
+
+    if (insertError && insertError.code !== "23P01") {
+      throw new Error(insertError.message);
+    }
+  }
+
+  if (!reservationId || !assignedBay) {
+    const error = new Error(
+      args.bayId
+        ? "선택하신 타석이 방금 마감되었습니다. 다른 타석을 선택해주세요."
+        : "방금 다른 이용이 시작되어 타석이 마감되었습니다. 다시 시도해주세요."
+    );
+    error.name = "BayUnavailableError";
+    throw error;
+  }
+
+  const session = await startKioskSession({
+    supabase: args.supabase,
+    storeId: args.storeId,
+    bayId: assignedBay.id,
+    reservationId,
+    guestName,
+    partySize,
+    startsAt,
+    endsAt
+  });
+
+  return {
+    bayId: assignedBay.id,
+    bayCode: assignedBay.bay_code,
+    startsAt,
+    endsAt,
+    durationMinutes: args.durationMinutes,
+    price,
+    reservationId,
+    accessSessionId: session.accessSessionId,
+    automationStatus: session.automationStatus,
+    automationDetail: session.automationDetail
   };
 }

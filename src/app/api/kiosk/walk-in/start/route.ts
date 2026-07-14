@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import { checkKioskKey, findFreeBays, startKioskSession } from "@/lib/kiosk";
-import { getBlockMinutes, isSupportedDuration, priceByDuration } from "@/lib/reservation-policy";
+import { checkKioskKey, startWalkInSession } from "@/lib/kiosk";
+import { isSupportedDuration } from "@/lib/reservation-policy";
 
 type WalkInBody = {
   storeId?: unknown;
@@ -44,8 +44,6 @@ export async function POST(request: NextRequest) {
   }
 
   const storeId = body.storeId;
-  const startsAt = new Date();
-  const endsAt = new Date(startsAt.getTime() + getBlockMinutes(durationMinutes) * 60_000);
 
   let supabase;
   try {
@@ -58,101 +56,32 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const freeBays = await findFreeBays(supabase, storeId, startsAt, endsAt);
-
-    if (freeBays.length === 0) {
-      return NextResponse.json(
-        { ok: false, message: "현재 이용 가능한 타석이 없습니다. 잠시 후 다시 시도해주세요." },
-        { status: 409 }
-      );
-    }
-
-    // 고객이 배치도에서 특정 타석을 골랐으면 그 타석만 시도한다.
-    // 자리를 지정하지 않았으면(자동 배정) 빈 타석 순서대로 시도한다.
-    const requestedBayId = typeof body.bayId === "string" ? body.bayId : null;
-
-    if (requestedBayId) {
-      const chosen = freeBays.find((bay) => bay.id === requestedBayId);
-      if (!chosen) {
-        return NextResponse.json(
-          { ok: false, message: "선택하신 타석이 방금 사용 중으로 바뀌었습니다. 다른 타석을 선택해주세요." },
-          { status: 409 }
-        );
-      }
-    }
-
-    const candidates = requestedBayId ? freeBays.filter((bay) => bay.id === requestedBayId) : freeBays.slice(0, 3);
-
-    // 동시 입장 경합 시 DB 배타 제약(23P01)에 걸리면 다음 빈 타석으로 재시도한다.
-    let reservationId: string | null = null;
-    let assignedBay: (typeof freeBays)[number] | null = null;
-
-    for (const bay of candidates) {
-      const { data: inserted, error: insertError } = await supabase
-        .from("reservations")
-        .insert({
-          store_id: storeId,
-          bay_id: bay.id,
-          guest_name: "현장 고객",
-          starts_at: startsAt.toISOString(),
-          ends_at: endsAt.toISOString(),
-          party_size: partySize,
-          channel: "walk_in",
-          status: "checked_in",
-          approval_required: false,
-          // 후불이라 아직 미결제 상태. 관리자가 예약 메모에서 미수금을 확인한다.
-          // (추후 payment_status 컬럼 + 입금확인 UI로 확장 예정)
-          memo: `현장 이용 · 후불 계좌이체 · 미결제 ${priceByDuration[durationMinutes].toLocaleString("ko-KR")}원`
-        })
-        .select("id")
-        .single();
-
-      if (!insertError && inserted) {
-        reservationId = inserted.id;
-        assignedBay = bay;
-        break;
-      }
-
-      if (insertError && insertError.code !== "23P01") {
-        return NextResponse.json({ ok: false, message: insertError.message }, { status: 500 });
-      }
-    }
-
-    if (!reservationId || !assignedBay) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: requestedBayId
-            ? "선택하신 타석이 방금 마감되었습니다. 다른 타석을 선택해주세요."
-            : "방금 다른 이용이 시작되어 타석이 마감되었습니다. 다시 시도해주세요."
-        },
-        { status: 409 }
-      );
-    }
-
-    const session = await startKioskSession({
+    const session = await startWalkInSession({
       supabase,
       storeId,
-      bayId: assignedBay.id,
-      reservationId,
-      guestName: "현장 고객",
       partySize,
-      startsAt,
-      endsAt
+      durationMinutes,
+      bayId: typeof body.bayId === "string" ? body.bayId : null,
+      guestName: "현장 고객",
+      memoPrefix: "현장 이용"
     });
 
     return NextResponse.json({
       ok: true,
-      bayCode: assignedBay.bay_code,
-      startsAt: startsAt.toISOString(),
-      endsAt: endsAt.toISOString(),
-      durationMinutes,
-      price: priceByDuration[durationMinutes],
+      bayCode: session.bayCode,
+      startsAt: session.startsAt.toISOString(),
+      endsAt: session.endsAt.toISOString(),
+      durationMinutes: session.durationMinutes,
+      price: session.price,
       accessSessionId: session.accessSessionId,
       automationStatus: session.automationStatus,
       automationDetail: session.automationDetail
     });
   } catch (error) {
+    if (error instanceof Error && error.name === "BayUnavailableError") {
+      return NextResponse.json({ ok: false, message: error.message }, { status: 409 });
+    }
+
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : "현장 이용 처리 중 오류가 발생했습니다." },
       { status: 500 }

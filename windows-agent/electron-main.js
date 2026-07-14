@@ -24,7 +24,6 @@ let config = null;
 let baysConfig = null;
 let activeSessionId = null;
 let dismissedWarningSessionId = null;
-let dismissedCriticalSessionId = null;
 let extensionRequestState = null;
 let pollTimer = null;
 
@@ -185,21 +184,16 @@ async function isAnyGameRunning(processNames) {
 }
 
 function determineMode(session, remainingSeconds) {
-  if (!session) return "mini";
+  if (!session) return "hidden";
   if ((remainingSeconds ?? 0) <= 0) return "lock";
 
   const warningSeconds = config.warningBeforeMinutes * 60;
-  const criticalSeconds = config.criticalBeforeMinutes * 60;
-
-  if ((remainingSeconds ?? 0) <= criticalSeconds && dismissedCriticalSessionId !== session.accessSessionId) {
-    return "warning";
-  }
 
   if ((remainingSeconds ?? 0) <= warningSeconds && dismissedWarningSessionId !== session.accessSessionId) {
     return "warning";
   }
 
-  return "mini";
+  return "hidden";
 }
 
 function getWindowBounds(mode) {
@@ -216,18 +210,18 @@ function getWindowBounds(mode) {
 
   if (mode === "warning") {
     return {
-      x: workArea.x + Math.round((workArea.width - 700) / 2),
-      y: workArea.y + Math.round((workArea.height - 420) / 2),
-      width: 700,
-      height: 420
+      x: workArea.x + workArea.width - 430,
+      y: workArea.y + 24,
+      width: 400,
+      height: 150
     };
   }
 
   return {
-    x: workArea.x + Math.round((workArea.width - 600) / 2),
+    x: workArea.x + Math.round((workArea.width - 300) / 2),
     y: workArea.y + 24,
-    width: 600,
-    height: 172
+    width: 300,
+    height: 86
   };
 }
 
@@ -239,7 +233,7 @@ function createWindow(mode) {
   const window = new BrowserWindow({
     ...bounds,
     frame: false,
-    transparent: isMini,
+    transparent: !isLock,
     resizable: false,
     movable: !isLock,
     minimizable: false,
@@ -247,7 +241,7 @@ function createWindow(mode) {
     fullscreenable: isLock,
     skipTaskbar: true,
     alwaysOnTop: true,
-    focusable: !isMini,
+    focusable: mode === "warning" || isLock,
     webPreferences: {
       preload: path.join(ROOT, "electron-preload.js"),
       contextIsolation: true,
@@ -272,6 +266,15 @@ function createWindow(mode) {
 }
 
 function ensureWindow(mode) {
+  if (mode === "hidden") {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy();
+    }
+    mainWindow = null;
+    currentMode = mode;
+    return;
+  }
+
   if (mainWindow && currentMode === mode && !mainWindow.isDestroyed()) {
     return;
   }
@@ -313,7 +316,6 @@ async function tick() {
   if (session?.accessSessionId && activeSessionId !== session.accessSessionId) {
     activeSessionId = session.accessSessionId;
     dismissedWarningSessionId = null;
-    dismissedCriticalSessionId = null;
     extensionRequestState = null;
   }
 
@@ -348,7 +350,9 @@ async function tick() {
     extensionRequest: extensionRequestState
   };
 
-  mainWindow.webContents.send("agent-state", state);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("agent-state", state);
+  }
 
   try {
     await postHeartbeat({
@@ -370,8 +374,10 @@ async function tick() {
   }
 }
 
-async function requestExtension() {
+async function requestExtension(requestedMinutes) {
   const session = await loadSession();
+  const safeRequestedMinutes = Math.max(30, Math.round(Number(requestedMinutes || config.extensionMinutes) / 30) * 30);
+  const priceAmount = Math.max(0, Math.round((safeRequestedMinutes / config.extensionMinutes) * config.extensionPrice));
 
   if (!session) {
     extensionRequestState = { status: "failed", message: "진행 중인 이용 세션이 없습니다." };
@@ -383,7 +389,7 @@ async function requestExtension() {
   if (!config.apiBaseUrl || !config.agentToken || config.agentToken.startsWith("change-me")) {
     extensionRequestState = {
       status: "local_demo",
-      message: `${config.extensionMinutes}분 연장 요청이 기록되었습니다. 서버 API 연결 전 테스트 모드입니다.`
+      message: `${safeRequestedMinutes}분 연장 요청이 기록되었습니다. 서버 API 연결 전 테스트 모드입니다.`
     };
     return extensionRequestState;
   }
@@ -399,8 +405,8 @@ async function requestExtension() {
       },
       body: JSON.stringify({
         accessSessionId: session.accessSessionId,
-        requestedMinutes: config.extensionMinutes,
-        priceAmount: config.extensionPrice
+        requestedMinutes: safeRequestedMinutes,
+        priceAmount
       })
     });
 
@@ -425,23 +431,17 @@ async function requestExtension() {
 
 ipcMain.handle("confirm-warning", async () => {
   const session = await loadSession();
-  const remainingSeconds = getRemainingSeconds(session);
 
   if (session?.accessSessionId) {
-    const criticalSeconds = config.criticalBeforeMinutes * 60;
-    if ((remainingSeconds ?? 0) <= criticalSeconds) {
-      dismissedCriticalSessionId = session.accessSessionId;
-    } else {
-      dismissedWarningSessionId = session.accessSessionId;
-    }
+    dismissedWarningSessionId = session.accessSessionId;
   }
 
   await tick();
   return { ok: true };
 });
 
-ipcMain.handle("request-extension", async () => {
-  const result = await requestExtension();
+ipcMain.handle("request-extension", async (_event, requestedMinutes) => {
+  const result = await requestExtension(requestedMinutes);
   await tick();
   return result;
 });

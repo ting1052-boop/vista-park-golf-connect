@@ -9,8 +9,8 @@ contextBridge.exposeInMainWorld("vistaAgent", {
   confirmWarning() {
     return ipcRenderer.invoke("confirm-warning");
   },
-  requestExtension() {
-    return ipcRenderer.invoke("request-extension");
+  requestExtension(minutes) {
+    return ipcRenderer.invoke("request-extension", minutes);
   },
   closeAgent() {
     return ipcRenderer.invoke("close-agent");

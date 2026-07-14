@@ -7,47 +7,39 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main id="app" class="agent-shell mini-shell">
-      <section class="mini-card">
-        <div>
-          <p class="eyebrow">VISTA</p>
-          <h1 id="miniBay">타석</h1>
-        </div>
-        <div class="mini-time">
-          <strong id="miniTime">대기</strong>
-          <span id="miniLabel">세션 없음</span>
-        </div>
-      </section>
-
+    <main id="app" class="agent-shell warning-shell">
       <section class="warning-card">
-        <p class="eyebrow">VISTA Park Golf Connect</p>
-        <h2 id="warningTitle">이용 종료 안내</h2>
-        <p id="warningBody" class="warning-body">이용 종료 시간이 가까워지고 있습니다.</p>
-
-        <div class="session-grid">
+        <div class="warning-main">
           <div>
-            <span>타석</span>
-            <strong id="warningBay">-</strong>
+            <p class="eyebrow">VISTA</p>
+            <strong id="warningBay">타석</strong>
           </div>
-          <div>
+          <div class="remaining-box">
             <span>남은 시간</span>
-            <strong id="warningRemaining">-</strong>
-          </div>
-          <div>
-            <span>종료 예정</span>
-            <strong id="warningEndsAt">-</strong>
-          </div>
-          <div>
-            <span>연장 요금</span>
-            <strong id="warningPrice">-</strong>
+            <strong id="warningRemaining">--:--</strong>
           </div>
         </div>
 
         <p id="extensionMessage" class="extension-message"></p>
 
         <div class="button-row">
-          <button id="extendButton" type="button" class="primary-button">연장</button>
           <button id="confirmButton" type="button" class="secondary-button">확인</button>
+          <button id="extendButton" type="button" class="primary-button">연장</button>
+        </div>
+
+        <div id="extensionDialog" class="extension-dialog" hidden>
+          <div class="extension-panel">
+            <p class="dialog-title">이용시간 연장</p>
+            <div class="stepper">
+              <button id="decreaseButton" type="button" class="step-button">-</button>
+              <strong id="extensionMinutes">30분</strong>
+              <button id="increaseButton" type="button" class="step-button">+</button>
+            </div>
+            <div class="dialog-buttons">
+              <button id="cancelExtensionButton" type="button" class="secondary-button">취소</button>
+              <button id="confirmExtensionButton" type="button" class="primary-button">연장</button>
+            </div>
+          </div>
         </div>
       </section>
 

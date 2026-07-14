@@ -9,6 +9,14 @@ type ExpiredAccessSession = {
   ends_at: string | null;
 };
 
+export type CloseSingleSessionResult = {
+  accessSessionId: string;
+  bayId: string | null;
+  status: "completed" | "not_found";
+  automationStatus: "requested" | "failed" | "skipped";
+  message: string | null;
+};
+
 export type SessionCleanupResult = {
   scanned: number;
   completed: number;
@@ -23,6 +31,72 @@ export type SessionCleanupResult = {
 };
 
 const EXPIRING_SESSION_STATUSES = ["active", "extended", "overdue"] as const;
+
+export async function closeSingleSession(
+  supabase: SupabaseClient,
+  session: ExpiredAccessSession,
+  completedAt = new Date().toISOString()
+): Promise<CloseSingleSessionResult> {
+  let automationStatus: CloseSingleSessionResult["automationStatus"] = "skipped";
+  let message: string | null = null;
+
+  const { data: updatedSessions, error: sessionError } = await supabase
+    .from("access_sessions")
+    .update({ status: "completed", completed_at: completedAt, updated_at: completedAt })
+    .eq("id", session.id)
+    .in("status", [...EXPIRING_SESSION_STATUSES])
+    .select("id");
+
+  if (sessionError) throw new Error(sessionError.message);
+
+  if (!updatedSessions || updatedSessions.length === 0) {
+    return {
+      accessSessionId: session.id,
+      bayId: session.bay_id,
+      status: "not_found",
+      automationStatus: "skipped",
+      message: "이미 종료되었거나 활성 상태가 아닌 세션입니다."
+    };
+  }
+
+  await supabase
+    .from("kiosk_sessions")
+    .update({ remaining_seconds: 0, is_locked: true, locked_at: completedAt, updated_at: completedAt })
+    .eq("access_session_id", session.id);
+
+  if (session.bay_id) {
+    const { error: bayError } = await supabase
+      .from("bays")
+      .update({ status: "available", updated_at: completedAt })
+      .eq("id", session.bay_id);
+
+    if (bayError) throw new Error(bayError.message);
+
+    try {
+      const automation = await runBayAutomation({
+        supabase,
+        bayId: session.bay_id,
+        action: "exit",
+        accessSessionId: session.id,
+        reservationId: session.reservation_id
+      });
+
+      automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
+      message = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
+    } catch (automationError) {
+      automationStatus = "failed";
+      message = automationError instanceof Error ? automationError.message : "종료 자동화 호출 실패";
+    }
+  }
+
+  return {
+    accessSessionId: session.id,
+    bayId: session.bay_id,
+    status: "completed",
+    automationStatus,
+    message
+  };
+}
 
 export async function closeExpiredSessions(
   supabase: SupabaseClient,
@@ -50,56 +124,16 @@ export async function closeExpiredSessions(
   };
 
   for (const session of sessions) {
-    let automationStatus: SessionCleanupResult["items"][number]["automationStatus"] = "skipped";
-    let message: string | null = null;
-
     try {
-      const completedAt = new Date().toISOString();
-      const { error: sessionError } = await supabase
-        .from("access_sessions")
-        .update({ status: "completed", completed_at: completedAt, updated_at: completedAt })
-        .eq("id", session.id)
-        .in("status", [...EXPIRING_SESSION_STATUSES]);
-
-      if (sessionError) throw new Error(sessionError.message);
-
-      await supabase
-        .from("kiosk_sessions")
-        .update({ remaining_seconds: 0, is_locked: true, locked_at: completedAt, updated_at: completedAt })
-        .eq("access_session_id", session.id);
-
-      if (session.bay_id) {
-        const { error: bayError } = await supabase
-          .from("bays")
-          .update({ status: "available", updated_at: completedAt })
-          .eq("id", session.bay_id);
-
-        if (bayError) throw new Error(bayError.message);
-
-        try {
-          const automation = await runBayAutomation({
-            supabase,
-            bayId: session.bay_id,
-            action: "exit",
-            accessSessionId: session.id,
-            reservationId: session.reservation_id
-          });
-
-          automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
-          message = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
-        } catch (automationError) {
-          automationStatus = "failed";
-          message = automationError instanceof Error ? automationError.message : "종료 자동화 호출 실패";
-        }
-      }
+      const closed = await closeSingleSession(supabase, session);
 
       result.completed += 1;
       result.items.push({
         accessSessionId: session.id,
         bayId: session.bay_id,
         status: "completed",
-        automationStatus,
-        message
+        automationStatus: closed.automationStatus,
+        message: closed.message
       });
     } catch (caughtError) {
       result.failed += 1;
@@ -107,7 +141,7 @@ export async function closeExpiredSessions(
         accessSessionId: session.id,
         bayId: session.bay_id,
         status: "failed",
-        automationStatus,
+        automationStatus: "skipped",
         message: caughtError instanceof Error ? caughtError.message : "세션 종료 처리 실패"
       });
     }

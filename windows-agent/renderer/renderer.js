@@ -1,24 +1,24 @@
 const appElement = document.getElementById("app");
-const miniBay = document.getElementById("miniBay");
-const miniTime = document.getElementById("miniTime");
-const miniLabel = document.getElementById("miniLabel");
-const warningTitle = document.getElementById("warningTitle");
-const warningBody = document.getElementById("warningBody");
 const warningBay = document.getElementById("warningBay");
 const warningRemaining = document.getElementById("warningRemaining");
-const warningEndsAt = document.getElementById("warningEndsAt");
-const warningPrice = document.getElementById("warningPrice");
 const extensionMessage = document.getElementById("extensionMessage");
 const extendButton = document.getElementById("extendButton");
 const confirmButton = document.getElementById("confirmButton");
+const extensionDialog = document.getElementById("extensionDialog");
+const decreaseButton = document.getElementById("decreaseButton");
+const increaseButton = document.getElementById("increaseButton");
+const extensionMinutes = document.getElementById("extensionMinutes");
+const cancelExtensionButton = document.getElementById("cancelExtensionButton");
+const confirmExtensionButton = document.getElementById("confirmExtensionButton");
 const lockBay = document.getElementById("lockBay");
 const lockEndsAt = document.getElementById("lockEndsAt");
 
 let latestState = null;
 let localTimer = null;
+let selectedExtensionMinutes = 30;
 
 function formatRemaining(seconds) {
-  if (seconds === null || seconds === undefined) return "대기";
+  if (seconds === null || seconds === undefined) return "--:--";
   const safeSeconds = Math.max(0, seconds);
   const minutes = Math.floor(safeSeconds / 60);
   const restSeconds = safeSeconds % 60;
@@ -36,21 +36,22 @@ function formatClock(value) {
   }).format(new Date(value));
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat("ko-KR", {
-    style: "currency",
-    currency: "KRW",
-    maximumFractionDigits: 0
-  }).format(value);
-}
-
 function getRemainingFromState(state) {
   if (!state?.session?.endsAt) return null;
   return Math.max(0, Math.floor((new Date(state.session.endsAt).getTime() - Date.now()) / 1000));
 }
 
-function setShellMode(mode, isCritical) {
-  appElement.className = `agent-shell ${mode}-shell${isCritical ? " critical" : ""}`;
+function setShellMode(mode) {
+  appElement.className = `agent-shell ${mode}-shell`;
+}
+
+function setExtensionDialog(open) {
+  extensionDialog.hidden = !open;
+}
+
+function renderExtensionMinutes() {
+  extensionMinutes.textContent = `${selectedExtensionMinutes}분`;
+  decreaseButton.disabled = selectedExtensionMinutes <= 30;
 }
 
 function render(state) {
@@ -60,29 +61,24 @@ function render(state) {
   const remainingSeconds = getRemainingFromState(state);
   const remainingText = formatRemaining(remainingSeconds);
   const bayCode = state.agent?.bayCode ?? "타석";
-  const isCritical = Boolean(
-    session && remainingSeconds !== null && remainingSeconds <= state.policy.criticalBeforeMinutes * 60
-  );
 
-  setShellMode(state.mode, isCritical);
+  setShellMode(state.mode);
 
-  miniBay.textContent = bayCode;
-  miniTime.textContent = remainingText;
-  miniLabel.textContent = session ? "남은 시간" : "세션 대기";
-
-  warningTitle.textContent = isCritical ? "곧 이용이 종료됩니다" : "이용 종료 10분 전입니다";
-  warningBody.textContent = `${bayCode} 이용 시간이 얼마 남지 않았습니다. 계속 이용하시려면 연장을 눌러주세요.`;
   warningBay.textContent = bayCode;
   warningRemaining.textContent = remainingText;
-  warningEndsAt.textContent = formatClock(session?.endsAt);
-  warningPrice.textContent = `${state.policy.extensionMinutes}분 ${formatCurrency(state.policy.extensionPrice)}`;
   extensionMessage.textContent = state.extensionRequest?.message ?? "";
 
   lockBay.textContent = bayCode;
   lockEndsAt.textContent = `종료 예정 ${formatClock(session?.endsAt)}`;
 
-  extendButton.disabled = state.extensionRequest?.status === "pending";
-  extendButton.textContent = state.extensionRequest?.status === "pending" ? "요청 중" : "연장";
+  const isPending = state.extensionRequest?.status === "pending";
+  extendButton.disabled = isPending;
+  confirmExtensionButton.disabled = isPending;
+  confirmExtensionButton.textContent = isPending ? "처리 중" : "연장";
+
+  if (!extensionDialog.hidden && state.mode === "lock") {
+    setExtensionDialog(false);
+  }
 }
 
 function startLocalTimer() {
@@ -92,12 +88,33 @@ function startLocalTimer() {
   }, 1000);
 }
 
-extendButton.addEventListener("click", async () => {
-  extendButton.disabled = true;
+extendButton.addEventListener("click", () => {
+  selectedExtensionMinutes = latestState?.policy?.extensionMinutes ?? 30;
+  renderExtensionMinutes();
+  setExtensionDialog(true);
+});
+
+increaseButton.addEventListener("click", () => {
+  selectedExtensionMinutes += 30;
+  renderExtensionMinutes();
+});
+
+decreaseButton.addEventListener("click", () => {
+  selectedExtensionMinutes = Math.max(30, selectedExtensionMinutes - 30);
+  renderExtensionMinutes();
+});
+
+cancelExtensionButton.addEventListener("click", () => {
+  setExtensionDialog(false);
+});
+
+confirmExtensionButton.addEventListener("click", async () => {
+  confirmExtensionButton.disabled = true;
   extensionMessage.textContent = "연장 요청을 처리하고 있습니다.";
-  const result = await window.vistaAgent.requestExtension();
-  extensionMessage.textContent = result?.message ?? "연장 요청을 보냈습니다.";
-  extendButton.disabled = false;
+  const result = await window.vistaAgent.requestExtension(selectedExtensionMinutes);
+  extensionMessage.textContent = result?.message ?? `${selectedExtensionMinutes}분 연장되었습니다.`;
+  confirmExtensionButton.disabled = false;
+  setExtensionDialog(false);
 });
 
 confirmButton.addEventListener("click", async () => {
@@ -114,4 +131,5 @@ window.vistaAgent.onState((state) => {
   render(state);
 });
 
+renderExtensionMinutes();
 startLocalTimer();

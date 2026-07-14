@@ -17,7 +17,6 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  MonitorCog,
   PlusCircle,
   Power,
   Search,
@@ -37,6 +36,7 @@ import {
   type LiveBayStatus,
   type LogTone
 } from "@/lib/dashboard-data";
+import { durationOptions, getBlockMinutes } from "@/lib/reservation-policy";
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
 
@@ -290,6 +290,26 @@ export function DashboardClient({
   };
 
   const handlePowerOff = async (bay: LiveBay) => {
+    const confirmed = window.confirm(`${bay.name} 타석 이용을 종료할까요?\n손님 화면 잠금과 장비 OFF 자동화를 함께 요청합니다.`);
+    if (!confirmed) return;
+
+    setIsSyncing(true);
+    const response = await fetch("/api/admin/session/end", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bayId: bay.id })
+    });
+    const data = (await response.json()) as { ok?: boolean; message?: string; automationStatus?: "requested" | "failed" | "skipped" };
+    setIsSyncing(false);
+
+    if (!response.ok || !data.ok) {
+      const message = data.message ?? "이용 종료 처리에 실패했습니다.";
+      setDataError(message);
+      addLog(bay.name, "관리자 이용 종료", "실패", "danger");
+      setToast(message);
+      return;
+    }
+
     setBays((prev) =>
       prev.map((item) =>
         item.id === bay.id
@@ -306,9 +326,14 @@ export function DashboardClient({
           : item
       )
     );
-    await syncBayStatus(bay, "available");
-    addLog(bay.name, "키오스크 잠금, 조명·냉난방·타석 전원 OFF", "성공", "control");
-    setToast(`${bay.name} 장비 전원을 종료했습니다.`);
+    const automationFailed = data.automationStatus === "failed";
+    addLog(
+      bay.name,
+      automationFailed ? "이용 종료 완료, 장비 OFF 자동화 확인 필요" : "키오스크 잠금, 조명·냉난방·타석 전원 OFF 요청",
+      automationFailed ? "자동화 실패" : "성공",
+      automationFailed ? "warning" : "control"
+    );
+    setToast(automationFailed ? `${bay.name} 이용은 종료됐지만 장비 OFF 확인이 필요합니다.` : `${bay.name} 이용을 종료했습니다.`);
   };
 
   const handleExtendTime = async (bay: LiveBay) => {
@@ -330,9 +355,47 @@ export function DashboardClient({
   };
 
   const handleCheckIn = async (bay: LiveBay) => {
+    const durationValue = window.prompt(
+      `${bay.name} 타석 이용시간을 입력해주세요.\n가능: ${durationOptions.map((option) => option.minutes).join(" / ")}분`,
+      "60"
+    );
+
+    if (durationValue === null) return;
+
+    const durationMinutes = Number(durationValue);
+    if (!durationOptions.some((option) => option.minutes === durationMinutes)) {
+      setToast("이용시간은 30, 60, 90, 120분 중에서 입력해주세요.");
+      return;
+    }
+
+    const confirmed = window.confirm(`${bay.name} 타석을 ${durationMinutes}분으로 입장 처리할까요?`);
+    if (!confirmed) return;
+
     const currentTime = getCurrentTime();
-    const dueTime = addMinutesToClock(currentTime, 90) ?? "90분 후";
+    const dueTime = addMinutesToClock(currentTime, getBlockMinutes(durationMinutes)) ?? `${durationMinutes}분 후`;
     const customer = bay.reservationName ?? "현장 고객";
+
+    setIsSyncing(true);
+    const response = await fetch("/api/admin/session/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storeId: currentStoreId,
+        bayId: bay.id,
+        durationMinutes,
+        guestName: customer
+      })
+    });
+    const data = (await response.json()) as { ok?: boolean; message?: string; automationStatus?: "requested" | "failed" | "skipped" };
+    setIsSyncing(false);
+
+    if (!response.ok || !data.ok) {
+      const message = data.message ?? "입장 처리에 실패했습니다.";
+      setDataError(message);
+      addLog(bay.name, "관리자 수동 입장", "실패", "danger");
+      setToast(message);
+      return;
+    }
 
     setBays((prev) =>
       prev.map((item) =>
@@ -341,19 +404,23 @@ export function DashboardClient({
               ...item,
               status: "in_use",
               customer,
-              totalMinutes: 90,
-              remainingMinutes: 90,
+              totalMinutes: getBlockMinutes(durationMinutes),
+              remainingMinutes: getBlockMinutes(durationMinutes),
               startedAt: currentTime,
               endsAt: dueTime,
               mode: "입장 처리 완료",
-              note: "키오스크 90분 세션 시작"
+              note: "관리자 접수 세션 시작"
             }
           : item
       )
     );
     setAlerts((prev) => prev.filter((alert) => !alert.description.includes(customer.split(" / ")[0])));
-    await syncBayStatus(bay, "in_use");
-    addLog(bay.name, `${customer} 입장 처리, 장비 자동 ON`, "성공", "success");
+    addLog(
+      bay.name,
+      data.automationStatus === "failed" ? `${customer} 입장 처리, 장비 자동 ON 확인 필요` : `${customer} 입장 처리, 장비 자동 ON`,
+      data.automationStatus === "failed" ? "자동화 실패" : "성공",
+      data.automationStatus === "failed" ? "warning" : "success"
+    );
     setToast(`${bay.name} 입장 처리와 세션 시작이 완료되었습니다.`);
   };
 
@@ -942,13 +1009,14 @@ function BayCard({
         ) : null}
 
         {bay.status === "available" ? (
-          <Link
-            href="/admin/automation"
+          <button
+            type="button"
+            onClick={() => onCheckIn(bay)}
             className="inline-flex items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-4 py-3 text-sm font-extrabold transition hover:bg-vista-fairway sm:col-span-2"
           >
-            <MonitorCog size={18} aria-hidden="true" />
-            현장 입장 배정
-          </Link>
+            <UserCheck size={18} aria-hidden="true" />
+            관리자 입장 시작
+          </button>
         ) : null}
 
         {bay.status === "maintenance" ? (
