@@ -1,0 +1,41 @@
+# VISTA Park Golf Connect
+# Home Assistant package: run cloud maintenance without Vercel Cron.
+# The real secret must exist only in /config/secrets.yaml.
+
+rest_command:
+  vista_close_expired_sessions:
+    url: "https://vista-park-golf-connect.vercel.app/api/cron/close-expired-sessions"
+    method: post
+    timeout: 20
+    headers:
+      authorization: !secret vista_cron_authorization
+      content-type: "application/json"
+
+  vista_prepare_reservations:
+    url: "https://vista-park-golf-connect.vercel.app/api/automation/reservation-prepare"
+    method: post
+    timeout: 30
+    headers:
+      authorization: !secret vista_cron_authorization
+      content-type: "application/json"
+
+automation:
+  - id: vista_close_expired_sessions_every_5_minutes
+    alias: VISTA 만료 타석 자동 반납
+    description: 이용시간이 끝난 세션을 종료하고 타석을 사용 가능으로 전환합니다.
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+    action:
+      - service: rest_command.vista_close_expired_sessions
+    mode: single
+
+  - id: vista_prepare_reservations_every_5_minutes
+    alias: VISTA 예약 5분 전 매장 준비
+    description: 예약 시작 전에 공용 장비와 배정 타석 장비 준비를 요청합니다.
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+    action:
+      - service: rest_command.vista_prepare_reservations
+    mode: single
