@@ -5,6 +5,10 @@ import { DashboardClient } from "./dashboard-client";
 
 const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
+// Always derive the dashboard from current sessions, never a static build snapshot.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminDashboardPage() {
   const [bayResult, storeResult, dashboardResult] = await Promise.allSettled([
     getDashboardBays(CURRENT_STORE_ID),

@@ -26,6 +26,8 @@ let activeSessionId = null;
 let dismissedWarningSessionId = null;
 let extensionRequestState = null;
 let pollTimer = null;
+let endNotice = null;
+let shutdownTimer = null;
 
 function nowIso() {
   return new Date().toISOString();
@@ -86,6 +88,7 @@ function loadConfig() {
     sessionFile: merged.sessionFile || "agent-session.json",
     pollIntervalSeconds: Number(merged.pollIntervalSeconds || 3),
     warningBeforeMinutes: Number(merged.warningBeforeMinutes || 10),
+    autoShutdownAfterEndMinutes: Math.max(0, Number(merged.autoShutdownAfterEndMinutes ?? 5)),
     criticalBeforeMinutes: Number(merged.criticalBeforeMinutes || 3),
     extensionMinutes: Number(merged.extensionMinutes || 30),
     extensionPrice: Number(merged.extensionPrice || 6000),
@@ -163,6 +166,99 @@ function getRemainingSeconds(session) {
   return Math.max(0, Math.floor((new Date(session.endsAt).getTime() - Date.now()) / 1000));
 }
 
+function clearEndNotice() {
+  if (shutdownTimer) {
+    clearTimeout(shutdownTimer);
+    shutdownTimer = null;
+  }
+
+  endNotice = null;
+}
+
+async function completeExpiredSession(accessSessionId) {
+  const baseUrl = String(config.apiBaseUrl).replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/api/agent/session/end`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.agentToken}`,
+      "x-vista-agent-id": config.agentId
+    },
+    body: JSON.stringify({ accessSessionId })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message ?? `HTTP ${response.status}`);
+  }
+}
+
+async function shutdownIfStillIdle(accessSessionId) {
+  shutdownTimer = null;
+
+  try {
+    const currentSession = await loadServerSession();
+    const remainingSeconds = getRemainingSeconds(currentSession);
+
+    if (
+      currentSession &&
+      (currentSession.accessSessionId !== accessSessionId || (remainingSeconds ?? 0) > 0)
+    ) {
+      clearEndNotice();
+      await tick();
+      return;
+    }
+  } catch (error) {
+    log("Auto shutdown cancelled because the server could not be checked", { error: error.message });
+    return;
+  }
+
+  log("No new session after end notice; shutting down PC", { accessSessionId });
+  execFile("shutdown.exe", ["/s", "/f", "/t", "0"], { windowsHide: true }, (error) => {
+    if (error) {
+      log("PC shutdown command failed", { error: error.message });
+    }
+  });
+}
+
+function scheduleAutoShutdown(accessSessionId) {
+  const delayMs = Math.max(0, config.autoShutdownAfterEndMinutes * 60_000);
+  if (delayMs === 0) return;
+
+  if (shutdownTimer) clearTimeout(shutdownTimer);
+  shutdownTimer = setTimeout(() => {
+    void shutdownIfStillIdle(accessSessionId);
+  }, delayMs);
+}
+
+function beginEndNotice(session) {
+  if (endNotice?.accessSessionId === session.accessSessionId) return;
+
+  clearEndNotice();
+  endNotice = {
+    accessSessionId: session.accessSessionId,
+    endsAt: session.endsAt,
+    completionState: "ending",
+    autoShutdownAt: null
+  };
+
+  void completeExpiredSession(session.accessSessionId)
+    .then(() => {
+      if (!endNotice || endNotice.accessSessionId !== session.accessSessionId) return;
+
+      endNotice.completionState = "completed";
+      if (config.autoShutdownAfterEndMinutes > 0) {
+        endNotice.autoShutdownAt = new Date(Date.now() + config.autoShutdownAfterEndMinutes * 60_000).toISOString();
+        scheduleAutoShutdown(session.accessSessionId);
+      }
+    })
+    .catch((error) => {
+      if (!endNotice || endNotice.accessSessionId !== session.accessSessionId) return;
+      endNotice.completionState = "failed";
+      log("Expired session completion failed", { error: error.message, accessSessionId: session.accessSessionId });
+    });
+}
+
 function runTasklist() {
   return new Promise((resolve) => {
     execFile("tasklist.exe", ["/FO", "CSV", "/NH"], { windowsHide: true }, (error, stdout) => {
@@ -210,10 +306,10 @@ function getWindowBounds(mode) {
 
   if (mode === "warning") {
     return {
-      x: workArea.x + workArea.width - 430,
+      x: workArea.x + workArea.width - 684,
       y: workArea.y + 24,
-      width: 400,
-      height: 150
+      width: 660,
+      height: 440
     };
   }
 
@@ -308,10 +404,36 @@ async function postHeartbeat(payload) {
 }
 
 async function tick() {
-  const session = await loadSession();
-  const remainingSeconds = getRemainingSeconds(session);
+  let session = await loadSession();
+  let remainingSeconds = getRemainingSeconds(session);
   const gameAppRunning = await isAnyGameRunning(config.gameProcessNames);
-  const mode = determineMode(session, remainingSeconds);
+  let mode = "hidden";
+
+  if (session && (remainingSeconds ?? 0) <= 0) {
+    beginEndNotice(session);
+    mode = "lock";
+  } else if (endNotice) {
+    const hasNewSession = session && session.accessSessionId !== endNotice.accessSessionId;
+    if (hasNewSession || (session && (remainingSeconds ?? 0) > 0)) {
+      clearEndNotice();
+      mode = determineMode(session, remainingSeconds);
+    } else {
+      mode = "lock";
+    }
+  } else {
+    mode = determineMode(session, remainingSeconds);
+  }
+
+  if (!session && endNotice) {
+    session = {
+      accessSessionId: endNotice.accessSessionId,
+      customerLabel: null,
+      startsAt: null,
+      endsAt: endNotice.endsAt,
+      status: "completed"
+    };
+    remainingSeconds = 0;
+  }
 
   if (session?.accessSessionId && activeSessionId !== session.accessSessionId) {
     activeSessionId = session.accessSessionId;
@@ -347,7 +469,13 @@ async function tick() {
       extensionMinutes: config.extensionMinutes,
       extensionPrice: config.extensionPrice
     },
-    extensionRequest: extensionRequestState
+    extensionRequest: extensionRequestState,
+    endNotice: endNotice
+      ? {
+          completionState: endNotice.completionState,
+          autoShutdownAt: endNotice.autoShutdownAt
+        }
+      : null
   };
 
   if (mainWindow && !mainWindow.isDestroyed()) {

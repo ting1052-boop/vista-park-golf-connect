@@ -53,13 +53,15 @@ button:disabled {
 
 .warning-shell .warning-card {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 150px;
+  gap: 14px;
   width: 100%;
   height: 100%;
-  border: 2px solid rgba(47, 125, 79, 0.45);
-  border-radius: 18px;
+  border: 3px solid rgba(47, 125, 79, 0.45);
+  border-radius: 22px;
   background: var(--surface);
-  padding: 14px;
+  padding: 22px 24px;
   box-shadow: 0 16px 46px rgba(0, 0, 0, 0.28);
 }
 
@@ -67,53 +69,54 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 20px;
 }
 
 .eyebrow {
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   color: var(--vista-green);
-  font-size: 13px;
+  font-size: 22px;
   font-weight: 950;
 }
 
 #warningBay {
   display: block;
-  font-size: 28px;
+  font-size: 54px;
   line-height: 1;
   font-weight: 950;
 }
 
 .remaining-box {
-  min-width: 142px;
-  border-radius: 14px;
+  min-width: 260px;
+  border-radius: 18px;
   background: var(--vista-mint);
-  padding: 9px 12px;
+  padding: 16px 20px;
   text-align: right;
 }
 
 .remaining-box span {
   display: block;
   color: #52645a;
-  font-size: 12px;
+  font-size: 22px;
   font-weight: 900;
 }
 
 .remaining-box strong {
   display: block;
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--vista-green);
-  font-size: 31px;
+  font-size: 72px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   font-weight: 950;
 }
 
 .extension-message {
-  min-height: 19px;
-  margin: 7px 0 0;
+  min-height: 0;
+  margin: 0;
+  align-self: center;
   color: var(--vista-green);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 900;
 }
 
@@ -125,16 +128,23 @@ button:disabled {
 }
 
 .button-row {
-  margin-top: 7px;
+  margin-top: 0;
 }
 
 .primary-button,
-.secondary-button,
+.secondary-button {
+  min-height: 150px;
+  border-radius: 16px;
+  border: 0;
+  font-size: 42px;
+  font-weight: 950;
+}
+
 .step-button {
-  min-height: 42px;
+  min-height: 64px;
   border-radius: 13px;
   border: 0;
-  font-size: 17px;
+  font-size: 30px;
   font-weight: 950;
 }
 
@@ -243,6 +253,14 @@ button:disabled {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.12);
   padding: 16px;
+}
+
+.lock-auto-shutdown {
+  min-height: 32px;
+  margin: 24px 0 -10px;
+  color: #f9d8a8;
+  font-size: 22px;
+  font-weight: 900;
 }
 
 .lock-info span {

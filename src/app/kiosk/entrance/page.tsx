@@ -38,6 +38,7 @@ type DoneInfo = {
   startsAt: string;
   endsAt: string;
   automationStatus: string;
+  automationDetail?: string | null;
   // 후불 계좌이체 안내용. 예약 입장(이미 확정)에는 없고, 현장 이용에만 채워진다.
   amountDue?: number | null;
 };
@@ -525,6 +526,13 @@ export default function KioskEntrancePage() {
                 ? "장비를 준비하고 있습니다. 타석으로 이동해주세요."
                 : "타석으로 이동해주세요. 화면이 켜지지 않으면 매장에 연락해주세요."}
             </p>
+
+            {done.automationStatus !== "requested" ? (
+              <p className="mt-5 rounded-[16px] border-2 border-amber-300 bg-amber-50 px-5 py-4 text-[19px] font-extrabold leading-8 text-amber-950">
+                장비 자동 켜기 요청이 정상 완료되지 않았습니다. 타석 PC와 프로젝터 상태를 관리자에게 확인해주세요.
+                {done.automationDetail ? <span className="mt-1 block text-[16px]">사유: {done.automationDetail}</span> : null}
+              </p>
+            ) : null}
 
             {done.amountDue != null ? (
               <div className="mt-8 rounded-[20px] border-2 border-vista-leaf bg-vista-fairway p-6 text-left">

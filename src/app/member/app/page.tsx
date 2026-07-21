@@ -65,7 +65,7 @@ type ActiveReservationRow = {
   status: string | null;
 };
 
-const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show"];
+const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
 
 function getSeoulDateValue(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -206,6 +206,9 @@ export default function MemberAppPage() {
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0];
   const selectedStoreBays = bays.filter((bay) => bay.store_id === selectedStoreId);
+  // A bay being in use now must not block a later time slot. Reservation
+  // overlaps decide availability; only maintenance bays are never bookable.
+  const bookableStoreBays = selectedStoreBays.filter((bay) => bay.status !== "maintenance");
   const approvalRequired = durationMinutes > 60;
   const reservedMinutes = getReservedMinutes(durationMinutes);
   const bonusMinutes = getBonusMinutes(durationMinutes);
@@ -242,9 +245,7 @@ export default function MemberAppPage() {
         const endsAt = addMinutes(startsAt, reservedMinutes);
         const isClosed = isBeyondBusinessHours(selectedDate, startsAt, reservedMinutes);
         const blockedBayIds = getBlockedBayIds(startsAt, endsAt);
-        const availableCount = selectedStoreBays.filter(
-          (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
-        ).length;
+        const availableCount = bookableStoreBays.filter((bay) => !blockedBayIds.has(bay.id)).length;
 
         return {
           time,
@@ -255,7 +256,7 @@ export default function MemberAppPage() {
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeReservations, now, reservedMinutes, selectedDate, selectedStoreBays]
+    [activeReservations, bookableStoreBays, now, reservedMinutes, selectedDate]
   );
 
   const availableTimeSlots = useMemo(
@@ -269,9 +270,7 @@ export default function MemberAppPage() {
     [activeReservations, previewEndsAt, previewStartsAt]
   );
 
-  const availableBays = selectedStoreBays.filter(
-    (bay) => (bay.status === "available" || bay.status === "waiting") && !blockedBayIds.has(bay.id)
-  );
+  const availableBays = bookableStoreBays.filter((bay) => !blockedBayIds.has(bay.id));
   const selectedBay = selectedBayId === "auto" ? availableBays[0] : availableBays.find((bay) => bay.id === selectedBayId);
   const estimatedPrice = priceByDuration[durationMinutes] ?? Math.round((durationMinutes / 30) * priceByDuration[30]);
 
@@ -291,12 +290,13 @@ export default function MemberAppPage() {
         supabase
           .from("reservations")
           .select("id, starts_at, status, approval_required, bays(bay_code)")
+          .gte("starts_at", new Date().toISOString())
           .order("starts_at", { ascending: true })
           .limit(5),
         supabase
           .from("reservations")
           .select("bay_id, starts_at, ends_at, status")
-          .gte("starts_at", rangeStart.toISOString())
+          .gte("ends_at", rangeStart.toISOString())
           .lte("starts_at", rangeEnd.toISOString())
       ]);
 

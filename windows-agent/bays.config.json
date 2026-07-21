@@ -5,6 +5,7 @@
     "sessionSource": "server",
     "pollIntervalSeconds": 15,
     "warningBeforeMinutes": 10,
+    "autoShutdownAfterEndMinutes": 5,
     "criticalBeforeMinutes": 3,
     "extensionMinutes": 30,
     "extensionPrice": 6000,

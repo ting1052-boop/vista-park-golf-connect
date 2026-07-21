@@ -12,6 +12,7 @@ const cancelExtensionButton = document.getElementById("cancelExtensionButton");
 const confirmExtensionButton = document.getElementById("confirmExtensionButton");
 const lockBay = document.getElementById("lockBay");
 const lockEndsAt = document.getElementById("lockEndsAt");
+const lockAutoShutdown = document.getElementById("lockAutoShutdown");
 
 let latestState = null;
 let localTimer = null;
@@ -34,6 +35,17 @@ function formatClock(value) {
     minute: "2-digit",
     hour12: false
   }).format(new Date(value));
+}
+
+function formatAutoShutdown(value) {
+  if (!value) return "이용 종료를 처리하고 있습니다.";
+
+  const seconds = Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 1000));
+  if (seconds <= 0) return "PC를 종료하고 있습니다.";
+
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = seconds % 60;
+  return `새 이용이 없으면 ${minutes}분 ${String(restSeconds).padStart(2, "0")}초 뒤 PC가 자동 종료됩니다.`;
 }
 
 function getRemainingFromState(state) {
@@ -70,6 +82,8 @@ function render(state) {
 
   lockBay.textContent = bayCode;
   lockEndsAt.textContent = `종료 예정 ${formatClock(session?.endsAt)}`;
+
+  lockAutoShutdown.textContent = state.mode === "lock" ? formatAutoShutdown(state.endNotice?.autoShutdownAt) : "";
 
   const isPending = state.extensionRequest?.status === "pending";
   extendButton.disabled = isPending;

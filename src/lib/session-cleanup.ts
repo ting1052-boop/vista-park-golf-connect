@@ -35,7 +35,8 @@ const EXPIRING_SESSION_STATUSES = ["active", "extended", "overdue"] as const;
 export async function closeSingleSession(
   supabase: SupabaseClient,
   session: ExpiredAccessSession,
-  completedAt = new Date().toISOString()
+  completedAt = new Date().toISOString(),
+  options: { runAutomation?: boolean } = {}
 ): Promise<CloseSingleSessionResult> {
   let automationStatus: CloseSingleSessionResult["automationStatus"] = "skipped";
   let message: string | null = null;
@@ -72,6 +73,7 @@ export async function closeSingleSession(
 
     if (bayError) throw new Error(bayError.message);
 
+    if (options.runAutomation !== false) {
     try {
       const automation = await runBayAutomation({
         supabase,
@@ -86,6 +88,7 @@ export async function closeSingleSession(
     } catch (automationError) {
       automationStatus = "failed";
       message = automationError instanceof Error ? automationError.message : "종료 자동화 호출 실패";
+    }
     }
   }
 

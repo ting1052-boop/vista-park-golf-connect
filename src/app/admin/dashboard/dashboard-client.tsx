@@ -192,23 +192,22 @@ export function DashboardClient({
 
   useEffect(() => {
     try {
-      return subscribeToBays((updatedBay) => {
-        setBays((current) => {
-          const hasBay = current.some((bay) => bay.id === updatedBay.id);
-
-          if (!hasBay) {
-            return [...current, updatedBay].sort((a, b) => a.name.localeCompare(b.name, "ko-KR"));
-          }
-
-          return current.map((bay) => (bay.id === updatedBay.id ? mergeBayRealtimeUpdate(bay, updatedBay) : bay));
-        });
+      return subscribeToBays(() => {
+        // A bay status change does not contain enough information to identify
+        // an active access session. Re-read the server-derived view instead.
+        router.refresh();
         setDataError(null);
       }, currentStoreId);
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "타석 실시간 구독을 시작하지 못했습니다.");
       return undefined;
     }
-  }, [currentStoreId]);
+  }, [currentStoreId, router]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => router.refresh(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [router]);
 
   useEffect(() => {
     if (!toast) return;
@@ -1032,23 +1031,6 @@ function BayCard({
       </div>
     </article>
   );
-}
-
-function mergeBayRealtimeUpdate(current: LiveBay, updated: LiveBay): LiveBay {
-  if (updated.status !== "in_use") {
-    return updated;
-  }
-
-  return {
-    ...current,
-    ...updated,
-    customer: updated.customer ?? current.customer,
-    people: updated.people ?? current.people,
-    totalMinutes: updated.totalMinutes ?? current.totalMinutes,
-    remainingMinutes: updated.remainingMinutes ?? current.remainingMinutes,
-    startedAt: updated.startedAt ?? current.startedAt,
-    endsAt: updated.endsAt ?? current.endsAt
-  };
 }
 
 function getBayUsageText(bay: LiveBay) {
