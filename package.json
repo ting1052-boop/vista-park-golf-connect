@@ -4,6 +4,7 @@
   "private": true,
   "description": "VISTA Park Golf Connect web operation system",
   "scripts": {
+    "preflight": "node scripts/project-preflight.mjs",
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint .",
