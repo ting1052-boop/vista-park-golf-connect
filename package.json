@@ -8,7 +8,9 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:quick": "node scripts/verify-mvp.mjs --skip-build",
+    "verify": "node scripts/verify-mvp.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

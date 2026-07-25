@@ -305,9 +305,15 @@ export default function MemberAppPage() {
       if (reservationResult.error) throw new Error(reservationResult.error.message);
       if (activeReservationResult.error) throw new Error(activeReservationResult.error.message);
 
-      const nextStores = (storeResult.data ?? []) as StoreRow[];
+      const nextBays = (bayResult.data ?? []) as BayRow[];
+      const storeIdsWithAvailableBays = new Set(
+        nextBays.filter((bay) => bay.status !== "maintenance").map((bay) => bay.store_id)
+      );
+      const nextStores = ((storeResult.data ?? []) as StoreRow[]).filter(
+        (store) => store.status === "active" && storeIdsWithAvailableBays.has(store.id)
+      );
       setStores(nextStores);
-      setBays((bayResult.data ?? []) as BayRow[]);
+      setBays(nextBays);
       setReservations((reservationResult.data ?? []) as ReservationRow[]);
       setActiveReservations((activeReservationResult.data ?? []) as ActiveReservationRow[]);
 

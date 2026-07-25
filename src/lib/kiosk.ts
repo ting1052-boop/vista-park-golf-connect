@@ -183,6 +183,16 @@ async function findKioskSessionId(supabase: SupabaseClient, accessSessionId: str
   return data?.id ?? null;
 }
 
+async function rollbackCreatedAccessSession(supabase: SupabaseClient, accessSessionId: string, originalError: string) {
+  const { error: rollbackError } = await supabase.from("access_sessions").delete().eq("id", accessSessionId);
+
+  if (rollbackError) {
+    throw new Error(`${originalError} (입장 세션 정리 실패: ${rollbackError.message})`);
+  }
+
+  throw new Error(originalError);
+}
+
 // 입장 확정 후 공통 처리: access_session 생성 → kiosk_session 생성 →
 // 타석 in_use → Home Assistant 자동화 호출.
 // 자동화 실패는 입장 자체를 막지 않는다 (장비는 매장에서 수동 대응 가능).
@@ -250,12 +260,22 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
     .select("id")
     .single();
 
+  if (kioskError || !kioskSession) {
+    await rollbackCreatedAccessSession(
+      args.supabase,
+      accessSession.id,
+      kioskError?.message ?? "키오스크 이용 세션을 생성하지 못했습니다."
+    );
+  }
+
   const { error: bayUpdateError } = await args.supabase
     .from("bays")
     .update({ status: "in_use", updated_at: now.toISOString() })
     .eq("id", args.bayId);
 
-  if (bayUpdateError) throw new Error(bayUpdateError.message);
+  if (bayUpdateError) {
+    await rollbackCreatedAccessSession(args.supabase, accessSession.id, bayUpdateError.message);
+  }
 
   let automationStatus: StartKioskSessionResult["automationStatus"] = "skipped";
   let automationDetail: string | null = null;
@@ -277,7 +297,7 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
 
   return {
     accessSessionId: accessSession.id,
-    kioskSessionId: kioskError ? null : kioskSession.id,
+    kioskSessionId: kioskSession!.id,
     automationStatus,
     automationDetail
   };
@@ -348,16 +368,29 @@ export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<
     throw error;
   }
 
-  const session = await startKioskSession({
-    supabase: args.supabase,
-    storeId: args.storeId,
-    bayId: assignedBay.id,
-    reservationId,
-    guestName,
-    partySize,
-    startsAt,
-    endsAt
-  });
+  let session: StartKioskSessionResult;
+
+  try {
+    session = await startKioskSession({
+      supabase: args.supabase,
+      storeId: args.storeId,
+      bayId: assignedBay.id,
+      reservationId,
+      guestName,
+      partySize,
+      startsAt,
+      endsAt
+    });
+  } catch (sessionError) {
+    const { error: reservationCleanupError } = await args.supabase.from("reservations").delete().eq("id", reservationId);
+
+    if (reservationCleanupError) {
+      const message = sessionError instanceof Error ? sessionError.message : "입장 세션 생성 실패";
+      throw new Error(`${message} (현장 예약 정리 실패: ${reservationCleanupError.message})`);
+    }
+
+    throw sessionError;
+  }
 
   return {
     bayId: assignedBay.id,

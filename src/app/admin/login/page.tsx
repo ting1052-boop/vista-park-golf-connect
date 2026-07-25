@@ -115,7 +115,17 @@ function AdminLoginForm() {
 
 export default function AdminLoginPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={
+        <main className="grid min-h-screen place-items-center bg-[#eef2ec] px-4 text-vista-ink">
+          <div className="w-full max-w-sm rounded-[28px] border border-[#d9e3d5] bg-white p-6 shadow-soft-line">
+            <p className="text-xs font-bold text-vista-leaf">VISTA Park Golf Connect</p>
+            <h1 className="mt-2 text-xl font-extrabold">관리자 로그인</h1>
+            <p className="mt-4 text-sm font-semibold text-[#697468]">로그인 화면을 준비하고 있습니다.</p>
+          </div>
+        </main>
+      }
+    >
       <AdminLoginForm />
     </Suspense>
   );

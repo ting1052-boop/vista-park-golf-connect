@@ -25,6 +25,10 @@ export type LiveBay = {
   name: string;
   zone: string;
   status: LiveBayStatus;
+  accessSessionId?: string;
+  reservationId?: string;
+  sessionStatus?: "active" | "extended" | "overdue";
+  entryMethod?: string;
   customer?: string;
   reservationName?: string;
   people?: number;
@@ -32,6 +36,8 @@ export type LiveBay = {
   remainingMinutes?: number;
   startedAt?: string;
   endsAt?: string;
+  startedAtIso?: string;
+  endsAtIso?: string;
   nextReservation?: string;
   mode: string;
   note: string;

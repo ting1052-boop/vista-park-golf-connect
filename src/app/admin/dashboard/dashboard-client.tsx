@@ -23,7 +23,8 @@ import {
   ShieldCheck,
   UserCheck,
   Wifi,
-  Wrench
+  Wrench,
+  X
 } from "lucide-react";
 import {
   adminNavItems,
@@ -114,6 +115,26 @@ function addMinutesToClock(time: string | undefined, minutes: number) {
   return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
 }
 
+function formatSessionDateTime(value: string | undefined) {
+  if (!value) return "-";
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
+}
+
+function getEntryMethodLabel(value: string | undefined) {
+  if (value === "kiosk") return "입구 키오스크";
+  if (value === "admin") return "관리자 접수";
+  if (value === "member_app") return "회원 예약";
+  return value || "확인 필요";
+}
+
 type DashboardClientProps = {
   currentStoreId: string;
   initialBays: LiveBay[];
@@ -173,6 +194,7 @@ export function DashboardClient({
   const [toast, setToast] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(initialError);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUsageDetailOpen, setIsUsageDetailOpen] = useState(false);
   const storeSummaries: DashboardStoreSummary[] = initialStoreSummaries;
 
   useEffect(() => {
@@ -216,11 +238,14 @@ export function DashboardClient({
   }, [toast]);
 
   const summary = useMemo(() => {
-    const inUse = bays.filter((bay) => bay.status === "in_use").length;
+    const inUse = bays.filter((bay) => bay.status === "in_use" && (bay.remainingMinutes ?? 1) > 0).length;
     const waiting = bays.filter((bay) => bay.status === "waiting").length;
     const available = bays.filter((bay) => bay.status === "available").length;
     const maintenance = bays.filter((bay) => bay.status === "maintenance").length;
-    const people = bays.reduce((sum, bay) => sum + (bay.status === "in_use" ? bay.people ?? 0 : 0), 0);
+    const people = bays.reduce(
+      (sum, bay) => sum + (bay.status === "in_use" && (bay.remainingMinutes ?? 1) > 0 ? bay.people ?? 0 : 0),
+      0
+    );
 
     return { inUse, waiting, available, maintenance, people };
   }, [bays]);
@@ -240,6 +265,7 @@ export function DashboardClient({
     () => bays.filter((bay) => bay.status === "in_use" && (bay.remainingMinutes ?? 999) <= 0),
     [bays]
   );
+  const usageDetailBays = useMemo(() => bays.filter((bay) => bay.status === "in_use"), [bays]);
 
   const nowText = now
     ? now.toLocaleTimeString("ko-KR", {
@@ -296,7 +322,7 @@ export function DashboardClient({
     const response = await fetch("/api/admin/session/end", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bayId: bay.id })
+      body: JSON.stringify(bay.accessSessionId ? { accessSessionId: bay.accessSessionId } : { bayId: bay.id })
     });
     const data = (await response.json()) as { ok?: boolean; message?: string; automationStatus?: "requested" | "failed" | "skipped" };
     setIsSyncing(false);
@@ -315,10 +341,16 @@ export function DashboardClient({
           ? {
               ...item,
               status: "available",
+              accessSessionId: undefined,
+              reservationId: undefined,
+              sessionStatus: undefined,
+              entryMethod: undefined,
               customer: undefined,
               remainingMinutes: undefined,
               startedAt: undefined,
               endsAt: undefined,
+              startedAtIso: undefined,
+              endsAtIso: undefined,
               mode: "즉시 배정 가능",
               note: "관리자 원격 OFF 완료"
             }
@@ -444,7 +476,14 @@ export function DashboardClient({
   };
 
   const metrics = [
-    { label: "현재 이용 중", value: `${summary.inUse} / ${bays.length}`, helper: "", icon: Activity, className: "border-sky-200 bg-sky-50 text-sky-700" },
+    {
+      label: "현재 이용 중",
+      value: `${summary.inUse} / ${bays.length}`,
+      helper: overtimeBays.length > 0 ? `종료 확인 ${overtimeBays.length}건 · 눌러서 상세 보기` : "눌러서 이용 상세 보기",
+      icon: Activity,
+      className: "border-sky-200 bg-sky-50 text-sky-700",
+      onClick: () => setIsUsageDetailOpen(true)
+    },
     { label: "입장 대기", value: `${summary.waiting}`, helper: "키오스크 인증 또는 승인 필요", icon: Clock3, className: "border-amber-200 bg-amber-50 text-amber-700" },
     { label: "사용 가능", value: `${summary.available}`, helper: "즉시 배정 가능한 타석", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
     { label: "점검/알림", value: `${summary.maintenance + alerts.length + noShows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
@@ -599,8 +638,8 @@ export function DashboardClient({
             <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="주요 지표">
               {metrics.map((item) => {
                 const Icon = item.icon;
-                return (
-                  <article key={item.label} className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
+                const content = (
+                  <>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-bold text-[#697468]">{item.label}</p>
@@ -611,6 +650,26 @@ export function DashboardClient({
                       </span>
                     </div>
                     {item.helper ? <p className="mt-4 text-sm font-semibold text-[#5f6b5e]">{item.helper}</p> : null}
+                  </>
+                );
+
+                if ("onClick" in item && item.onClick) {
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={item.onClick}
+                      className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-sky-400 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      aria-haspopup="dialog"
+                    >
+                      {content}
+                    </button>
+                  );
+                }
+
+                return (
+                  <article key={item.label} className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
+                    {content}
                   </article>
                 );
               })}
@@ -858,6 +917,110 @@ export function DashboardClient({
             </section>
           </div>
         </section>
+
+        {isUsageDetailOpen ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="usage-detail-title"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) setIsUsageDetailOpen(false);
+            }}
+          >
+            <section className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-md border border-[#d9e3d5] bg-white shadow-2xl">
+              <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#e5ece1] bg-white p-5">
+                <div>
+                  <p className="text-sm font-bold text-vista-leaf">실시간 세션 기준</p>
+                  <h2 id="usage-detail-title" className="mt-1 text-2xl font-extrabold">
+                    현재 이용·종료 확인 상세
+                  </h2>
+                  <p className="mt-2 text-sm font-semibold text-[#697468]">
+                    현재 이용 {summary.inUse}건 · 종료 확인 {overtimeBays.length}건
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsUsageDetailOpen(false)}
+                  className="grid size-11 shrink-0 place-items-center rounded-md border border-[#d9e3d5] bg-white hover:bg-[#f4f7f2]"
+                  title="상세 화면 닫기"
+                >
+                  <X size={21} aria-hidden="true" />
+                  <span className="sr-only">닫기</span>
+                </button>
+              </header>
+
+              <div className="space-y-3 p-5">
+                {usageDetailBays.length > 0 ? (
+                  usageDetailBays.map((bay) => {
+                    const isOvertime = (bay.remainingMinutes ?? 1) <= 0;
+                    return (
+                      <article
+                        key={bay.accessSessionId ?? bay.id}
+                        className={cn(
+                          "rounded-md border p-4",
+                          isOvertime ? "border-rose-300 bg-rose-50" : "border-sky-200 bg-sky-50"
+                        )}
+                      >
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-xl font-extrabold">{bay.name}</h3>
+                              <span
+                                className={cn(
+                                  "rounded-md px-2 py-1 text-xs font-extrabold",
+                                  isOvertime ? "bg-rose-600 text-white" : "bg-sky-600 text-white"
+                                )}
+                              >
+                                {isOvertime ? "종료 확인 필요" : `${bay.remainingMinutes ?? "-"}분 남음`}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm font-bold text-[#4f5b50]">
+                              {bay.customer ?? "현장 고객"} · {getEntryMethodLabel(bay.entryMethod)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePowerOff(bay)}
+                            disabled={isSyncing}
+                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-rose-600 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
+                          >
+                            <Power size={18} aria-hidden="true" />
+                            이용 종료
+                          </button>
+                        </div>
+
+                        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                          <div className="rounded-md bg-white/85 p-3">
+                            <dt className="font-bold text-[#697468]">시작</dt>
+                            <dd className="mt-1 font-extrabold">{formatSessionDateTime(bay.startedAtIso)}</dd>
+                          </div>
+                          <div className="rounded-md bg-white/85 p-3">
+                            <dt className="font-bold text-[#697468]">종료 예정</dt>
+                            <dd className="mt-1 font-extrabold">{formatSessionDateTime(bay.endsAtIso)}</dd>
+                          </div>
+                          <div className="rounded-md bg-white/85 p-3">
+                            <dt className="font-bold text-[#697468]">세션 상태</dt>
+                            <dd className="mt-1 font-extrabold">{bay.sessionStatus ?? "확인 필요"}</dd>
+                          </div>
+                          <div className="rounded-md bg-white/85 p-3">
+                            <dt className="font-bold text-[#697468]">세션 식별</dt>
+                            <dd className="mt-1 truncate font-mono text-xs font-bold">{bay.accessSessionId ?? "-"}</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-md border border-[#dfe8dc] bg-[#f7f9f6] p-6 text-center">
+                    <CheckCircle2 className="mx-auto text-vista-leaf" size={30} aria-hidden="true" />
+                    <p className="mt-3 font-extrabold">현재 이용 중이거나 종료 확인이 필요한 세션이 없습니다.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {toast ? (
           <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-md bg-vista-leaf px-5 py-4 text-sm font-extrabold text-white shadow-soft-line">

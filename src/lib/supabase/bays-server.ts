@@ -5,11 +5,13 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 type ActiveSessionRow = {
   id: string;
   bay_id: string | null;
+  reservation_id: string | null;
   guest_name: string | null;
   party_size: number | null;
   started_at: string | null;
   ends_at: string | null;
   status: string;
+  entry_method: string | null;
   reservations?: { guest_name: string | null; guest_phone_last4: string | null } | { guest_name: string | null; guest_phone_last4: string | null }[] | null;
 };
 
@@ -45,18 +47,33 @@ function applySessionToBay(bay: LiveBay, session: ActiveSessionRow, now: Date): 
   const endsAt = session.ends_at ? new Date(session.ends_at) : null;
   const totalMinutes = startedAt && endsAt ? minutesBetween(startedAt, endsAt) : undefined;
   const remainingMinutes = endsAt ? Math.ceil((endsAt.getTime() - now.getTime()) / 60000) : undefined;
+  const normalizedSessionStatus =
+    session.status === "overdue" || (remainingMinutes ?? 1) <= 0
+      ? "overdue"
+      : session.status === "extended"
+        ? "extended"
+        : "active";
 
   return {
     ...bay,
     status: "in_use",
-    mode: session.status === "overdue" ? "이용 시간 초과" : "이용 중",
+    accessSessionId: session.id,
+    reservationId: session.reservation_id ?? undefined,
+    sessionStatus: normalizedSessionStatus,
+    entryMethod: session.entry_method ?? undefined,
+    mode: session.status === "overdue" || (remainingMinutes ?? 1) <= 0 ? "종료 확인 필요" : "이용 중",
     customer: getSessionCustomerLabel(session),
     people: session.party_size ?? undefined,
     totalMinutes,
     remainingMinutes,
     startedAt: formatKstTime(session.started_at),
     endsAt: formatKstTime(session.ends_at),
-    note: session.status === "overdue" ? "종료 시간이 지난 세션입니다." : "타석 이용 세션 진행 중"
+    startedAtIso: session.started_at ?? undefined,
+    endsAtIso: session.ends_at ?? undefined,
+    note:
+      session.status === "overdue" || (remainingMinutes ?? 1) <= 0
+        ? "종료 시간이 지났지만 종료되지 않은 세션입니다."
+        : "타석 이용 세션 진행 중"
   };
 }
 
@@ -68,12 +85,18 @@ function clearStaleInUseBay(bay: LiveBay): LiveBay {
   return {
     ...bay,
     status: "available",
+    accessSessionId: undefined,
+    reservationId: undefined,
+    sessionStatus: undefined,
+    entryMethod: undefined,
     customer: undefined,
     people: undefined,
     totalMinutes: undefined,
     remainingMinutes: undefined,
     startedAt: undefined,
     endsAt: undefined,
+    startedAtIso: undefined,
+    endsAtIso: undefined,
     nextReservation: bay.nextReservation ?? "예약 배정 가능",
     mode: "즉시 배정 가능",
     note: "활성 입장 세션이 없어 사용 가능 상태로 표시합니다."
@@ -85,7 +108,9 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     getBays(storeId),
     createSupabaseAdminClient()
       .from("access_sessions")
-      .select("id, bay_id, guest_name, party_size, started_at, ends_at, status, reservations(guest_name, guest_phone_last4)")
+      .select(
+        "id, bay_id, reservation_id, guest_name, party_size, started_at, ends_at, status, entry_method, reservations(guest_name, guest_phone_last4)"
+      )
       .eq("store_id", storeId)
       .in("status", ACTIVE_SESSION_STATUSES)
       .not("bay_id", "is", null)

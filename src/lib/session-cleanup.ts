@@ -32,6 +32,20 @@ export type SessionCleanupResult = {
 
 const EXPIRING_SESSION_STATUSES = ["active", "extended", "overdue"] as const;
 
+async function findOtherActiveSession(supabase: SupabaseClient, bayId: string, accessSessionId: string) {
+  const { data, error } = await supabase
+    .from("access_sessions")
+    .select("id")
+    .eq("bay_id", bayId)
+    .neq("id", accessSessionId)
+    .in("status", [...EXPIRING_SESSION_STATUSES])
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
+}
+
 export async function closeSingleSession(
   supabase: SupabaseClient,
   session: ExpiredAccessSession,
@@ -66,29 +80,70 @@ export async function closeSingleSession(
     .eq("access_session_id", session.id);
 
   if (session.bay_id) {
+    const existingActiveSessionId = await findOtherActiveSession(supabase, session.bay_id, session.id);
+    if (existingActiveSessionId) {
+      return {
+        accessSessionId: session.id,
+        bayId: session.bay_id,
+        status: "completed",
+        automationStatus: "skipped",
+        message: "같은 타석의 다른 이용 세션이 진행 중이어서 타석 반납과 장비 OFF를 건너뛰었습니다."
+      };
+    }
+
     const { error: bayError } = await supabase
       .from("bays")
       .update({ status: "available", updated_at: completedAt })
       .eq("id", session.bay_id);
 
-    if (bayError) throw new Error(bayError.message);
+    if (bayError) {
+      const { error: restoreError } = await supabase
+        .from("access_sessions")
+        .update({ status: "overdue", completed_at: null, updated_at: completedAt })
+        .eq("id", session.id)
+        .eq("status", "completed");
+
+      if (restoreError) {
+        throw new Error(`${bayError.message} (종료 세션 복구 실패: ${restoreError.message})`);
+      }
+
+      throw new Error(`${bayError.message} (세션을 종료 지연 상태로 복구했습니다.)`);
+    }
+
+    const racedActiveSessionId = await findOtherActiveSession(supabase, session.bay_id, session.id);
+    if (racedActiveSessionId) {
+      const { error: restoreBayError } = await supabase
+        .from("bays")
+        .update({ status: "in_use", updated_at: completedAt })
+        .eq("id", session.bay_id);
+
+      if (restoreBayError) throw new Error(restoreBayError.message);
+
+      return {
+        accessSessionId: session.id,
+        bayId: session.bay_id,
+        status: "completed",
+        automationStatus: "skipped",
+        message: "종료 처리 중 새 이용 세션이 확인되어 타석을 이용 중으로 유지했습니다."
+      };
+    }
 
     if (options.runAutomation !== false) {
-    try {
-      const automation = await runBayAutomation({
-        supabase,
-        bayId: session.bay_id,
-        action: "exit",
-        accessSessionId: session.id,
-        reservationId: session.reservation_id
-      });
+      try {
+        const automation = await runBayAutomation({
+          supabase,
+          bayId: session.bay_id,
+          action: "exit",
+          accessSessionId: session.id,
+          reservationId: session.reservation_id
+        });
 
-      automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
-      message = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
-    } catch (automationError) {
-      automationStatus = "failed";
-      message = automationError instanceof Error ? automationError.message : "종료 자동화 호출 실패";
-    }
+        automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
+        message = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
+      } catch (automationError) {
+        automationStatus = "failed";
+        message = automationError instanceof Error ? automationError.message : "종료 자동화 호출 실패";
+      }
     }
   }
 
