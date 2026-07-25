@@ -119,4 +119,5 @@ commit/push/deploy:
 - Files: `src/app/admin/dashboard/dashboard-client.tsx`, `docs/SHARED-HANDOFF.md`
 - Scope: UI layout only. No database, session, kiosk, or automation behavior changes.
 - Verification: `npm run typecheck`, `npm run lint`, and `npm run build` passed.
-- Commit/push/deploy: not performed; waiting for user approval.
+- Commit/push/deploy: commit `ae10333`, GitHub push, and Vercel production deployment completed successfully.
+- Agent check: A-02 (`VISTA-BAY-02`, version `0.3.0`) heartbeat was current at 2026-07-25 17:06 KST.
