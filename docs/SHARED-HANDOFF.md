@@ -111,3 +111,12 @@
 commit/push/deploy:
 남은 문제:
 ```
+
+## Current Work (2026-07-25, Codex)
+
+- Status: completed
+- Purpose: Compact the dashboard real-time bay cards and show three bays in one desktop row.
+- Files: `src/app/admin/dashboard/dashboard-client.tsx`, `docs/SHARED-HANDOFF.md`
+- Scope: UI layout only. No database, session, kiosk, or automation behavior changes.
+- Verification: `npm run typecheck`, `npm run lint`, and `npm run build` passed.
+- Commit/push/deploy: not performed; waiting for user approval.

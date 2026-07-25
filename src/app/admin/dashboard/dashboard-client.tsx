@@ -42,8 +42,8 @@ import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
 
 const VISTA_GREEN = "#4E8969";
-const RING_SIZE = 132;
-const RING_RADIUS = 52;
+const RING_SIZE = 104;
+const RING_RADIUS = 40;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 const statusMeta: Record<
@@ -750,7 +750,7 @@ export function DashboardClient({
               })}
             </section>
 
-            <section className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+            <section className="mt-6">
               <div>
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -763,7 +763,7 @@ export function DashboardClient({
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {bays.length > 0 ? (
                     bays.map((bay) => (
                       <BayCard
@@ -776,14 +776,14 @@ export function DashboardClient({
                       />
                     ))
                   ) : (
-                    <div className="rounded-md border border-[#dfe8dc] bg-white p-5 text-sm font-bold text-[#697468] shadow-soft-line md:col-span-2">
+                    <div className="rounded-md border border-[#dfe8dc] bg-white p-5 text-sm font-bold text-[#697468] shadow-soft-line md:col-span-2 xl:col-span-3">
                       표시할 타석 데이터가 없습니다. 타석관리에서 시흥점 타석을 등록하거나 Supabase 연결 상태를 확인해주세요.
                     </div>
                   )}
                 </div>
               </div>
 
-              <aside className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
+              <aside className="mt-6 rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-vista-leaf">자동화 및 제어</p>
@@ -798,7 +798,7 @@ export function DashboardClient({
                   <MiniStatus label="오늘 예약" value={`${todayReservationSummary.total}건`} />
                 </div>
 
-                <div className="space-y-3">
+                <div className="grid gap-3 lg:grid-cols-2">
                   {logs.length > 0 ? (
                     logs.map((log) => (
                       <div key={log.id} className={cn("rounded-md border p-3", logToneClass[log.tone])}>
@@ -1090,8 +1090,8 @@ function BayCard({
   const usageText = getBayUsageText(bay);
 
   return (
-    <article className={cn("rounded-md border bg-white p-5 shadow-soft-line", meta.card)}>
-      <div className="mb-4 flex items-center justify-between">
+    <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", meta.card)}>
+      <div className="mb-3 flex items-center justify-between">
         <span className={cn("inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-extrabold", meta.badge)}>
           <span className={cn("size-2 rounded-full", meta.dot)} />
           {meta.label}
@@ -1099,22 +1099,22 @@ function BayCard({
         <span className="rounded-md bg-white/80 px-2 py-1 text-xs font-extrabold text-[#697468]">{bay.zone}</span>
       </div>
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h4 className="text-3xl font-extrabold">{bay.name}</h4>
-          <p className="mt-2 text-sm font-bold text-[#5f6b5e]">{bay.mode}</p>
-          {usageText ? <p className="mt-2 text-lg font-extrabold text-sky-800">{usageText}</p> : null}
+          <h4 className="text-2xl font-extrabold">{bay.name}</h4>
+          <p className="mt-1 text-sm font-bold text-[#5f6b5e]">{bay.mode}</p>
+          {usageText ? <p className="mt-1.5 text-base font-extrabold text-sky-800">{usageText}</p> : null}
         </div>
-        <div className={cn("grid size-14 shrink-0 place-items-center rounded-md", meta.iconBox)}>
-          <StatusIcon size={28} aria-hidden="true" />
+        <div className={cn("grid size-11 shrink-0 place-items-center rounded-md", meta.iconBox)}>
+          <StatusIcon size={23} aria-hidden="true" />
         </div>
       </div>
 
       {bay.status === "in_use" ? (
-        <div className="mt-5 rounded-md border border-white bg-white/80 p-4">
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+        <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
             <CircularTimer remainingMinutes={bay.remainingMinutes ?? 0} totalMinutes={bay.totalMinutes ?? 120} />
-            <div className="grid flex-1 grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 text-sm">
               <InfoBlock label="이용 고객" value={bay.customer ?? "-"} />
               <InfoBlock label="종료 예정" value={bay.endsAt ?? "-"} />
               <InfoBlock label="시작 시간" value={bay.startedAt ?? "-"} />
@@ -1123,27 +1123,27 @@ function BayCard({
           </div>
         </div>
       ) : (
-        <div className="mt-5 rounded-md border border-white bg-white/80 p-4">
+        <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
           <p className="text-sm font-bold text-[#697468]">현재 상태</p>
           <p className="mt-2 text-xl font-extrabold">
             {bay.status === "available" && "즉시 사용 가능"}
             {bay.status === "waiting" && "예약자 입장 대기"}
             {bay.status === "maintenance" && "관리자 점검 필요"}
           </p>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <InfoBlock label={bay.status === "waiting" ? "예약자" : "다음 예약"} value={bay.status === "waiting" ? bay.reservationName ?? "-" : bay.nextReservation ?? "-"} />
             <InfoBlock label="메모" value={bay.note} />
           </div>
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-auto grid grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
         {bay.status === "in_use" ? (
           <>
             <button
               type="button"
               onClick={() => onPowerOff(bay)}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-rose-600 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-rose-500"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-rose-600 px-3 py-2.5 text-sm font-extrabold text-white transition hover:bg-rose-500"
             >
               <Power size={18} aria-hidden="true" />
               장비 OFF
@@ -1151,7 +1151,7 @@ function BayCard({
             <button
               type="button"
               onClick={() => onExtendTime(bay)}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-vista-leaf px-4 py-3 text-sm font-extrabold text-white transition hover:bg-[#3f7357]"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-vista-leaf px-3 py-2.5 text-sm font-extrabold text-white transition hover:bg-[#3f7357]"
             >
               <PlusCircle size={18} aria-hidden="true" />
               30분 연장
@@ -1163,7 +1163,7 @@ function BayCard({
           <button
             type="button"
             onClick={() => onCheckIn(bay)}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-vista-leaf px-4 py-3 text-sm font-extrabold text-white transition hover:bg-[#3f7357] sm:col-span-2"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-vista-leaf px-3 py-2.5 text-sm font-extrabold text-white transition hover:bg-[#3f7357] sm:col-span-2"
           >
             <UserCheck size={18} aria-hidden="true" />
             입장 처리 및 세션 시작
@@ -1174,7 +1174,7 @@ function BayCard({
           <button
             type="button"
             onClick={() => onCheckIn(bay)}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-4 py-3 text-sm font-extrabold transition hover:bg-vista-fairway sm:col-span-2"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-3 py-2.5 text-sm font-extrabold transition hover:bg-vista-fairway sm:col-span-2"
           >
             <UserCheck size={18} aria-hidden="true" />
             관리자 입장 시작
@@ -1185,7 +1185,7 @@ function BayCard({
           <button
             type="button"
             onClick={() => onMaintenanceDone(bay)}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-vista-ink px-4 py-3 text-sm font-extrabold text-white transition hover:bg-[#303b34] sm:col-span-2"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-vista-ink px-3 py-2.5 text-sm font-extrabold text-white transition hover:bg-[#303b34] sm:col-span-2"
           >
             <Wrench size={18} aria-hidden="true" />
             점검 완료 처리
@@ -1229,14 +1229,14 @@ function CircularTimer({ remainingMinutes, totalMinutes }: { remainingMinutes: n
   return (
     <div className="relative grid shrink-0 place-items-center" style={{ width: RING_SIZE, height: RING_SIZE }}>
       <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} className="-rotate-90">
-        <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_RADIUS} fill="none" stroke="#dfe8dc" strokeWidth="10" />
+        <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_RADIUS} fill="none" stroke="#dfe8dc" strokeWidth="8" />
         <circle
           cx={RING_SIZE / 2}
           cy={RING_SIZE / 2}
           r={RING_RADIUS}
           fill="none"
           stroke={strokeColor}
-          strokeWidth="10"
+          strokeWidth="8"
           strokeLinecap="round"
           strokeDasharray={RING_CIRCUMFERENCE}
           strokeDashoffset={dashOffset}
@@ -1244,7 +1244,7 @@ function CircularTimer({ remainingMinutes, totalMinutes }: { remainingMinutes: n
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={cn("text-4xl font-extrabold leading-none tabular-nums", labelColor)}>
+        <span className={cn("text-3xl font-extrabold leading-none tabular-nums", labelColor)}>
           {isOvertime ? 0 : safeRemaining}
         </span>
         <span className="mt-1 text-xs font-extrabold text-[#697468]">{isOvertime ? "초과" : "분 남음"}</span>
@@ -1255,7 +1255,7 @@ function CircularTimer({ remainingMinutes, totalMinutes }: { remainingMinutes: n
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-md bg-[#f6f8f5] px-3 py-3">
+    <div className="min-w-0 rounded-md bg-[#f6f8f5] px-2.5 py-2.5">
       <p className="text-xs font-bold text-[#7a8678]">{label}</p>
       <p className="mt-1 truncate text-sm font-extrabold">{value}</p>
     </div>
