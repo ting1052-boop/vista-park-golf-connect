@@ -41,6 +41,8 @@ export type LiveBay = {
   nextReservation?: string;
   mode: string;
   note: string;
+  pcOnline?: boolean;
+  pcLastSeenIso?: string;
 };
 
 export type ControlLog = {

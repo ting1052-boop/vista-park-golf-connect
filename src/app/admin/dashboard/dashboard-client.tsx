@@ -1091,12 +1091,30 @@ function BayCard({
 
   return (
     <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", meta.card)}>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <span className={cn("inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-extrabold", meta.badge)}>
           <span className={cn("size-2 rounded-full", meta.dot)} />
           {meta.label}
         </span>
-        <span className="rounded-md bg-white/80 px-2 py-1 text-xs font-extrabold text-[#697468]">{bay.zone}</span>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-extrabold",
+              bay.pcOnline
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                : "border-gray-300 bg-gray-100 text-gray-500"
+            )}
+            title={
+              bay.pcLastSeenIso
+                ? `마지막 신호: ${new Date(bay.pcLastSeenIso).toLocaleString("ko-KR")}`
+                : "에이전트 신호 없음"
+            }
+          >
+            <span className={cn("size-2 rounded-full", bay.pcOnline ? "bg-emerald-500" : "bg-gray-400")} />
+            PC {bay.pcOnline ? "켜짐" : "꺼짐"}
+          </span>
+          <span className="rounded-md bg-white/80 px-2 py-1 text-xs font-extrabold text-[#697468]">{bay.zone}</span>
+        </div>
       </div>
 
       <div className="flex items-start justify-between gap-3">

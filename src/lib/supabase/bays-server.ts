@@ -1,6 +1,15 @@
 import type { LiveBay } from "@/lib/dashboard-data";
 import { getBays } from "@/lib/supabase/bays";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { closeSingleSession } from "@/lib/session-cleanup";
+
+// 마지막 하트비트가 이 시간 안이면 PC가 켜진 것으로 본다(에이전트는 약 15초마다 신호).
+const PC_ONLINE_THRESHOLD_MS = 120_000;
+// 종료시각이 지난 뒤 이 시간이 더 지나도록 방치된(에이전트/크론이 못 닫은) 세션만
+// 대시보드 조회 시 자동 정리한다. 정상 종료 흐름(에이전트 5분 대기)과 겹치지 않게 여유를 둔다.
+const SELF_HEAL_GRACE_MS = 10 * 60_000;
+
+type AgentDeviceRow = { bay_id: string | null; last_seen_at: string | null; is_active: boolean | null };
 
 type ActiveSessionRow = {
   id: string;
@@ -104,9 +113,10 @@ function clearStaleInUseBay(bay: LiveBay): LiveBay {
 }
 
 export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
-  const [bays, sessionResult] = await Promise.all([
+  const admin = createSupabaseAdminClient();
+  const [bays, sessionResult, agentResult] = await Promise.all([
     getBays(storeId),
-    createSupabaseAdminClient()
+    admin
       .from("access_sessions")
       .select(
         "id, bay_id, reservation_id, guest_name, party_size, started_at, ends_at, status, entry_method, reservations(guest_name, guest_phone_last4)"
@@ -114,7 +124,8 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       .eq("store_id", storeId)
       .in("status", ACTIVE_SESSION_STATUSES)
       .not("bay_id", "is", null)
-      .order("started_at", { ascending: false })
+      .order("started_at", { ascending: false }),
+    admin.from("agent_devices").select("bay_id, last_seen_at, is_active").eq("store_id", storeId)
   ]);
 
   if (sessionResult.error) {
@@ -122,16 +133,54 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   }
 
   const now = new Date();
-  const sessionsByBayId = new Map<string, ActiveSessionRow>();
 
+  // 각 타석 PC 온라인 여부 (agent_devices.last_seen_at 기준). 같은 타석에 여러 기기면 하나라도 켜져 있으면 온라인.
+  const pcByBayId = new Map<string, { online: boolean; lastSeenIso?: string }>();
+  for (const dev of (agentResult.data ?? []) as AgentDeviceRow[]) {
+    if (!dev.bay_id) continue;
+    const lastMs = dev.last_seen_at ? new Date(dev.last_seen_at).getTime() : 0;
+    const online = dev.is_active !== false && lastMs > 0 && now.getTime() - lastMs <= PC_ONLINE_THRESHOLD_MS;
+    const prev = pcByBayId.get(dev.bay_id);
+    pcByBayId.set(dev.bay_id, {
+      online: (prev?.online ?? false) || online,
+      lastSeenIso: dev.last_seen_at ?? prev?.lastSeenIso
+    });
+  }
+
+  const sessionsByBayId = new Map<string, ActiveSessionRow>();
   for (const session of (sessionResult.data ?? []) as unknown as ActiveSessionRow[]) {
     if (session.bay_id && !sessionsByBayId.has(session.bay_id)) {
       sessionsByBayId.set(session.bay_id, session);
     }
   }
 
+  // 오래 방치된 만료 세션(미퇴장) 자동 정리: 종료시각 + 여유시간이 지났는데도 안 닫힌 세션만
+  // DB 상으로 종료 처리(장비 OFF 자동화는 크론/에이전트가 담당하도록 runAutomation:false).
+  const stuckSessions = [...sessionsByBayId.values()].filter(
+    (s) => s.ends_at && now.getTime() - new Date(s.ends_at).getTime() >= SELF_HEAL_GRACE_MS
+  );
+  if (stuckSessions.length > 0) {
+    await Promise.all(
+      stuckSessions.map(async (s) => {
+        try {
+          await closeSingleSession(
+            admin,
+            { id: s.id, store_id: storeId, reservation_id: s.reservation_id, bay_id: s.bay_id, ends_at: s.ends_at },
+            now.toISOString(),
+            { runAutomation: false }
+          );
+          if (s.bay_id) sessionsByBayId.delete(s.bay_id);
+        } catch {
+          // 자동 정리 실패는 화면 표시를 막지 않는다(다음 조회/크론에서 재시도).
+        }
+      })
+    );
+  }
+
   return bays.map((bay) => {
     const session = sessionsByBayId.get(bay.id);
-    return session ? applySessionToBay(bay, session, now) : clearStaleInUseBay(bay);
+    const base = session ? applySessionToBay(bay, session, now) : clearStaleInUseBay(bay);
+    const pc = pcByBayId.get(bay.id);
+    return { ...base, pcOnline: pc?.online ?? false, pcLastSeenIso: pc?.lastSeenIso };
   });
 }
