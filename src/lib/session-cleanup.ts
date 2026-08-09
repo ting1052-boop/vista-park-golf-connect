@@ -79,6 +79,18 @@ export async function closeSingleSession(
     .update({ remaining_seconds: 0, is_locked: true, locked_at: completedAt, updated_at: completedAt })
     .eq("access_session_id", session.id);
 
+  // 세션을 닫으면 연결된 예약도 종료 처리한다. 그러지 않으면 예약이 checked_in +
+  // 미래 종료시각으로 남아, 키오스크 가용성 조회와 DB 겹침방지 제약이 그 타석을
+  // 계속 "이용 중/예약됨"으로 막아 재입장이 안 된다. ends_at을 지금으로 당겨
+  // 겹침을 해소하고 status를 completed로 표시한다.
+  if (session.reservation_id) {
+    await supabase
+      .from("reservations")
+      .update({ status: "completed", ends_at: completedAt, updated_at: completedAt })
+      .eq("id", session.reservation_id)
+      .in("status", ["requested", "confirmed", "checked_in"]);
+  }
+
   if (session.bay_id) {
     const existingActiveSessionId = await findOtherActiveSession(supabase, session.bay_id, session.id);
     if (existingActiveSessionId) {

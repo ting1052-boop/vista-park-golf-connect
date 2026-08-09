@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { runBayAutomation } from "@/lib/automation/sessions";
 import { getBlockMinutes, priceByDuration } from "@/lib/reservation-policy";
 
-export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show"];
+export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
 
 export type KioskBay = {
   id: string;
