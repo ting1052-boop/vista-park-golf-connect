@@ -367,7 +367,7 @@ export function AdminCrudPage({
         const { data, error: queryError } = await supabase
           .from("reservations")
           .select("id, starts_at, guest_name, party_size, channel, status, approval_required, memo, bays(bay_code)")
-          .order("starts_at", { ascending: true });
+          .order("starts_at", { ascending: false });
 
         if (queryError) throw new Error(queryError.message);
         setRows((data ?? []).map((record) => mapReservation(record as ReservationRecord)));
