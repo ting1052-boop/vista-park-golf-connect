@@ -26,6 +26,7 @@ create type public.automation_device_state as enum ('unknown', 'online', 'offlin
 create type public.automation_scene_type as enum ('reservation_prepare', 'session_start', 'session_end', 'closing', 'emergency_stop');
 create type public.automation_log_status as enum ('requested', 'success', 'failed', 'skipped');
 create type public.access_session_status as enum ('pending', 'active', 'extended', 'completed', 'cancelled', 'overdue');
+create type public.store_controller_command_status as enum ('pending', 'processing', 'succeeded', 'failed', 'cancelled');
 
 create table public.users (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -366,6 +367,28 @@ create table public.automation_logs (
   created_at timestamptz not null default now()
 );
 
+create table public.store_controller_commands (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  bay_id uuid references public.bays(id) on delete set null,
+  access_session_id uuid references public.access_sessions(id) on delete cascade,
+  reservation_id uuid references public.reservations(id) on delete set null,
+  command_type text not null,
+  status public.store_controller_command_status not null default 'pending',
+  payload jsonb not null default '{}'::jsonb,
+  response_payload jsonb not null default '{}'::jsonb,
+  error_message text,
+  attempts integer not null default 0,
+  controller_id text,
+  lease_expires_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint store_controller_commands_type_check check (command_type in ('prepare_bay')),
+  constraint store_controller_commands_attempts_check check (attempts between 0 and 20),
+  unique (access_session_id, command_type)
+);
+
 create table public.device_logs (
   id uuid primary key default gen_random_uuid(),
   store_id uuid references public.stores(id) on delete set null,
@@ -563,6 +586,8 @@ create index extension_requests_session_idx on public.extension_requests(access_
 create index extension_requests_bay_status_idx on public.extension_requests(bay_id, status, requested_at desc);
 create index agent_devices_store_active_idx on public.agent_devices(store_id, is_active, last_seen_at desc);
 create index automation_logs_store_created_idx on public.automation_logs(store_id, created_at desc);
+create index store_controller_commands_pending_idx on public.store_controller_commands(status, created_at)
+  where status in ('pending', 'processing');
 create index device_logs_store_created_idx on public.device_logs(store_id, created_at desc);
 create index device_logs_bay_created_idx on public.device_logs(bay_id, created_at desc);
 create index devices_store_status_idx on public.devices(store_id, status);
@@ -611,6 +636,8 @@ create trigger kiosk_sessions_set_updated_at before update on public.kiosk_sessi
 create trigger extension_requests_set_updated_at before update on public.extension_requests
   for each row execute function public.set_updated_at();
 create trigger agent_devices_set_updated_at before update on public.agent_devices
+  for each row execute function public.set_updated_at();
+create trigger store_controller_commands_set_updated_at before update on public.store_controller_commands
   for each row execute function public.set_updated_at();
 create trigger devices_set_updated_at before update on public.devices
   for each row execute function public.set_updated_at();
@@ -796,6 +823,7 @@ alter table public.kiosk_sessions enable row level security;
 alter table public.extension_requests enable row level security;
 alter table public.agent_devices enable row level security;
 alter table public.automation_logs enable row level security;
+alter table public.store_controller_commands enable row level security;
 alter table public.device_logs enable row level security;
 alter table public.devices enable row level security;
 alter table public.members enable row level security;

@@ -9,6 +9,7 @@ windows-agent/logs/
 windows-agent/agent.config.json
 windows-agent/agent-session.json
 windows-agent/bays.config.local.json
+store-controller/controller.config.json
 
 .env
 .env.*

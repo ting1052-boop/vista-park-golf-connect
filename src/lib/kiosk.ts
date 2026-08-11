@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { runBayAutomation } from "@/lib/automation/sessions";
+import { enqueueBayPreparation, isStoreControllerEnabled } from "@/lib/store-controller";
 import { getBlockMinutes, priceByDuration } from "@/lib/reservation-policy";
 
 export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
@@ -281,6 +282,17 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
   let automationDetail: string | null = null;
 
   try {
+    if (isStoreControllerEnabled()) {
+      const queued = await enqueueBayPreparation(args.supabase, {
+        bayId: args.bayId,
+        accessSessionId: accessSession.id,
+        reservationId: args.reservationId
+      });
+      automationStatus = queued.status === "failed" ? "failed" : "requested";
+      automationDetail = queued.reused
+        ? "기존 장비 준비 요청을 이어서 처리합니다."
+        : "매장 장비 준비 요청을 접수했습니다.";
+    } else {
     const automation = await runBayAutomation({
       supabase: args.supabase,
       bayId: args.bayId,
@@ -290,6 +302,7 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
     });
     automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
     automationDetail = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
+    }
   } catch (error) {
     automationStatus = "failed";
     automationDetail = error instanceof Error ? error.message : "자동화 호출 실패";

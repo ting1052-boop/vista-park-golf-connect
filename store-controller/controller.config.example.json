@@ -1,0 +1,8 @@
+{
+  "controllerId": "vista-siheung-controller",
+  "apiBaseUrl": "https://vista-park-golf-connect.vercel.app",
+  "controllerToken": "REPLACE_WITH_A_LONG_RANDOM_TOKEN",
+  "homeAssistantUrl": "http://192.168.0.44:8123",
+  "homeAssistantToken": "REPLACE_WITH_HOME_ASSISTANT_LONG_LIVED_TOKEN",
+  "pollIntervalSeconds": 5
+}
