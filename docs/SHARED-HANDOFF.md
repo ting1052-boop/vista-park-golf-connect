@@ -18,6 +18,8 @@
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
 | Codex | 완료 | 대시보드 유령 이용 상태 원인 추적, 이용 상세·정확한 종료 조치 구현 | 커밋 `70b60f6`, Vercel 배포 및 A-02 과거 세션 정리 완료 |
+| Codex | 완료 | 2번 타석 입장 시 장비 미기동 및 만료 세션 미반납 장애 진단 | HA 내부 자동화 정상, Nabu Casa 구독·원격연결 및 Vercel 비밀값 불일치가 외부 호출을 차단함 |
+| Codex | 완료 | 2번 타석 자동화 순서를 프로젝터 ON 후 PC WOL로 변경 | 매장 HA에서 `projector ON → 15초 대기 → PC WOL` 저장·재조회 검증 완료 |
 | Claude Code | 없음 | 새 작업 시작 전 이 표에 등록 | - |
 
 ## 저장소와 배포 상태
@@ -121,3 +123,62 @@ commit/push/deploy:
 - Verification: `npm run typecheck`, `npm run lint`, and `npm run build` passed.
 - Commit/push/deploy: commit `ae10333`, GitHub push, and Vercel production deployment completed successfully.
 - Agent check: A-02 (`VISTA-BAY-02`, version `0.3.0`) heartbeat was current at 2026-07-25 17:06 KST.
+
+## Current Work (2026-08-11, Codex)
+
+- Status: in progress
+- Purpose: Add a store-local controller that polls Vercel for pending bay preparation commands, then calls the LAN-only Home Assistant instance. This avoids browser HTTPS-to-LAN mixed-content blocking and does not require exposing Home Assistant publicly.
+- Planned files: controller package, server command API, database migration template, local configuration example, and operating guide.
+- Safety: No production database migration, deployment, or physical device command will be run without the owner's confirmation.
+
+## Home Assistant Sony Projector Integration (2026-08-10, Codex)
+
+- Status: completed
+- Purpose: Connect the Siheung bay 2 Sony VPL-PHZ60 projector to Home Assistant and the existing bay automation chain.
+- Home Assistant changes: Enabled and verified Sony PJ Talk, allowed HA host `192.168.0.44`, added the legacy `sony_projector` switch for projector host `192.168.0.35`, validated configuration, and restarted HA.
+- Entity: `switch.2beon_taseog_sony_peurojegteo` (verified state reporting and turn-on control).
+- Script changes: `script.bay2_on` now runs PC Wake-on-LAN and projector ON; `script.bay2_off` turns the projector OFF while leaving PC shutdown to the Agent/operator flow.
+- Verification: HA configuration check returned valid; the projector entity was created; `script.bay2_on` executed and the projector state changed to `on`.
+- Repository files: documentation update only. HA configuration and scripts were changed on the store HA instance, not in the repository.
+- Commit/push/deploy: not performed; no VISTA application code changed.
+- Remaining work: Add projector entities and equivalent ON/OFF script actions for bays 1 and 3 after their network-control details are confirmed.
+
+## Bay 2 Kiosk Automation Incident (2026-08-10, Codex)
+
+- Status: diagnosed; external connectivity remediation is waiting for the owner to activate a Nabu Casa subscription and synchronize Vercel environment variables.
+- Session: production Agent API confirmed a new A-02 active session created at `2026-08-10T05:33:55Z`, with a 30-minute end time.
+- Equipment path: the kiosk/Vercel admission did not invoke `script.bay2_on`; its HA `last_triggered` timestamp remained older than the session start.
+- HA local verification: direct invocation of `script.bay2_on` pressed `button.vista_2beontaseog` and changed `switch.2beon_taseog_sony_peurojegteo` to `on` after the projector startup delay. The HA-side script and devices are healthy.
+- Nabu Casa finding: the HA Cloud UI shows `No subscription` and `cloud connection: disconnected`. WebSocket status reports `remote_enabled=true` but `remote_connected=false`, so no remote domain exists for Vercel.
+- Secret mismatch: local `IOT_WEBHOOK_SECRET` and `CRON_SECRET` both received HTTP 401 from their production Vercel endpoints. Do not record secret values here; synchronize them in Vercel and the store HA only.
+- Cleanup scheduler: the repository template exists, but no VISTA cleanup automation entity is active on HA. Install/enable it only after `CRON_SECRET` is synchronized; then verify the close-expired endpoint and a 5-minute automation run.
+- Production DB safety: no session was force-closed during this diagnosis. The current active A-02 session was preserved.
+- 2026-08-10 follow-up: user requested immediate end for bays 1 and 2. `script.bay1_off` and `script.bay2_off` were invoked directly on the store HA and both recorded a new trigger time. Database session completion still requires a logged-in administrator path because the local Supabase admin key returned 401.
+- 2026-08-10 projector startup order: updated store HA `script.bay2_on` through the HA configuration API. The verified sequence is Sony projector ON, 15-second delay, then `button.vista_2beontaseog` (PC WOL). No repository application code or production database record was changed.
+
+## Store-local Controller Preparation (2026-08-11, Codex)
+
+- Status: implementation complete; production activation is pending owner approval.
+- Purpose: remove the Vercel-to-private-LAN Home Assistant dependency for kiosk and administrator bay preparation. The HA Windows laptop polls Vercel, then calls its local HA address.
+- Added: `store_controller_commands` queue migration, authenticated Vercel command endpoint, kiosk enqueue path guarded by `STORE_CONTROLLER_ENABLED=true`, and a Windows PowerShell controller package under `store-controller/`.
+- Safety: the controller configuration file is Git-ignored. No actual token, HA token, production migration, Vercel environment update, deployment, or device command was performed.
+- Verification: `npm run typecheck` passed; targeted ESLint passed for changed TypeScript files; PowerShell parser passed for `store-controller/vista-store-controller.ps1`. Full repository lint could not enumerate an existing inaccessible `.tmp_pysdcp` folder.
+- Activation order: deploy code, run `202608110001_store_controller_commands.sql` in Supabase, set `STORE_CONTROLLER_ENABLED=true` and a new `STORE_CONTROLLER_TOKEN` in Vercel Production, redeploy, configure and start the controller on the HA Windows laptop, then perform one A-02 kiosk test.
+
+## Current Work (2026-08-11, Codex)
+
+- Status: completed, awaiting owner approval for production activation.
+- Files: `src/lib/store-controller.ts`, `src/app/api/store-controller/commands/route.ts`, `src/lib/kiosk.ts`, `store-controller/`, `supabase/migrations/202608110001_store_controller_commands.sql`, `supabase/schema.sql`, `.env.local.example`, `.gitignore`.
+- No production operations were executed.
+
+## Review, Commit & Deploy (2026-08-11, Claude)
+
+- Reviewed the store-controller implementation: approved. Auth uses `timingSafeEqual`; the poll endpoint claims commands atomically with a lease and recovers expired leases; completion verifies `controller_id`; enqueue is idempotent via `unique(access_session_id, command_type)`; kiosk enqueues instead of calling HA directly when `STORE_CONTROLLER_ENABLED=true`, which removes the "장비 켜기 실패" message. `controller.config.json` is confirmed Git-ignored.
+- Verified: `npm run typecheck` passed on the full tree.
+- **Committed and deployed** the feature: commit `d81bc89`, pushed to `main`, Vercel deploy confirmed (`GET /api/store-controller/commands` returns 401 in production). Feature is inert until `STORE_CONTROLLER_ENABLED=true`, so no behavior change yet.
+- Owner-pending (dashboard access required, Claude cannot perform these): (1) run `202608110001_store_controller_commands.sql` in the Supabase SQL Editor — do migration BEFORE enabling; (2) set `STORE_CONTROLLER_TOKEN` and `STORE_CONTROLLER_ENABLED=true` in Vercel Production, then redeploy. A token was generated in chat; the same value must go in Vercel and the controller config. Do not record the value here.
+- → Codex next tasks (HA Windows laptop, always-on):
+  1. Create `store-controller/controller.config.json` from the example: `controllerId`, `apiBaseUrl=https://vista-park-golf-connect.vercel.app`, `controllerToken` (same value the owner sets in Vercel), `homeAssistantUrl=http://192.168.0.44:8123`, `homeAssistantToken`, `pollIntervalSeconds=5`. Test with `start-controller.cmd`, then register boot auto-start with `install-startup.ps1`. Keep it running on the always-on HA laptop.
+  2. Finish HA scripts for full coverage (bay 2 already done): connect bay 1 and bay 3 projectors and add `script.bay1_on/off`, `script.bay3_on/off`, and `script.shared_on/off` using the exact names in `src/lib/automation/device-map.ts`. Until `shared_on/off` exist, the controller will call them as no-ops (HA returns 200).
+  3. After the owner enables, run one A-02 kiosk entry and confirm: command is claimed (status `processing`), `script.bay2_on` runs (projector → 15s → WOL), the controller POSTs `succeeded`, and an `automation_logs` row is recorded.
+- Minor non-blockers noted for later: a command exceeding the `attempts` cap (20) can stick as pending (add a max-attempts → `failed` transition); the poll endpoint returns pending commands across all stores (fine for the single Siheung store, scope by store if multi-store is added).
