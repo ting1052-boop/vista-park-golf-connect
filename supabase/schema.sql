@@ -384,7 +384,7 @@ create table public.store_controller_commands (
   completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint store_controller_commands_type_check check (command_type in ('prepare_bay')),
+  constraint store_controller_commands_type_check check (command_type in ('prepare_bay', 'release_bay', 'run_scripts', 'shutdown_pc')),
   constraint store_controller_commands_attempts_check check (attempts between 0 and 20),
   unique (access_session_id, command_type)
 );

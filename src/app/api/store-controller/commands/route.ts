@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
     .from("store_controller_commands")
     .select("id, store_id, bay_id, access_session_id, reservation_id, command_type, payload, attempts")
     .eq("status", "pending")
+    .in("command_type", ["prepare_bay", "release_bay", "run_scripts"])
     .order("created_at", { ascending: true })
     .limit(parseLimit(request.nextUrl.searchParams.get("limit")));
 

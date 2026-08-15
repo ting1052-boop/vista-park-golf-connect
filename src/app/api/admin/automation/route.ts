@@ -5,7 +5,11 @@ import {
   getBayAutomationByCode,
   siheungBayAutomation
 } from "@/lib/automation/device-map";
-import { enqueueManualAutomation, isStoreControllerEnabled } from "@/lib/store-controller";
+import {
+  enqueueManualAutomation,
+  enqueueStoreAgentShutdowns,
+  isStoreControllerEnabled
+} from "@/lib/store-controller";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -43,7 +47,8 @@ const AGENT_ONLINE_THRESHOLD_MS = 120_000;
 const commandTypeLabels: Record<string, string> = {
   prepare_bay: "타석 준비",
   release_bay: "타석 이용 종료",
-  run_scripts: "관리자 장비 제어"
+  run_scripts: "관리자 장비 제어",
+  shutdown_pc: "타석 PC 정상 종료"
 };
 
 function getBay(row: ActiveSessionRow) {
@@ -261,6 +266,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const agentShutdown = await enqueueStoreAgentShutdowns(supabase, CURRENT_STORE_ID);
       const scripts = [
         ...siheungBayAutomation.map((bay) => ({
           name: `${bay.label} 장비 OFF`,
@@ -276,8 +282,9 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: "모든 타석 장비와 공용 조명·냉난방 OFF 명령을 순서대로 전달했습니다. PC는 Agent 안전 종료 기능 적용 전까지 정상 종료를 별도로 확인해주세요.",
-        command
+        message: `타석 PC ${agentShutdown.queued + agentShutdown.reused}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`,
+        command,
+        agentShutdown
       });
     }
 

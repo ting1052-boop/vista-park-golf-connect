@@ -9,7 +9,7 @@ const { execFile } = require("node:child_process");
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 // Writable locations. In a packaged exe, ROOT is inside a read-only archive,
 // so the selected bay, the local test session, and logs all live in userData.
@@ -28,6 +28,7 @@ let extensionRequestState = null;
 let pollTimer = null;
 let endNotice = null;
 let shutdownTimer = null;
+const processingAgentCommandIds = new Set();
 
 function nowIso() {
   return new Date().toISOString();
@@ -137,7 +138,8 @@ async function loadServerSession() {
   const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${config.agentToken}`,
-      "x-vista-agent-id": config.agentId
+      "x-vista-agent-id": config.agentId,
+      "x-vista-agent-version": VERSION
     }
   });
 
@@ -146,7 +148,56 @@ async function loadServerSession() {
   }
 
   const data = await response.json();
+  for (const command of Array.isArray(data.commands) ? data.commands : []) {
+    await processAgentCommand(command);
+  }
   return data.session ?? null;
+}
+
+async function reportAgentCommand(commandId, ok, errorMessage = null) {
+  const baseUrl = String(config.apiBaseUrl).replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/api/agent/command-result`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.agentToken}`,
+      "x-vista-agent-id": config.agentId
+    },
+    body: JSON.stringify({ commandId, ok, error: errorMessage })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.message ?? `command result ${response.status}`);
+  }
+}
+
+async function processAgentCommand(command) {
+  if (!command || command.type !== "shutdown_pc" || typeof command.id !== "string") return;
+  if (processingAgentCommandIds.has(command.id)) return;
+
+  processingAgentCommandIds.add(command.id);
+  try {
+    await reportAgentCommand(command.id, true);
+    log("Store close command accepted; Windows shutdown scheduled", { commandId: command.id });
+    setTimeout(() => {
+      execFile(
+        "shutdown.exe",
+        ["/s", "/f", "/t", "10", "/c", "VISTA 매장 종료: 10초 후 PC를 종료합니다."],
+        { windowsHide: true },
+        (error) => {
+          if (error) log("Store close PC shutdown command failed", { commandId: command.id, error: error.message });
+        }
+      );
+    }, 500);
+  } catch (error) {
+    log("Store close command acknowledgement failed; shutdown cancelled", {
+      commandId: command.id,
+      error: error.message
+    });
+  } finally {
+    processingAgentCommandIds.delete(command.id);
+  }
 }
 
 async function loadSession() {
@@ -309,7 +360,7 @@ function getWindowBounds(mode) {
       x: workArea.x + workArea.width - 684,
       y: workArea.y + 24,
       width: 660,
-      height: 440
+      height: 480
     };
   }
 

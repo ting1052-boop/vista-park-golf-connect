@@ -21,6 +21,78 @@ type ActiveSessionRow = {
     | null;
 };
 
+type AgentCommandRow = {
+  id: string;
+  command_type: "shutdown_pc";
+  payload: Record<string, unknown> | null;
+  attempts: number;
+};
+
+async function claimShutdownCommand(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  agentId: string,
+  bayId: string
+) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const activeCommandCutoff = new Date(now.getTime() - 300_000).toISOString();
+  const controllerId = `agent:${agentId}`;
+
+  await supabase
+    .from("store_controller_commands")
+    .update({ status: "pending", controller_id: null, lease_expires_at: null })
+    .eq("bay_id", bayId)
+    .eq("command_type", "shutdown_pc")
+    .eq("status", "processing")
+    .lt("lease_expires_at", nowIso);
+
+  await supabase
+    .from("store_controller_commands")
+    .update({
+      status: "cancelled",
+      completed_at: nowIso,
+      lease_expires_at: null,
+      error_message: "Agent가 유효시간 안에 받지 못해 종료 명령을 폐기했습니다."
+    })
+    .eq("bay_id", bayId)
+    .eq("command_type", "shutdown_pc")
+    .eq("status", "pending")
+    .lt("created_at", activeCommandCutoff);
+
+  const { data: pending, error: pendingError } = await supabase
+    .from("store_controller_commands")
+    .select("id, command_type, payload, attempts")
+    .eq("bay_id", bayId)
+    .eq("command_type", "shutdown_pc")
+    .eq("status", "pending")
+    .gte("created_at", activeCommandCutoff)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (pendingError) throw new Error(pendingError.message);
+  if (!pending) return [];
+
+  const command = pending as AgentCommandRow;
+  const { data: claimed, error: claimError } = await supabase
+    .from("store_controller_commands")
+    .update({
+      status: "processing",
+      controller_id: controllerId,
+      lease_expires_at: new Date(now.getTime() + 120_000).toISOString(),
+      attempts: command.attempts + 1
+    })
+    .eq("id", command.id)
+    .eq("status", "pending")
+    .select("id, command_type, payload")
+    .maybeSingle();
+
+  if (claimError) throw new Error(claimError.message);
+  if (!claimed) return [];
+
+  return [{ id: claimed.id as string, type: "shutdown_pc" as const, payload: claimed.payload ?? {} }];
+}
+
 function getReservation(row: ActiveSessionRow) {
   return Array.isArray(row.reservations) ? row.reservations[0] : row.reservations;
 }
@@ -43,6 +115,16 @@ export async function GET(request: NextRequest) {
 
   const agentVersion = request.headers.get("x-vista-agent-version");
   await touchAgent(supabase, agent, { agentVersion });
+
+  let commands: Array<{ id: string; type: "shutdown_pc"; payload: Record<string, unknown> }> = [];
+  try {
+    commands = await claimShutdownCommand(supabase, agent.id, agent.bay_id);
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : "Agent 명령을 확인하지 못했습니다." },
+      { status: 500 }
+    );
+  }
 
   const { data, error } = await supabase
     .from("access_sessions")
@@ -69,7 +151,8 @@ export async function GET(request: NextRequest) {
         criticalBeforeMinutes: settings.extension_deadline_minutes ?? 3,
         extensionMinutes: settings.extension_minutes,
         extensionPrice: settings.extension_price
-      }
+      },
+      commands
     });
   }
 
@@ -95,6 +178,6 @@ export async function GET(request: NextRequest) {
       extensionMinutes: settings.extension_minutes,
       extensionPrice: settings.extension_price
     },
-    commands: []
+    commands
   });
 }
