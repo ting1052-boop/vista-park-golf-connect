@@ -198,6 +198,15 @@ commit/push/deploy:
 - Verification: `npm run typecheck` and targeted ESLint passed.
 - Safety: this action queues the configured HA `bayN_off` script only. It does not hard-cut PC power or modify usage sessions. The dirty `windows-agent/electron-main.js` owned by another task will not be edited.
 
+## Current Work (2026-08-15, Codex - store closing action)
+
+- Status: completed; ready to deploy and owner-test
+- Purpose: Replace the public-facing shared OFF action with a guarded store-closing action that queues every mapped bay OFF script followed by the shared lighting/HVAC OFF script.
+- Files: `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `docs/SHARED-HANDOFF.md`.
+- Behavior: `store_close` refuses to run while any active/extended/overdue session remains. Otherwise it queues `bay1_off`, `bay2_off`, `bay3_off`, then `shared_off` in order through the store-local controller.
+- Verification: `npm run typecheck` and targeted ESLint passed.
+- Safety: the API refuses store closing while active/extended/overdue sessions exist. PC mains power is not hard-cut; graceful Agent shutdown remains a separate Agent release.
+
 ## Review, Commit & Deploy (2026-08-11, Claude)
 
 - Reviewed the store-controller implementation: approved. Auth uses `timingSafeEqual`; the poll endpoint claims commands atomically with a lease and recovers expired leases; completion verifies `controller_id`; enqueue is idempotent via `unique(access_session_id, command_type)`; kiosk enqueues instead of calling HA directly when `STORE_CONTROLLER_ENABLED=true`, which removes the "장비 켜기 실패" message. `controller.config.json` is confirmed Git-ignored.

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin-auth";
-import { commonAutomationScripts, getBayAutomationByCode } from "@/lib/automation/device-map";
+import {
+  commonAutomationScripts,
+  getBayAutomationByCode,
+  siheungBayAutomation
+} from "@/lib/automation/device-map";
 import { enqueueManualAutomation, isStoreControllerEnabled } from "@/lib/store-controller";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -235,6 +239,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         message: `${mapping.label} 장비 OFF 명령을 매장 제어기에 전달했습니다. PC는 안전을 위해 강제 종료하지 않습니다.`,
+        command
+      });
+    }
+
+    if (body.action === "store_close") {
+      const { count: activeSessionCount, error: activeSessionError } = await supabase
+        .from("access_sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("store_id", CURRENT_STORE_ID)
+        .in("status", ["active", "extended", "overdue"]);
+
+      if (activeSessionError) throw new Error(activeSessionError.message);
+      if ((activeSessionCount ?? 0) > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: `현재 이용 중이거나 종료 확인이 필요한 타석이 ${activeSessionCount}개 있습니다. 먼저 이용 종료 처리 후 매장 종료를 실행해주세요.`
+          },
+          { status: 409 }
+        );
+      }
+
+      const scripts = [
+        ...siheungBayAutomation.map((bay) => ({
+          name: `${bay.label} 장비 OFF`,
+          script: bay.exitScript
+        })),
+        { name: "공용 조명·냉난방 OFF", script: commonAutomationScripts.off }
+      ];
+      const command = await enqueueManualAutomation(supabase, {
+        storeId: CURRENT_STORE_ID,
+        scripts,
+        action: "store_close"
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: "모든 타석 장비와 공용 조명·냉난방 OFF 명령을 순서대로 전달했습니다. PC는 Agent 안전 종료 기능 적용 전까지 정상 종료를 별도로 확인해주세요.",
         command
       });
     }

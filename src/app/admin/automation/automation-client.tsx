@@ -69,7 +69,7 @@ export function AutomationClient() {
   }, [load]);
 
   async function run(
-    action: "close_expired" | "shared_on" | "shared_off" | "bay_off",
+    action: "close_expired" | "shared_on" | "shared_off" | "store_close" | "bay_off",
     confirmation: string,
     bayId?: string
   ) {
@@ -148,12 +148,17 @@ export function AutomationClient() {
           <button
             type="button"
             disabled={busy !== null || !status?.controllerEnabled}
-            onClick={() => void run("shared_off", "공용 조명과 냉난방 종료 명령을 보냅니다. 실행할까요?")}
+            onClick={() =>
+              void run(
+                "store_close",
+                "매장을 종료합니다. 모든 타석 장비를 끈 뒤 공용 조명과 냉난방을 끕니다. 이용 중인 고객이 없을 때만 실행됩니다. 진행할까요?"
+              )
+            }
             className="rounded-md border border-[#efc7c7] bg-[#fff8f8] p-5 text-left shadow-soft-line transition hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="grid size-12 place-items-center rounded-md bg-rose-600 text-white"><Power size={22} /></span>
-            <h2 className="mt-4 text-lg font-extrabold">공용 장비 OFF</h2>
-            <p className="mt-2 text-sm leading-6 text-[#697468]">이용 중인 타석이 없는지 확인한 뒤 매장 공용 장비를 종료합니다.</p>
+            <h2 className="mt-4 text-lg font-extrabold">매장 종료</h2>
+            <p className="mt-2 text-sm leading-6 text-[#697468]">모든 타석 장비를 끈 뒤 공용 조명과 냉난방을 순서대로 종료합니다.</p>
           </button>
         </section>
 
