@@ -180,6 +180,15 @@ commit/push/deploy:
 - Verification: `npm run typecheck` passed. Targeted ESLint for changed files passed. Full `npm run lint` remains blocked by an existing inaccessible `.tmp_pysdcp` folder. No local server was running for HTTP verification.
 - Release note: GitHub push triggers the configured Vercel deployment. Before using the new 종료 정리 or 공용 ON/OFF actions, run `supabase/migrations/202608150001_store_controller_release_commands.sql` in the Supabase SQL Editor. No physical device command was performed during this implementation.
 
+## Current Work (2026-08-15, Codex - automation log compatibility fix)
+
+- Status: completed; ready to deploy
+- Purpose: Prevent `/admin/automation` from failing when the optional `automation_logs` table is absent, and use the database's available log source when compatible.
+- Files: `src/app/api/admin/automation/route.ts`, `docs/SHARED-HANDOFF.md`.
+- Resolution: The page now reads recent control history from the existing `store_controller_commands` table instead of the absent `automation_logs` table. No schema change is required for this compatibility fix.
+- Verification: `npm run typecheck` and targeted ESLint passed.
+- Safety: no production database write or physical device command.
+
 ## Review, Commit & Deploy (2026-08-11, Claude)
 
 - Reviewed the store-controller implementation: approved. Auth uses `timingSafeEqual`; the poll endpoint claims commands atomically with a lease and recovers expired leases; completion verifies `controller_id`; enqueue is idempotent via `unique(access_session_id, command_type)`; kiosk enqueues instead of calling HA directly when `STORE_CONTROLLER_ENABLED=true`, which removes the "장비 켜기 실패" message. `controller.config.json` is confirmed Git-ignored.

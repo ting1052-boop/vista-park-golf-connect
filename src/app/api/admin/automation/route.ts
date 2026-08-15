@@ -17,13 +17,19 @@ type ActiveSessionRow = {
   bays: { bay_code: string | null; display_name: string | null } | Array<{ bay_code: string | null; display_name: string | null }> | null;
 };
 
-type AutomationLogRow = {
+type ControllerLogRow = {
   id: string;
   created_at: string;
-  event_name: string;
-  command: string;
+  command_type: string;
   status: string;
   error_message: string | null;
+  payload: { scripts?: Array<{ name?: string; script?: string }> } | null;
+};
+
+const commandTypeLabels: Record<string, string> = {
+  prepare_bay: "타석 준비",
+  release_bay: "타석 이용 종료",
+  run_scripts: "관리자 장비 제어"
 };
 
 function getBay(row: ActiveSessionRow) {
@@ -62,8 +68,8 @@ export async function GET() {
         .in("status", ["active", "extended", "overdue"])
         .order("started_at", { ascending: false }),
       supabase
-        .from("automation_logs")
-        .select("id, created_at, event_name, command, status, error_message")
+        .from("store_controller_commands")
+        .select("id, created_at, command_type, status, error_message, payload")
         .eq("store_id", CURRENT_STORE_ID)
         .order("created_at", { ascending: false })
         .limit(8)
@@ -89,13 +95,19 @@ export async function GET() {
       };
     });
 
-    const logs = ((logsResult.data ?? []) as AutomationLogRow[]).map((row) => ({
-      id: row.id,
-      time: formatTime(row.created_at),
-      title: row.event_name,
-      detail: row.error_message ?? row.command,
-      status: row.status
-    }));
+    const logs = ((logsResult.data ?? []) as ControllerLogRow[]).map((row) => {
+      const scriptNames = row.payload?.scripts
+        ?.map((script) => script.name ?? script.script)
+        .filter((name): name is string => Boolean(name));
+
+      return {
+        id: row.id,
+        time: formatTime(row.created_at),
+        title: commandTypeLabels[row.command_type] ?? row.command_type,
+        detail: row.error_message ?? scriptNames?.join(", ") ?? "제어 명령 처리",
+        status: row.status
+      };
+    });
 
     return NextResponse.json({
       ok: true,
