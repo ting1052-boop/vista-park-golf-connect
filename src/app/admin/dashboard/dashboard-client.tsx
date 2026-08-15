@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import {
   adminNavItems,
-  automationDeviceRows,
   featureChecks,
   quickActions,
   type AdminAlert,
@@ -37,6 +36,7 @@ import {
   type LiveBayStatus,
   type LogTone
 } from "@/lib/dashboard-data";
+import type { AutomationDeviceStatusRow } from "@/lib/supabase/automation-status";
 import { durationOptions, getBlockMinutes } from "@/lib/reservation-policy";
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
@@ -143,6 +143,7 @@ type DashboardClientProps = {
   initialAlerts?: AdminAlert[];
   initialNoShows?: NoShowRow[];
   initialTodayReservationSummary?: DashboardReservationSummary;
+  initialAutomationDevices?: AutomationDeviceStatusRow[];
   initialError?: string | null;
 };
 
@@ -179,6 +180,7 @@ export function DashboardClient({
   initialAlerts = [],
   initialNoShows = [],
   initialTodayReservationSummary = emptyTodayReservationSummary,
+  initialAutomationDevices = [],
   initialError = null
 }: DashboardClientProps) {
   const router = useRouter();
@@ -196,6 +198,7 @@ export function DashboardClient({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUsageDetailOpen, setIsUsageDetailOpen] = useState(false);
   const storeSummaries: DashboardStoreSummary[] = initialStoreSummaries;
+  const automationDevices: AutomationDeviceStatusRow[] = initialAutomationDevices;
 
   useEffect(() => {
     setNow(new Date());
@@ -822,7 +825,9 @@ export function DashboardClient({
               <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
                 <div className="border-b border-[#e5ece1] p-5">
                   <h3 className="text-lg font-extrabold">무인 장비 상태</h3>
-                  <p className="mt-1 text-sm text-[#697468]">조명, 냉난방기, 키오스크, 타석 전원의 현재 상태입니다.</p>
+                  <p className="mt-1 text-sm text-[#697468]">
+                    실제 자동화 실행 기록에서 확인한 타석별 장비의 마지막 상태입니다.
+                  </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm">
@@ -832,19 +837,39 @@ export function DashboardClient({
                         <th className="px-5 py-3 font-bold">장비</th>
                         <th className="px-5 py-3 font-bold">연동</th>
                         <th className="px-5 py-3 font-bold">상태</th>
-                        <th className="px-5 py-3 font-bold">다음 동작</th>
+                        <th className="px-5 py-3 font-bold">마지막 실행</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#edf2ea]">
-                      {automationDeviceRows.map((row) => (
-                        <tr key={`${row.zone}-${row.device}`} className="hover:bg-[#fbfcfa]">
-                          <td className="px-5 py-4 font-extrabold">{row.zone}</td>
-                          <td className="px-5 py-4">{row.device}</td>
-                          <td className="px-5 py-4">{row.type}</td>
-                          <td className="px-5 py-4 font-bold text-vista-leaf">{row.state}</td>
-                          <td className="px-5 py-4 text-[#697468]">{row.action}</td>
+                      {automationDevices.length > 0 ? (
+                        automationDevices.map((row) => (
+                          <tr key={`${row.zone}-${row.device}`} className="hover:bg-[#fbfcfa]">
+                            <td className="px-5 py-4 font-extrabold">{row.zone}</td>
+                            <td className="px-5 py-4">{row.device}</td>
+                            <td className="px-5 py-4">{row.provider}</td>
+                            <td
+                              className={cn(
+                                "px-5 py-4 font-bold",
+                                row.tone === "on" && "text-vista-leaf",
+                                row.tone === "off" && "text-[#697468]",
+                                row.tone === "failed" && "text-rose-700",
+                                row.tone === "unknown" && "text-[#9aa39a]"
+                              )}
+                            >
+                              {row.state}
+                            </td>
+                            <td className="px-5 py-4 text-[#697468]">
+                              {row.lastRunAt ? formatSessionDateTime(row.lastRunAt) : row.action}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="px-5 py-6 text-[#697468]" colSpan={5}>
+                            아직 장비 자동화 실행 기록이 없습니다. 키오스크 입장 또는 무인제어 실행 후 표시됩니다.
+                          </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>

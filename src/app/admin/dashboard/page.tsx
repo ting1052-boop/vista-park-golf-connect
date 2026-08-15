@@ -1,3 +1,4 @@
+import { getAutomationDeviceStatuses } from "@/lib/supabase/automation-status";
 import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
 import { getStoreSummaries } from "@/lib/supabase/stores";
@@ -10,13 +11,15 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminDashboardPage() {
-  const [bayResult, storeResult, dashboardResult] = await Promise.allSettled([
+  const [bayResult, storeResult, dashboardResult, automationResult] = await Promise.allSettled([
     getDashboardBays(CURRENT_STORE_ID),
     getStoreSummaries(),
-    getDashboardOperationalRows(CURRENT_STORE_ID)
+    getDashboardOperationalRows(CURRENT_STORE_ID),
+    getAutomationDeviceStatuses(CURRENT_STORE_ID)
   ]);
   const bays = bayResult.status === "fulfilled" ? bayResult.value : [];
   const stores = storeResult.status === "fulfilled" ? storeResult.value : [];
+  const automationDevices = automationResult.status === "fulfilled" ? automationResult.value : [];
   const dashboardRows =
     dashboardResult.status === "fulfilled"
       ? dashboardResult.value
@@ -35,6 +38,9 @@ export default async function AdminDashboardPage() {
       : null,
     dashboardResult.status === "rejected"
       ? `오늘 예약 현황을 불러오지 못했습니다: ${dashboardResult.reason instanceof Error ? dashboardResult.reason.message : "알 수 없는 오류"}`
+      : null,
+    automationResult.status === "rejected"
+      ? `장비 상태를 불러오지 못했습니다: ${automationResult.reason instanceof Error ? automationResult.reason.message : "알 수 없는 오류"}`
       : null
   ].filter(Boolean);
 
@@ -47,6 +53,7 @@ export default async function AdminDashboardPage() {
       initialAlerts={dashboardRows.alerts}
       initialNoShows={dashboardRows.noShows}
       initialTodayReservationSummary={dashboardRows.todaySummary}
+      initialAutomationDevices={automationDevices}
       initialError={errors.length > 0 ? errors.join(" / ") : null}
     />
   );

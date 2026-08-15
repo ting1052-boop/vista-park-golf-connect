@@ -21,7 +21,7 @@
 | Codex | 완료 | 대시보드 유령 이용 상태 원인 추적, 이용 상세·정확한 종료 조치 구현 | 커밋 `70b60f6`, Vercel 배포 및 A-02 과거 세션 정리 완료 |
 | Codex | 완료 | 2번 타석 입장 시 장비 미기동 및 만료 세션 미반납 장애 진단 | HA 내부 자동화 정상, Nabu Casa 구독·원격연결 및 Vercel 비밀값 불일치가 외부 호출을 차단함 |
 | Codex | 완료 | 2번 타석 자동화 순서를 프로젝터 ON 후 PC WOL로 변경 | 매장 HA에서 `projector ON → 15초 대기 → PC WOL` 저장·재조회 검증 완료 |
-| Claude Code | 없음 | 새 작업 시작 전 이 표에 등록 | - |
+| Claude Code | 완료 | 대시보드 "무인 장비 상태" 표를 store_controller_commands 기반 실제 실행 상태로 교체, 미사용 mock 데이터 제거 | `src/lib/supabase/automation-status.ts`(신규), `src/app/admin/dashboard/page.tsx`, `dashboard-client.tsx`, `src/lib/dashboard-data.ts` |
 
 ## 저장소와 배포 상태
 
@@ -218,6 +218,17 @@ commit/push/deploy:
 - Safety: the owner ran the migration in Supabase; Codex did not write production data or send a physical shutdown command. The existing uncommitted warning-window height change (`440` to `480`) was preserved in the rebuilt Agent.
 - Release: commit `65bf626` was pushed to `main`. Production deployment was verified because unauthenticated `POST /api/agent/command-result` returns `401` instead of `404`. No physical shutdown command was sent during verification.
 
+## Current Work (2026-08-15, Codex - member reservation UX and Kakao login)
+
+- Status: implementation and local verification completed; Kakao provider setup, commit, and deployment are pending.
+- Purpose: Reduce the number of visible mobile reservation time buttons with period-based selection, repair the Korean social-login UI, and connect the supported Kakao OAuth flow to the member reservation page.
+- Planned files: `src/app/member/app/page.tsx`, `src/components/social-login-panel.tsx`, `src/lib/auth/social-login.ts`, related auth/member API files if needed, and this handoff.
+- Safety: No production database write, schema migration, deployment, or secret handling will occur without owner confirmation. Existing unrelated dirty files will be preserved.
+- Preflight: `npm run preflight` was attempted but the sandbox blocked its internal `git` process with `spawnSync git EPERM`; handoff and git status were checked manually.
+- Changes: Mobile reservation times are grouped into morning/afternoon/evening tabs; elapsed and business-closed slots are hidden. Kakao OAuth is the only supported social button. Kakao members are linked through `members.login_provider/provider_subject`, so the current production table does not require an `auth_user_id` column. Authenticated bookings use a server route and the member view shows only that account's reservations.
+- Verification: 390x844 browser review passed for layout and period switching; browser console had no warnings or errors. `npm run typecheck`, targeted ESLint, and `npm run build` passed. The sandboxed build first hit `spawn EPERM`; the approved build completed all 45 routes.
+- Commit/push/deploy: not performed. Wait until the owner creates and configures the Kakao Developers app and Supabase Kakao provider so the production login button is not released in an inactive state.
+
 ## Review, Commit & Deploy (2026-08-11, Claude)
 
 - Reviewed the store-controller implementation: approved. Auth uses `timingSafeEqual`; the poll endpoint claims commands atomically with a lease and recovers expired leases; completion verifies `controller_id`; enqueue is idempotent via `unique(access_session_id, command_type)`; kiosk enqueues instead of calling HA directly when `STORE_CONTROLLER_ENABLED=true`, which removes the "장비 켜기 실패" message. `controller.config.json` is confirmed Git-ignored.
@@ -229,3 +240,16 @@ commit/push/deploy:
   2. Finish HA scripts for full coverage (bay 2 already done): connect bay 1 and bay 3 projectors and add `script.bay1_on/off`, `script.bay3_on/off`, and `script.shared_on/off` using the exact names in `src/lib/automation/device-map.ts`. Until `shared_on/off` exist, the controller will call them as no-ops (HA returns 200).
   3. After the owner enables, run one A-02 kiosk entry and confirm: command is claimed (status `processing`), `script.bay2_on` runs (projector → 15s → WOL), the controller POSTs `succeeded`, and an `automation_logs` row is recorded.
 - Minor non-blockers noted for later: a command exceeding the `attempts` cap (20) can stick as pending (add a max-attempts → `failed` transition); the poll endpoint returns pending commands across all stores (fine for the single Siheung store, scope by store if multi-store is added).
+
+## Dashboard Automation Status + Mock Cleanup (2026-08-15, Claude Code)
+
+- Status: completed.
+- Purpose: the dashboard "무인 장비 상태" table was hardcoded (`automationDeviceRows`) and always showed fixed text like "대기"/"테스트 가능" while claiming to show the current state. Replaced with real per-bay power state derived from actual automation runs.
+- Source of truth: `store_controller_commands.response_payload.steps[]` (per-script ok/fail) plus `completed_at`. For each bay the newest of `bayN_on` / `bayN_off` decides ON/OFF; a failed newest run surfaces as "켜기/끄기 실패 · 확인 필요".
+- **Production finding: `public.automation_logs` does not exist in the production database** (also missing: `automation_devices`, `automation_scenes`). Verified read-only via PostgREST: `PGRST205 Could not find the table`. Consequences:
+  - Every `automation_logs` insert silently fails today — `src/lib/automation/sessions.ts` (runStep), `src/app/api/store-controller/commands/route.ts`, `src/app/api/automation/reservation-prepare/route.ts`. The intended automation audit trail is not being persisted.
+  - This is why the new status view reads `store_controller_commands` instead.
+  - Not fixed here: creating the table is a production DDL change and needs the owner's approval. Either apply the missing part of `supabase/schema.sql`, or remove the dead inserts.
+- Also removed about 180 lines of unused mock data from `src/lib/dashboard-data.ts` (`liveBayRows`, `adminAlertRows`, `noShowRows`, `entryCheckRows`, `accessSessionRows`, `automationDeviceRows`, `automationLogRows`, `showroomAutomationScenarios`, `reservationRows`, `storeSummaryRows`, `operations`). All verified unreferenced. This also removes fake customer name/phone strings from the source tree, which matters because the copyright submission package ships the source. Kept: `adminNavItems`, `quickActions`, `featureChecks`, and all exported types.
+- Verification: `npm run typecheck`, `npm run lint`, `npm run build` all pass. Logic additionally replayed against real production `store_controller_commands` (12 commands, 7 scripts recognized): all bays and 공용 resolved to "OFF (대기)" at 2026-08-15T12:31:10, matching the actual store close run (`bay1_off, bay2_off, bay3_off, shared_off` all OK at 12:31:04).
+- Not changed: the "무인 운영 1차 MVP 범위" panel still renders the static `featureChecks` list. It is project-scope copy rather than operational data, so replacing it is a product decision.
