@@ -171,6 +171,15 @@ commit/push/deploy:
 - Files: `src/lib/store-controller.ts`, `src/app/api/store-controller/commands/route.ts`, `src/lib/kiosk.ts`, `store-controller/`, `supabase/migrations/202608110001_store_controller_commands.sql`, `supabase/schema.sql`, `.env.local.example`, `.gitignore`.
 - No production operations were executed.
 
+## Current Work (2026-08-15, Codex)
+
+- Status: implementation and verification completed; owner approved GitHub push and Vercel deployment
+- Purpose: Replace the display-only admin automation controls with authenticated, live session cleanup and store-controller command actions.
+- Files: `src/app/admin/automation/page.tsx`, `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `src/lib/store-controller.ts`, `src/lib/session-cleanup.ts`, `supabase/migrations/202608150001_store_controller_release_commands.sql`, `docs/SHARED-HANDOFF.md`.
+- Behavior: The automation page now reads real active sessions and automation logs. It can request expired-session cleanup and queue shared ON/OFF requests through the store-local controller. Session closeout queues a `release_bay` command when the controller is enabled, avoiding Vercel-to-LAN Home Assistant calls.
+- Verification: `npm run typecheck` passed. Targeted ESLint for changed files passed. Full `npm run lint` remains blocked by an existing inaccessible `.tmp_pysdcp` folder. No local server was running for HTTP verification.
+- Release note: GitHub push triggers the configured Vercel deployment. Before using the new 종료 정리 or 공용 ON/OFF actions, run `supabase/migrations/202608150001_store_controller_release_commands.sql` in the Supabase SQL Editor. No physical device command was performed during this implementation.
+
 ## Review, Commit & Deploy (2026-08-11, Claude)
 
 - Reviewed the store-controller implementation: approved. Auth uses `timingSafeEqual`; the poll endpoint claims commands atomically with a lease and recovers expired leases; completion verifies `controller_id`; enqueue is idempotent via `unique(access_session_id, command_type)`; kiosk enqueues instead of calling HA directly when `STORE_CONTROLLER_ENABLED=true`, which removes the "장비 켜기 실패" message. `controller.config.json` is confirmed Git-ignored.

@@ -96,3 +96,94 @@ export async function enqueueBayPreparation(
 
   return { id: existing.id as string, status: existing.status as StoreControllerCommandStatus, reused: true };
 }
+
+async function enqueueScripts(
+  supabase: SupabaseClient,
+  args: {
+    storeId: string;
+    bayId?: string | null;
+    accessSessionId?: string | null;
+    reservationId?: string | null;
+    commandType: "release_bay" | "run_scripts";
+    scripts: StoreControllerScript[];
+    variables: Record<string, unknown>;
+  }
+) {
+  const { data, error } = await supabase
+    .from("store_controller_commands")
+    .insert({
+      store_id: args.storeId,
+      bay_id: args.bayId ?? null,
+      access_session_id: args.accessSessionId ?? null,
+      reservation_id: args.reservationId ?? null,
+      command_type: args.commandType,
+      payload: { scripts: args.scripts, variables: args.variables } satisfies StoreControllerCommandPayload
+    })
+    .select("id, status")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  return { id: data.id as string, status: data.status as StoreControllerCommandStatus };
+}
+
+export async function enqueueBayRelease(
+  supabase: SupabaseClient,
+  args: { bayId: string; accessSessionId: string; reservationId?: string | null }
+) {
+  const { data: bayData, error: bayError } = await supabase
+    .from("bays")
+    .select("id, store_id, bay_code")
+    .eq("id", args.bayId)
+    .maybeSingle();
+
+  if (bayError) throw new Error(bayError.message);
+  if (!bayData) throw new Error("타석 정보를 찾을 수 없습니다.");
+
+  const bay = bayData as BayForController;
+  const mapping = getBayAutomationByCode(bay.bay_code);
+  if (!mapping) throw new Error("이 타석의 장비 제어 연결 정보가 없습니다.");
+
+  const { count, error: countError } = await supabase
+    .from("access_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", bay.store_id)
+    .in("status", ["active", "extended"]);
+
+  if (countError) throw new Error(countError.message);
+
+  const scripts: StoreControllerScript[] = [{ name: `${mapping.label} 이용 종료`, script: mapping.exitScript }];
+  if ((count ?? 0) === 0) {
+    scripts.push({ name: "공용 장비 OFF", script: commonAutomationScripts.off });
+  }
+
+  return enqueueScripts(supabase, {
+    storeId: bay.store_id,
+    bayId: bay.id,
+    accessSessionId: args.accessSessionId,
+    reservationId: args.reservationId ?? null,
+    commandType: "release_bay",
+    scripts,
+    variables: {
+      bayId: bay.id,
+      bayCode: bay.bay_code,
+      bayLabel: mapping.label,
+      action: "exit",
+      accessSessionId: args.accessSessionId,
+      reservationId: args.reservationId ?? null,
+      activeSessionCount: count ?? 0
+    }
+  });
+}
+
+export async function enqueueManualAutomation(
+  supabase: SupabaseClient,
+  args: { storeId: string; scripts: StoreControllerScript[]; action: string }
+) {
+  return enqueueScripts(supabase, {
+    storeId: args.storeId,
+    commandType: "run_scripts",
+    scripts: args.scripts,
+    variables: { action: args.action, requestedFrom: "admin_automation" }
+  });
+}

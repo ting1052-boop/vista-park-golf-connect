@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runBayAutomation } from "@/lib/automation/sessions";
+import { enqueueBayRelease, isStoreControllerEnabled } from "@/lib/store-controller";
 
 type ExpiredAccessSession = {
   id: string;
@@ -142,16 +143,26 @@ export async function closeSingleSession(
 
     if (options.runAutomation !== false) {
       try {
-        const automation = await runBayAutomation({
-          supabase,
-          bayId: session.bay_id,
-          action: "exit",
-          accessSessionId: session.id,
-          reservationId: session.reservation_id
-        });
+        if (isStoreControllerEnabled()) {
+          const queued = await enqueueBayRelease(supabase, {
+            bayId: session.bay_id,
+            accessSessionId: session.id,
+            reservationId: session.reservation_id
+          });
+          automationStatus = "requested";
+          message = `매장 제어기 종료 명령을 등록했습니다. (${queued.status})`;
+        } else {
+          const automation = await runBayAutomation({
+            supabase,
+            bayId: session.bay_id,
+            action: "exit",
+            accessSessionId: session.id,
+            reservationId: session.reservation_id
+          });
 
-        automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
-        message = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
+          automationStatus = automation.steps.every((step) => step.ok) ? "requested" : "failed";
+          message = automation.steps.map((step) => `${step.name}: ${step.ok ? "성공" : "실패"}`).join(", ");
+        }
       } catch (automationError) {
         automationStatus = "failed";
         message = automationError instanceof Error ? automationError.message : "종료 자동화 호출 실패";
