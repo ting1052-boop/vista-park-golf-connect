@@ -17,7 +17,7 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
-| Codex | 완료 | 매장 종료 시 각 타석 Agent를 통한 Windows 정상 종료 명령 추가 | DB migration 적용·코드/0.4.0 ZIP 준비 완료, 배포·실기기 교체 진행 중 |
+| Codex | 완료 | 매장 종료 시 각 타석 Agent를 통한 Windows 정상 종료 명령 추가 | DB migration·GitHub·Vercel 배포 완료, 0.4.0 실기기 교체 대기 |
 | Codex | 완료 | 대시보드 유령 이용 상태 원인 추적, 이용 상세·정확한 종료 조치 구현 | 커밋 `70b60f6`, Vercel 배포 및 A-02 과거 세션 정리 완료 |
 | Codex | 완료 | 2번 타석 입장 시 장비 미기동 및 만료 세션 미반납 장애 진단 | HA 내부 자동화 정상, Nabu Casa 구독·원격연결 및 Vercel 비밀값 불일치가 외부 호출을 차단함 |
 | Codex | 완료 | 2번 타석 자동화 순서를 프로젝터 ON 후 PC WOL로 변경 | 매장 HA에서 `projector ON → 15초 대기 → PC WOL` 저장·재조회 검증 완료 |
@@ -210,12 +210,13 @@ commit/push/deploy:
 
 ## Current Work (2026-08-15, Codex - graceful PC shutdown on store close)
 
-- Status: implementation and local verification completed; owner confirmed the production migration succeeded. Deployment and bay-PC Agent replacement are in progress.
+- Status: implementation, migration, GitHub push, and Vercel deployment completed. Bay-PC Agent replacement remains.
 - Purpose: Make `매장 종료` shut down recently connected bay PCs through their Windows Agents, in addition to the existing HA bay/shared OFF scripts.
 - Files: `src/lib/store-controller.ts`, `src/app/api/store-controller/commands/route.ts`, `src/app/api/admin/automation/route.ts`, `src/app/api/agent/session/route.ts`, `src/app/api/agent/command-result/route.ts`, `src/app/admin/automation/automation-client.tsx`, `windows-agent/electron-main.js`, `windows-agent/package.json`, `windows-agent/package-lock.json`, `supabase/schema.sql`, `supabase/migrations/202608150002_store_close_agent_shutdown.sql`.
 - Behavior: only Agents seen within two minutes receive `shutdown_pc`; the store controller ignores Agent-only commands; an Agent acknowledges its own command and schedules normal Windows shutdown after ten seconds. Commands older than five minutes are cancelled so a PC cannot shut down unexpectedly on a later boot.
 - Verification: `npm run typecheck`, targeted ESLint, `npm --prefix windows-agent run check`, and `npm run build` passed. The first sandboxed build attempts hit Windows `spawn EPERM`; the approved production build passed. Electron Builder produced an updated `win-unpacked` app but portable single-file packaging stopped at the known Windows symlink privilege issue. A local install ZIP was created from the valid unpacked app at `windows-agent/dist/VISTA-Bay-Agent-0.4.0-install.zip`.
-- Safety: no production DB write, deployment, or physical shutdown command was executed. The existing uncommitted warning-window height change (`440` to `480`) was preserved in the rebuilt Agent.
+- Safety: the owner ran the migration in Supabase; Codex did not write production data or send a physical shutdown command. The existing uncommitted warning-window height change (`440` to `480`) was preserved in the rebuilt Agent.
+- Release: commit `65bf626` was pushed to `main`. Production deployment was verified because unauthenticated `POST /api/agent/command-result` returns `401` instead of `404`. No physical shutdown command was sent during verification.
 
 ## Review, Commit & Deploy (2026-08-11, Claude)
 
