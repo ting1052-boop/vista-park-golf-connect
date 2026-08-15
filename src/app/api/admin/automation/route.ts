@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin-auth";
-import { commonAutomationScripts } from "@/lib/automation/device-map";
+import { commonAutomationScripts, getBayAutomationByCode } from "@/lib/automation/device-map";
 import { enqueueManualAutomation, isStoreControllerEnabled } from "@/lib/store-controller";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -25,6 +25,16 @@ type ControllerLogRow = {
   error_message: string | null;
   payload: { scripts?: Array<{ name?: string; script?: string }> } | null;
 };
+
+type BayRow = { id: string; bay_code: string; display_name: string | null };
+type AgentRow = {
+  bay_id: string | null;
+  pc_name: string | null;
+  is_active: boolean | null;
+  last_seen_at: string | null;
+};
+
+const AGENT_ONLINE_THRESHOLD_MS = 120_000;
 
 const commandTypeLabels: Record<string, string> = {
   prepare_bay: "타석 준비",
@@ -60,7 +70,7 @@ export async function GET() {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const [sessionsResult, logsResult] = await Promise.all([
+    const [sessionsResult, logsResult, baysResult, agentsResult] = await Promise.all([
       supabase
         .from("access_sessions")
         .select("id, bay_id, guest_name, started_at, ends_at, status, bays(bay_code, display_name)")
@@ -72,11 +82,22 @@ export async function GET() {
         .select("id, created_at, command_type, status, error_message, payload")
         .eq("store_id", CURRENT_STORE_ID)
         .order("created_at", { ascending: false })
-        .limit(8)
+        .limit(8),
+      supabase
+        .from("bays")
+        .select("id, bay_code, display_name")
+        .eq("store_id", CURRENT_STORE_ID)
+        .order("bay_code", { ascending: true }),
+      supabase
+        .from("agent_devices")
+        .select("bay_id, pc_name, is_active, last_seen_at")
+        .eq("store_id", CURRENT_STORE_ID)
     ]);
 
     if (sessionsResult.error) throw new Error(sessionsResult.error.message);
     if (logsResult.error) throw new Error(logsResult.error.message);
+    if (baysResult.error) throw new Error(baysResult.error.message);
+    if (agentsResult.error) throw new Error(agentsResult.error.message);
 
     const now = Date.now();
     const sessions = ((sessionsResult.data ?? []) as ActiveSessionRow[]).map((row) => {
@@ -109,11 +130,36 @@ export async function GET() {
       };
     });
 
+    const agentsByBayId = new Map<string, AgentRow>();
+    for (const agent of (agentsResult.data ?? []) as AgentRow[]) {
+      if (!agent.bay_id) continue;
+      const previous = agentsByBayId.get(agent.bay_id);
+      if (!previous || new Date(agent.last_seen_at ?? 0).getTime() > new Date(previous.last_seen_at ?? 0).getTime()) {
+        agentsByBayId.set(agent.bay_id, agent);
+      }
+    }
+
+    const bays = ((baysResult.data ?? []) as BayRow[]).map((bay) => {
+      const agent = agentsByBayId.get(bay.id);
+      const lastSeenMs = agent?.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0;
+      return {
+        id: bay.id,
+        code: bay.bay_code,
+        name: bay.display_name ?? bay.bay_code,
+        pcName: agent?.pc_name ?? null,
+        agentOnline:
+          agent?.is_active !== false && lastSeenMs > 0 && Date.now() - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS,
+        lastSeenAt: agent?.last_seen_at ?? null,
+        hasAutomation: Boolean(getBayAutomationByCode(bay.bay_code))
+      };
+    });
+
     return NextResponse.json({
       ok: true,
       controllerEnabled: isStoreControllerEnabled(),
       sessions,
-      logs
+      logs,
+      bays
     });
   } catch (error) {
     return NextResponse.json(
@@ -123,7 +169,7 @@ export async function GET() {
   }
 }
 
-type ActionBody = { action?: unknown };
+type ActionBody = { action?: unknown; bayId?: unknown };
 
 export async function POST(request: NextRequest) {
   const denied = await ensureAdmin();
@@ -156,6 +202,41 @@ export async function POST(request: NextRequest) {
         { ok: false, message: "매장 제어기가 아직 활성화되지 않았습니다. 매장 노트북의 제어기 실행 상태를 확인해 주세요." },
         { status: 409 }
       );
+    }
+
+    if (body.action === "bay_off") {
+      if (typeof body.bayId !== "string" || body.bayId.length === 0) {
+        return NextResponse.json({ ok: false, message: "종료할 타석을 선택해주세요." }, { status: 400 });
+      }
+
+      const { data: bay, error: bayError } = await supabase
+        .from("bays")
+        .select("id, store_id, bay_code")
+        .eq("id", body.bayId)
+        .eq("store_id", CURRENT_STORE_ID)
+        .maybeSingle();
+
+      if (bayError) throw new Error(bayError.message);
+      if (!bay) {
+        return NextResponse.json({ ok: false, message: "타석 정보를 찾을 수 없습니다." }, { status: 404 });
+      }
+
+      const mapping = getBayAutomationByCode(bay.bay_code);
+      if (!mapping) {
+        return NextResponse.json({ ok: false, message: "이 타석의 장비 OFF 연결 정보가 없습니다." }, { status: 409 });
+      }
+
+      const command = await enqueueManualAutomation(supabase, {
+        storeId: CURRENT_STORE_ID,
+        scripts: [{ name: `${mapping.label} 장비 OFF`, script: mapping.exitScript }],
+        action: `bay_off:${bay.bay_code}`
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: `${mapping.label} 장비 OFF 명령을 매장 제어기에 전달했습니다. PC는 안전을 위해 강제 종료하지 않습니다.`,
+        command
+      });
     }
 
     const scriptsByAction = {

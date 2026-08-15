@@ -189,6 +189,15 @@ commit/push/deploy:
 - Verification: `npm run typecheck` and targeted ESLint passed.
 - Safety: no production database write or physical device command.
 
+## Current Work (2026-08-15, Codex - per-bay manual equipment control)
+
+- Status: completed; ready to deploy and owner-test
+- Purpose: Show each bay's Agent connection separately from customer usage, and allow an administrator to queue a safe per-bay HA OFF script even when no access session exists.
+- Files: `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `docs/SHARED-HANDOFF.md`.
+- Behavior: The automation API now returns bay Agent heartbeat status and accepts an authenticated `bay_off` action. The operator UI shows each bay separately and queues its mapped `bayN_off` HA script after confirmation, even without an access session.
+- Verification: `npm run typecheck` and targeted ESLint passed.
+- Safety: this action queues the configured HA `bayN_off` script only. It does not hard-cut PC power or modify usage sessions. The dirty `windows-agent/electron-main.js` owned by another task will not be edited.
+
 ## Review, Commit & Deploy (2026-08-11, Claude)
 
 - Reviewed the store-controller implementation: approved. Auth uses `timingSafeEqual`; the poll endpoint claims commands atomically with a lease and recovers expired leases; completion verifies `controller_id`; enqueue is idempotent via `unique(access_session_id, command_type)`; kiosk enqueues instead of calling HA directly when `STORE_CONTROLLER_ENABLED=true`, which removes the "장비 켜기 실패" message. `controller.config.json` is confirmed Git-ignored.

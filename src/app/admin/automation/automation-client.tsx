@@ -17,10 +17,21 @@ type SessionRow = {
 
 type LogRow = { id: string; time: string; title: string; detail: string; status: string };
 
+type BayControlRow = {
+  id: string;
+  code: string;
+  name: string;
+  pcName: string | null;
+  agentOnline: boolean;
+  lastSeenAt: string | null;
+  hasAutomation: boolean;
+};
+
 type AutomationStatus = {
   controllerEnabled: boolean;
   sessions: SessionRow[];
   logs: LogRow[];
+  bays: BayControlRow[];
 };
 
 type ApiResponse = { ok?: boolean; message?: string };
@@ -57,7 +68,11 @@ export function AutomationClient() {
     void load();
   }, [load]);
 
-  async function run(action: "close_expired" | "shared_on" | "shared_off", confirmation: string) {
+  async function run(
+    action: "close_expired" | "shared_on" | "shared_off" | "bay_off",
+    confirmation: string,
+    bayId?: string
+  ) {
     if (!window.confirm(confirmation)) return;
 
     setBusy(action);
@@ -67,7 +82,7 @@ export function AutomationClient() {
       const response = await fetch("/api/admin/automation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action })
+        body: JSON.stringify({ action, bayId })
       });
       const data = (await response.json()) as ApiResponse;
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "처리에 실패했습니다.");
@@ -140,6 +155,57 @@ export function AutomationClient() {
             <h2 className="mt-4 text-lg font-extrabold">공용 장비 OFF</h2>
             <p className="mt-2 text-sm leading-6 text-[#697468]">이용 중인 타석이 없는지 확인한 뒤 매장 공용 장비를 종료합니다.</p>
           </button>
+        </section>
+
+        <section className="mt-6 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
+          <div className="border-b border-[#e5ece1] p-5">
+            <p className="text-sm font-bold text-vista-leaf">타석 PC 연결 상태</p>
+            <h2 className="mt-1 text-xl font-extrabold">Agent 연결과 타석별 장비 제어</h2>
+            <p className="mt-2 text-sm leading-6 text-[#697468]">
+              PC가 켜져 있어도 고객 이용 세션이 없으면 이용 중으로 계산하지 않습니다. 아래 연결 상태는 Agent의 최근 신호입니다.
+            </p>
+          </div>
+          <div className="grid gap-3 p-5 md:grid-cols-3">
+            {status?.bays.map((bay) => (
+              <article key={bay.id} className="rounded-md border border-[#e5ece1] bg-[#fbfcfa] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-extrabold">{bay.code}</p>
+                    <p className="mt-1 text-xs font-bold text-[#697468]">{bay.pcName ?? bay.name}</p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-extrabold ${
+                      bay.agentOnline
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-gray-300 bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    <span className={`size-2 rounded-full ${bay.agentOnline ? "bg-emerald-500" : "bg-gray-400"}`} />
+                    Agent {bay.agentOnline ? "연결" : "연결 끊김"}
+                  </span>
+                </div>
+                <p className="mt-3 min-h-5 text-xs font-semibold text-[#697468]">
+                  {bay.lastSeenAt
+                    ? `마지막 신호 ${new Date(bay.lastSeenAt).toLocaleString("ko-KR")}`
+                    : "Agent 신호 기록 없음"}
+                </p>
+                <button
+                  type="button"
+                  disabled={busy !== null || !status.controllerEnabled || !bay.hasAutomation}
+                  onClick={() =>
+                    void run(
+                      "bay_off",
+                      `${bay.code} 프로젝터와 연결 장비에 OFF 명령을 보냅니다. PC는 강제 종료하지 않습니다. 진행할까요?`,
+                      bay.id
+                    )
+                  }
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Power size={17} /> 타석 장비 OFF
+                </button>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
