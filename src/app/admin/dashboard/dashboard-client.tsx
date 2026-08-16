@@ -491,7 +491,7 @@ export function DashboardClient({
     { label: "사용 가능", value: `${summary.available}`, helper: "즉시 배정 가능한 타석", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
     { label: "점검/알림", value: `${summary.maintenance + alerts.length + noShows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
     {
-      label: "오늘 예약",
+      label: "오늘 예약·입장",
       value: `${todayReservationSummary.total}`,
       helper:
         todayReservationSummary.total > 0
@@ -798,7 +798,7 @@ export function DashboardClient({
                 <div className="mb-5 grid grid-cols-3 gap-3">
                   <MiniStatus label="전원" value="정상" />
                   <MiniStatus label="냉난방" value="연결" />
-                  <MiniStatus label="오늘 예약" value={`${todayReservationSummary.total}건`} />
+                  <MiniStatus label="오늘 예약·입장" value={`${todayReservationSummary.total}건`} />
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-2">

@@ -59,7 +59,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await closeSingleSession(supabase, session, undefined, { runAutomation: false });
+    // Agent가 종료 시각을 감지한 경로도 관리자/크론 종료와 같은 정리 절차를 탄다.
+    // closeSingleSession의 멱등 처리로 중복 호출은 막고, release_bay 명령은 남긴다.
+    const result = await closeSingleSession(supabase, session);
     return NextResponse.json({
       ok: result.status === "completed" || result.status === "not_found",
       status: result.status,

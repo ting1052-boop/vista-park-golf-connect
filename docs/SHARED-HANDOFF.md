@@ -22,6 +22,7 @@
 | Codex | 완료 | 2번 타석 입장 시 장비 미기동 및 만료 세션 미반납 장애 진단 | HA 내부 자동화 정상, Nabu Casa 구독·원격연결 및 Vercel 비밀값 불일치가 외부 호출을 차단함 |
 | Codex | 완료 | 2번 타석 자동화 순서를 프로젝터 ON 후 PC WOL로 변경 | 매장 HA에서 `projector ON → 15초 대기 → PC WOL` 저장·재조회 검증 완료 |
 | Claude Code | 완료 | 대시보드 "무인 장비 상태" 표를 store_controller_commands 기반 실제 실행 상태로 교체, 미사용 mock 데이터 제거 | `src/lib/supabase/automation-status.ts`(신규), `src/app/admin/dashboard/page.tsx`, `dashboard-client.tsx`, `src/lib/dashboard-data.ts` |
+| Codex | 완료 | 자동 종료 로그 누락과 대시보드 오늘 예약 2건 집계 원인 점검 | Agent 종료 경로의 장비 반납 명령 누락 수정, 오늘 합계를 예약·입장으로 명확화 |
 
 ## 저장소와 배포 상태
 
@@ -253,3 +254,14 @@ commit/push/deploy:
 - Also removed about 180 lines of unused mock data from `src/lib/dashboard-data.ts` (`liveBayRows`, `adminAlertRows`, `noShowRows`, `entryCheckRows`, `accessSessionRows`, `automationDeviceRows`, `automationLogRows`, `showroomAutomationScenarios`, `reservationRows`, `storeSummaryRows`, `operations`). All verified unreferenced. This also removes fake customer name/phone strings from the source tree, which matters because the copyright submission package ships the source. Kept: `adminNavItems`, `quickActions`, `featureChecks`, and all exported types.
 - Verification: `npm run typecheck`, `npm run lint`, `npm run build` all pass. Logic additionally replayed against real production `store_controller_commands` (12 commands, 7 scripts recognized): all bays and 공용 resolved to "OFF (대기)" at 2026-08-15T12:31:10, matching the actual store close run (`bay1_off, bay2_off, bay3_off, shared_off` all OK at 12:31:04).
 - Not changed: the "무인 운영 1차 MVP 범위" panel still renders the static `featureChecks` list. It is project-scope copy rather than operational data, so replacing it is a product decision.
+
+## Current Work (2026-08-16, Codex - Agent expiry release log)
+
+- Status: implementation and local verification completed; owner approved a scoped commit and deployment.
+- Production read-only finding: today's dashboard count of two consists of one `member_app` reservation and one completed administrator walk-in. The existing metric intentionally counts all non-cancelled reservations and entries whose start time is today, including completed rows.
+- Production read-only finding: the administrator walk-in session completed normally, but no `release_bay` or `shutdown_pc` command was created at its expiry. The PC being off therefore was not caused by a recorded VISTA shutdown command.
+- Root cause: `POST /api/agent/session/end` called the shared session closeout with `runAutomation: false`, so it completed the session and released the bay in the database while suppressing the local-controller equipment release command.
+- Resolution: the Agent expiry endpoint now uses the same idempotent `closeSingleSession` automation path as admin/cron closeout, allowing a `release_bay` command and visible `타석 이용 종료` log to be created. Normal session expiry does not enqueue `shutdown_pc`; graceful PC shutdown remains a guarded `매장 종료` action.
+- UI: dashboard KPI and mini status labels now say `오늘 예약·입장`, matching the existing calculation and its app versus walk-in/phone breakdown.
+- Files: `src/app/api/agent/session/end/route.ts`, `src/app/admin/dashboard/dashboard-client.tsx`, `docs/SHARED-HANDOFF.md`.
+- Verification: `npm run typecheck` and targeted ESLint passed. Full `npm run lint` remains blocked by the existing inaccessible `.tmp_pysdcp` folder. No production database write or physical device command was performed; the owner approved the scoped GitHub/Vercel release.
