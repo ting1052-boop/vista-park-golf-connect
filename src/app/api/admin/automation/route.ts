@@ -11,6 +11,7 @@ import {
   isStoreControllerEnabled
 } from "@/lib/store-controller";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
+import { getLatestScriptRuns, getPowerState } from "@/lib/supabase/automation-status";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
@@ -148,9 +149,21 @@ export async function GET() {
       }
     }
 
+    // 타석별 장비 전원 상태(제어기 실행 기록 기준)와 이용 중 여부.
+    // 토글 UI 가 현재 상태를 보여주고, 이용 중인 타석을 실수로 끄지 않도록 쓰인다.
+    const latestRuns = await getLatestScriptRuns(supabase, CURRENT_STORE_ID);
+    const activeBayIds = new Set(
+      ((sessionsResult.data ?? []) as ActiveSessionRow[]).map((row) => row.bay_id).filter((id): id is string => Boolean(id))
+    );
+
     const bays = ((baysResult.data ?? []) as BayRow[]).map((bay) => {
       const agent = agentsByBayId.get(bay.id);
       const lastSeenMs = agent?.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0;
+      const mapping = getBayAutomationByCode(bay.bay_code);
+      const power = mapping
+        ? getPowerState(latestRuns, mapping.enterScript, mapping.exitScript)
+        : { on: null, failed: false, lastRunAt: null };
+
       return {
         id: bay.id,
         code: bay.bay_code,
@@ -159,7 +172,11 @@ export async function GET() {
         agentOnline:
           agent?.is_active !== false && lastSeenMs > 0 && Date.now() - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS,
         lastSeenAt: agent?.last_seen_at ?? null,
-        hasAutomation: Boolean(getBayAutomationByCode(bay.bay_code))
+        hasAutomation: Boolean(mapping),
+        powerOn: power.on,
+        powerFailed: power.failed,
+        powerLastRunAt: power.lastRunAt,
+        inUse: activeBayIds.has(bay.id)
       };
     });
 
@@ -178,7 +195,7 @@ export async function GET() {
   }
 }
 
-type ActionBody = { action?: unknown; bayId?: unknown };
+type ActionBody = { action?: unknown; bayId?: unknown; force?: unknown };
 
 export async function POST(request: NextRequest) {
   const denied = await ensureAdmin();
@@ -213,9 +230,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (body.action === "bay_off") {
+    if (body.action === "bay_off" || body.action === "bay_on") {
+      const turningOn = body.action === "bay_on";
+
       if (typeof body.bayId !== "string" || body.bayId.length === 0) {
-        return NextResponse.json({ ok: false, message: "종료할 타석을 선택해주세요." }, { status: 400 });
+        return NextResponse.json({ ok: false, message: "제어할 타석을 선택해주세요." }, { status: 400 });
       }
 
       const { data: bay, error: bayError } = await supabase
@@ -232,18 +251,49 @@ export async function POST(request: NextRequest) {
 
       const mapping = getBayAutomationByCode(bay.bay_code);
       if (!mapping) {
-        return NextResponse.json({ ok: false, message: "이 타석의 장비 OFF 연결 정보가 없습니다." }, { status: 409 });
+        return NextResponse.json(
+          { ok: false, message: `이 타석의 장비 ${turningOn ? "ON" : "OFF"} 연결 정보가 없습니다.` },
+          { status: 409 }
+        );
+      }
+
+      // 이용 중인 타석을 실수로 끄면 고객 화면이 꺼진다. 확인 없이는 막는다.
+      if (!turningOn && body.force !== true) {
+        const { count, error: countError } = await supabase
+          .from("access_sessions")
+          .select("id", { count: "exact", head: true })
+          .eq("bay_id", bay.id)
+          .in("status", ["active", "extended", "overdue"]);
+
+        if (countError) throw new Error(countError.message);
+        if ((count ?? 0) > 0) {
+          return NextResponse.json(
+            {
+              ok: false,
+              requiresForce: true,
+              message: `${mapping.label}은 현재 고객 이용 중입니다. 그래도 장비를 끄려면 한 번 더 확인해주세요.`
+            },
+            { status: 409 }
+          );
+        }
       }
 
       const command = await enqueueManualAutomation(supabase, {
         storeId: CURRENT_STORE_ID,
-        scripts: [{ name: `${mapping.label} 장비 OFF`, script: mapping.exitScript }],
-        action: `bay_off:${bay.bay_code}`
+        scripts: [
+          {
+            name: `${mapping.label} 장비 ${turningOn ? "ON" : "OFF"}`,
+            script: turningOn ? mapping.enterScript : mapping.exitScript
+          }
+        ],
+        action: `${body.action}:${bay.bay_code}`
       });
 
       return NextResponse.json({
         ok: true,
-        message: `${mapping.label} 장비 OFF 명령을 매장 제어기에 전달했습니다. PC는 안전을 위해 강제 종료하지 않습니다.`,
+        message: turningOn
+          ? `${mapping.label} 장비 ON 명령을 매장 제어기에 전달했습니다. 프로젝터가 켜진 뒤 PC가 부팅됩니다.`
+          : `${mapping.label} 장비 OFF 명령을 매장 제어기에 전달했습니다. PC는 안전을 위해 강제 종료하지 않습니다.`,
         command
       });
     }

@@ -25,6 +25,11 @@ type BayControlRow = {
   agentOnline: boolean;
   lastSeenAt: string | null;
   hasAutomation: boolean;
+  /** 제어기 실행 기록 기준 장비 전원. null 이면 실행 이력 없음 */
+  powerOn: boolean | null;
+  powerFailed: boolean;
+  powerLastRunAt: string | null;
+  inUse: boolean;
 };
 
 type AutomationStatus = {
@@ -34,12 +39,87 @@ type AutomationStatus = {
   bays: BayControlRow[];
 };
 
-type ApiResponse = { ok?: boolean; message?: string };
+type ApiResponse = { ok?: boolean; message?: string; requiresForce?: boolean };
 
 function remainingLabel(session: SessionRow) {
   if (session.remainingMinutes === null) return "시간 확인 필요";
   if (session.remainingMinutes <= 0) return `${Math.abs(session.remainingMinutes)}분 초과`;
   return `${session.remainingMinutes}분 남음`;
+}
+
+function BayPowerToggle({
+  bay,
+  disabled,
+  pending,
+  onToggle
+}: {
+  bay: BayControlRow;
+  disabled: boolean;
+  pending: boolean;
+  onToggle: (turnOn: boolean) => void;
+}) {
+  // 실행 이력이 없으면(null) 꺼진 것으로 보고, 누르면 켜지도록 한다.
+  const isOn = bay.powerOn === true;
+  const stateLabel = bay.powerFailed
+    ? isOn
+      ? "켜기 실패"
+      : "끄기 실패"
+    : bay.powerOn === null
+      ? "상태 기록 없음"
+      : isOn
+        ? "장비 ON"
+        : "장비 OFF";
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p
+            className={`text-sm font-extrabold ${
+              bay.powerFailed ? "text-rose-700" : isOn ? "text-vista-leaf" : "text-[#697468]"
+            }`}
+          >
+            {stateLabel}
+          </p>
+          <p className="mt-0.5 text-xs font-semibold text-[#8a9488]">
+            {bay.powerLastRunAt
+              ? `${new Date(bay.powerLastRunAt).toLocaleString("ko-KR")} 실행`
+              : "제어 기록 없음"}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isOn}
+          aria-label={`${bay.code} 장비 ${isOn ? "끄기" : "켜기"}`}
+          disabled={disabled || pending}
+          onClick={() => onToggle(!isOn)}
+          className={`relative inline-flex h-9 w-16 shrink-0 items-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            isOn ? "border-vista-leaf bg-vista-leaf" : "border-[#cad8c6] bg-[#e8ece7]"
+          }`}
+        >
+          <span
+            className={`grid size-7 place-items-center rounded-full bg-white shadow transition-transform ${
+              isOn ? "translate-x-8" : "translate-x-1"
+            }`}
+          >
+            {pending ? (
+              <Loader2 size={15} className="animate-spin text-[#697468]" />
+            ) : (
+              <Power size={15} className={isOn ? "text-vista-leaf" : "text-[#8a9488]"} />
+            )}
+          </span>
+        </button>
+      </div>
+
+      {bay.inUse && (
+        <p className="mt-2 rounded-md bg-[#fff4eb] px-2.5 py-1.5 text-xs font-bold text-[#9a561a]">
+          고객 이용 중 · 끄면 이용에 지장이 있습니다
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function AutomationClient() {
@@ -69,22 +149,37 @@ export function AutomationClient() {
   }, [load]);
 
   async function run(
-    action: "close_expired" | "shared_on" | "shared_off" | "store_close" | "bay_off",
+    action: "close_expired" | "shared_on" | "shared_off" | "store_close" | "bay_off" | "bay_on",
     confirmation: string,
-    bayId?: string
+    bayId?: string,
+    busyKey?: string
   ) {
     if (!window.confirm(confirmation)) return;
 
-    setBusy(action);
+    setBusy(busyKey ?? action);
     setMessage(null);
     setError(null);
     try {
-      const response = await fetch("/api/admin/automation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, bayId })
-      });
-      const data = (await response.json()) as ApiResponse;
+      const send = (force: boolean) =>
+        fetch("/api/admin/automation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, bayId, force })
+        });
+
+      let response = await send(false);
+      let data = (await response.json()) as ApiResponse;
+
+      // 이용 중인 타석을 끄려 하면 서버가 한 번 막는다. 한 번 더 확인받고 강제로 진행한다.
+      if (!response.ok && data.requiresForce) {
+        if (!window.confirm(`${data.message ?? "이용 중인 타석입니다."}\n\n그래도 장비를 끌까요?`)) {
+          setBusy(null);
+          return;
+        }
+        response = await send(true);
+        data = (await response.json()) as ApiResponse;
+      }
+
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "처리에 실패했습니다.");
       setMessage(data.message ?? "처리가 완료되었습니다.");
       await load();
@@ -194,20 +289,21 @@ export function AutomationClient() {
                     ? `마지막 신호 ${new Date(bay.lastSeenAt).toLocaleString("ko-KR")}`
                     : "Agent 신호 기록 없음"}
                 </p>
-                <button
-                  type="button"
+                <BayPowerToggle
+                  bay={bay}
                   disabled={busy !== null || !status.controllerEnabled || !bay.hasAutomation}
-                  onClick={() =>
+                  pending={busy === `bay:${bay.id}`}
+                  onToggle={(turnOn) =>
                     void run(
-                      "bay_off",
-                      `${bay.code} 프로젝터와 연결 장비에 OFF 명령을 보냅니다. PC는 강제 종료하지 않습니다. 진행할까요?`,
-                      bay.id
+                      turnOn ? "bay_on" : "bay_off",
+                      turnOn
+                        ? `${bay.code} 프로젝터를 켜고 잠시 후 타석 PC를 부팅합니다. 진행할까요?`
+                        : `${bay.code} 프로젝터와 연결 장비에 OFF 명령을 보냅니다. PC는 강제 종료하지 않습니다. 진행할까요?`,
+                      bay.id,
+                      `bay:${bay.id}`
                     )
                   }
-                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Power size={17} /> 타석 장비 OFF
-                </button>
+                />
               </article>
             ))}
           </div>

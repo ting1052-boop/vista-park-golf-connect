@@ -22,6 +22,7 @@
 | Codex | 완료 | 2번 타석 입장 시 장비 미기동 및 만료 세션 미반납 장애 진단 | HA 내부 자동화 정상, Nabu Casa 구독·원격연결 및 Vercel 비밀값 불일치가 외부 호출을 차단함 |
 | Codex | 완료 | 2번 타석 자동화 순서를 프로젝터 ON 후 PC WOL로 변경 | 매장 HA에서 `projector ON → 15초 대기 → PC WOL` 저장·재조회 검증 완료 |
 | Claude Code | 완료 | 대시보드 "무인 장비 상태" 표를 store_controller_commands 기반 실제 실행 상태로 교체, 미사용 mock 데이터 제거 | `src/lib/supabase/automation-status.ts`(신규), `src/app/admin/dashboard/page.tsx`, `dashboard-client.tsx`, `src/lib/dashboard-data.ts` |
+| Claude Code | 완료 | 무인제어 화면의 타석 장비 OFF 버튼을 ON/OFF 토글로 전환(bay_on 액션 추가, 현재 상태 표시, 이용 중 타석 오조작 방지) | `src/app/api/admin/automation/route.ts`, `src/app/admin/automation/automation-client.tsx`, `src/lib/supabase/automation-status.ts` |
 | Codex | 완료 | 자동 종료 로그 누락과 대시보드 오늘 예약 2건 집계 원인 점검 | Agent 종료 경로의 장비 반납 명령 누락 수정, 오늘 합계를 예약·입장으로 명확화 |
 
 ## 저장소와 배포 상태
@@ -254,6 +255,19 @@ commit/push/deploy:
 - Also removed about 180 lines of unused mock data from `src/lib/dashboard-data.ts` (`liveBayRows`, `adminAlertRows`, `noShowRows`, `entryCheckRows`, `accessSessionRows`, `automationDeviceRows`, `automationLogRows`, `showroomAutomationScenarios`, `reservationRows`, `storeSummaryRows`, `operations`). All verified unreferenced. This also removes fake customer name/phone strings from the source tree, which matters because the copyright submission package ships the source. Kept: `adminNavItems`, `quickActions`, `featureChecks`, and all exported types.
 - Verification: `npm run typecheck`, `npm run lint`, `npm run build` all pass. Logic additionally replayed against real production `store_controller_commands` (12 commands, 7 scripts recognized): all bays and 공용 resolved to "OFF (대기)" at 2026-08-15T12:31:10, matching the actual store close run (`bay1_off, bay2_off, bay3_off, shared_off` all OK at 12:31:04).
 - Not changed: the "무인 운영 1차 MVP 범위" panel still renders the static `featureChecks` list. It is project-scope copy rather than operational data, so replacing it is a product decision.
+
+## Bay Equipment ON/OFF Toggle (2026-08-21, Claude Code)
+
+- Status: completed.
+- Purpose: `/admin/automation` only had a one-way "타석 장비 OFF" button, so an operator could turn a bay off but never back on from that screen, and the card never showed whether the equipment was currently on. Replaced with a real ON/OFF toggle.
+- Shared state source: extracted `getLatestScriptRuns()` and `getPowerState()` in `src/lib/supabase/automation-status.ts` so the dashboard status table and this toggle agree on what "ON" means (newest of `bayN_on` vs `bayN_off` in `store_controller_commands`).
+- API (`/api/admin/automation`):
+  - GET now returns `powerOn` (`true`/`false`/`null` when no history), `powerFailed`, `powerLastRunAt`, and `inUse` per bay.
+  - POST accepts the new `bay_on` action (runs `mapping.enterScript`); `bay_off` unchanged in effect.
+  - **Safety guard added**: `bay_off` on a bay with an active/extended/overdue session now returns 409 with `requiresForce: true` instead of firing immediately. The client asks a second explicit confirmation and retries with `force: true`. Previously a single confirm could cut power to a bay a customer was using — more likely to be hit by accident now that it is a one-click toggle.
+- UI: toggle switch shows 장비 ON / 장비 OFF / 켜기·끄기 실패 plus the last run time, spinner while the command is queued, and an amber "고객 이용 중" warning line on bays with a live session. Bays without automation mapping or with the controller disabled stay disabled.
+- Verification: `npm run typecheck`, `npm run lint`, `npm run build` all pass. Not visually verified in the running app — the automation page requires an admin session and this environment's browser tool cannot capture screenshots, so the owner should eyeball the toggle once.
+- Known limitation (unchanged by this work): the state is inferred from the last command we sent, not read back from the devices. If a projector is switched off by its physical remote, the toggle will still show ON until the next command runs.
 
 ## Current Work (2026-08-16, Codex - Agent expiry release log)
 

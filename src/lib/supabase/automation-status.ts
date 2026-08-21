@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { commonAutomationScripts, siheungBayAutomation } from "@/lib/automation/device-map";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -33,7 +34,16 @@ type ControllerCommandRecord = {
   response_payload: unknown;
 };
 
-type ScriptRun = { ok: boolean; at: string };
+export type ScriptRun = { ok: boolean; at: string };
+
+/** 스크립트 하나의 마지막 실행 결과로 본 전원 상태 */
+export type PowerState = {
+  /** true = 마지막으로 ON 실행됨, false = OFF, null = 실행 이력 없음 */
+  on: boolean | null;
+  /** 마지막 실행이 실패했는지 */
+  failed: boolean;
+  lastRunAt: string | null;
+};
 
 function readSteps(payload: unknown): Array<{ script?: unknown; ok?: unknown }> {
   if (!payload || typeof payload !== "object") return [];
@@ -91,8 +101,14 @@ function describeProvider(providers: string[]) {
   return [...new Set(labels)].join(" · ");
 }
 
-export async function getAutomationDeviceStatuses(storeId: string): Promise<AutomationDeviceStatusRow[]> {
-  const supabase = createSupabaseAdminClient();
+/**
+ * 매장 제어기 실행 기록에서 스크립트별 마지막 실행 결과를 읽어온다.
+ * 대시보드 장비 상태 표와 무인제어 화면의 ON/OFF 토글이 같은 기준을 쓰도록 공유한다.
+ */
+export async function getLatestScriptRuns(
+  supabase: SupabaseClient,
+  storeId: string
+): Promise<Map<string, ScriptRun>> {
   const { data, error } = await supabase
     .from("store_controller_commands")
     .select("status, created_at, completed_at, response_payload")
@@ -103,7 +119,29 @@ export async function getAutomationDeviceStatuses(storeId: string): Promise<Auto
 
   if (error) throw new Error(error.message);
 
-  const latest = buildLatestRunsByScript((data ?? []) as ControllerCommandRecord[]);
+  return buildLatestRunsByScript((data ?? []) as ControllerCommandRecord[]);
+}
+
+/** ON/OFF 스크립트의 마지막 실행을 비교해 전원 상태를 판단한다. */
+export function getPowerState(
+  latest: Map<string, ScriptRun>,
+  onScript: string,
+  offScript: string
+): PowerState {
+  const onRun = latest.get(onScript);
+  const offRun = latest.get(offScript);
+
+  if (!onRun && !offRun) return { on: null, failed: false, lastRunAt: null };
+
+  const newest =
+    onRun && offRun ? (new Date(onRun.at) >= new Date(offRun.at) ? onRun : offRun) : onRun ?? offRun!;
+
+  return { on: newest === onRun, failed: !newest.ok, lastRunAt: newest.at };
+}
+
+export async function getAutomationDeviceStatuses(storeId: string): Promise<AutomationDeviceStatusRow[]> {
+  const supabase = createSupabaseAdminClient();
+  const latest = await getLatestScriptRuns(supabase, storeId);
 
   const commonState = resolveState(latest.get(commonAutomationScripts.on), latest.get(commonAutomationScripts.off));
   const rows: AutomationDeviceStatusRow[] = [
