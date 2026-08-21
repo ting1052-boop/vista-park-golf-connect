@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { runBayAutomation } from "@/lib/automation/sessions";
 import { enqueueBayPreparation, isStoreControllerEnabled } from "@/lib/store-controller";
-import { getBlockMinutes, priceByDuration } from "@/lib/reservation-policy";
+import { getBlockMinutes, getPriceForDuration } from "@/lib/reservation-policy";
 
 export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
 
@@ -327,7 +327,8 @@ export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<
   const partySize = args.partySize ?? 1;
   const guestName = args.guestName?.trim() || "현장 고객";
   const memoPrefix = args.memoPrefix?.trim() || "현장 이용";
-  const price = priceByDuration[args.durationMinutes];
+  // 관리자가 지정한 시간은 이용시간표에 없을 수 있어 비례 계산을 함께 쓴다.
+  const price = getPriceForDuration(args.durationMinutes);
   const freeBays = await findFreeBays(args.supabase, args.storeId, startsAt, endsAt);
 
   if (freeBays.length === 0) {

@@ -38,7 +38,13 @@ import {
   type LogTone
 } from "@/lib/dashboard-data";
 import type { AutomationDeviceStatusRow, PowerState } from "@/lib/supabase/automation-status";
-import { durationOptions, getBlockMinutes } from "@/lib/reservation-policy";
+import {
+  ADMIN_MAX_HOURS,
+  ADMIN_MIN_HOURS,
+  getBlockMinutes,
+  getBonusMinutesForDuration,
+  getPriceForDuration
+} from "@/lib/reservation-policy";
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
 
@@ -432,20 +438,27 @@ export function DashboardClient({
   };
 
   const handleCheckIn = async (bay: LiveBay) => {
-    const durationValue = window.prompt(
-      `${bay.name} 타석 이용시간을 입력해주세요.\n가능: ${durationOptions.map((option) => option.minutes).join(" / ")}분`,
-      "60"
+    const hoursValue = window.prompt(
+      `${bay.name} 타석 이용시간을 시간 단위로 입력해주세요.\n(${ADMIN_MIN_HOURS}~${ADMIN_MAX_HOURS}시간)`,
+      "1"
     );
 
-    if (durationValue === null) return;
+    if (hoursValue === null) return;
 
-    const durationMinutes = Number(durationValue);
-    if (!durationOptions.some((option) => option.minutes === durationMinutes)) {
-      setToast("이용시간은 30, 60, 90, 120분 중에서 입력해주세요.");
+    const hours = Number(hoursValue.trim());
+    if (!Number.isInteger(hours) || hours < ADMIN_MIN_HOURS || hours > ADMIN_MAX_HOURS) {
+      setToast(`이용시간은 ${ADMIN_MIN_HOURS}~${ADMIN_MAX_HOURS} 사이의 시간 단위로 입력해주세요.`);
       return;
     }
 
-    const confirmed = window.confirm(`${bay.name} 타석을 ${durationMinutes}분으로 입장 처리할까요?`);
+    const durationMinutes = hours * 60;
+    const price = getPriceForDuration(durationMinutes);
+    const bonusMinutes = getBonusMinutesForDuration(durationMinutes);
+    const confirmed = window.confirm(
+      `${bay.name} 타석을 ${hours}시간으로 입장 처리할까요?\n` +
+        `서비스 ${bonusMinutes}분 포함 · 실제 이용 ${getBlockMinutes(durationMinutes)}분\n` +
+        `요금 ${price.toLocaleString("ko-KR")}원`
+    );
     if (!confirmed) return;
 
     const currentTime = getCurrentTime();

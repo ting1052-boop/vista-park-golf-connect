@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin-auth";
 import { startWalkInSession } from "@/lib/kiosk";
-import { isSupportedDuration } from "@/lib/reservation-policy";
+import { ADMIN_MAX_HOURS, ADMIN_MIN_HOURS, isSupportedAdminDuration } from "@/lib/reservation-policy";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 type StartSessionBody = {
@@ -33,9 +33,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, message: "입장 처리할 타석을 선택해주세요." }, { status: 400 });
   }
 
+  // 관리자 수동 입장은 단체 손님 등 예외 상황을 처리해야 하므로
+  // 고객용 이용시간표에 더해 1~8시간(1시간 단위)까지 허용한다.
   const durationMinutes = Number(body.durationMinutes);
-  if (!isSupportedDuration(durationMinutes)) {
-    return NextResponse.json({ ok: false, message: "이용시간은 30/60/90/120분 중에서 선택해주세요." }, { status: 400 });
+  if (!isSupportedAdminDuration(durationMinutes)) {
+    return NextResponse.json(
+      { ok: false, message: `이용시간은 ${ADMIN_MIN_HOURS}~${ADMIN_MAX_HOURS}시간 사이로 입력해주세요.` },
+      { status: 400 }
+    );
   }
 
   const guestName = typeof body.guestName === "string" && body.guestName.trim() ? body.guestName.trim() : "현장 고객(관리자)";
