@@ -167,6 +167,30 @@ export default function KioskEntrancePage() {
     return () => window.clearTimeout(timer);
   }, [screen, resetToHome]);
 
+  // 홈 화면에서 기다리는 동안 타석 정보를 미리 받아둔다. 바로이용을 누르면
+  // 이미 받아둔 값이 즉시 보이고, 최신 값은 뒤에서 조용히 갱신된다.
+  // 미리 받은 값이 오래돼 자리가 찼더라도 입장 처리에서 다시 검증하고 안내한다.
+  useEffect(() => {
+    if (screen !== "home") return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await callKioskApi<{ bays: KioskBayInfo[] }>("/api/kiosk/bays", {
+          storeId: DEFAULT_STORE_ID,
+          durationMinutes
+        });
+        if (!cancelled) setBays(data.bays);
+      } catch {
+        // 미리 불러오기 실패는 화면에 표시하지 않는다. 버튼을 누를 때 다시 시도한다.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, durationMinutes]);
+
   const pressDigit = (digit: string) => {
     setError(null);
     setPhoneLast4((current) => (current.length >= 4 ? current : current + digit));
@@ -273,7 +297,12 @@ export default function KioskEntrancePage() {
             </button>
             <button
               type="button"
-              onClick={() => void loadBays(durationMinutes)}
+              onClick={() => {
+                // 화면을 먼저 넘기고 타석 정보는 뒤에서 불러온다.
+                // 응답을 기다린 뒤 전환하면 누른 뒤 홈 화면이 멈춘 것처럼 보인다.
+                setScreen("walkin-bay");
+                void loadBays(durationMinutes);
+              }}
               className="flex min-h-[220px] w-full items-center justify-center gap-5 rounded-[28px] border-2 border-vista-leaf bg-white px-8 text-[30px] font-extrabold text-vista-leaf shadow-soft-line md:h-[50vh] md:min-h-[320px] md:w-[40%] md:flex-col md:text-[34px]"
             >
               <MonitorPlay className="size-12 md:size-16" aria-hidden="true" />
@@ -450,6 +479,18 @@ export default function KioskEntrancePage() {
                         {bay.isFree ? "선택 가능" : bay.status === "maintenance" ? "점검 중" : "이용 중"}
                       </span>
                     </button>
+                  ))}
+                </div>
+              ) : isLoading ? (
+                <div className="mt-5 grid grid-cols-3 gap-4" aria-busy="true">
+                  {[0, 1, 2].map((slot) => (
+                    <div
+                      key={slot}
+                      className="flex min-h-[190px] animate-pulse flex-col items-center justify-center gap-3 rounded-[20px] border-2 border-[#e2e8df] bg-[#f4f7f2]"
+                    >
+                      <Loader2 className="animate-spin text-vista-leaf" size={34} aria-hidden="true" />
+                      <span className="text-[17px] font-bold text-[#697468]">불러오는 중</span>
+                    </div>
                   ))}
                 </div>
               ) : (

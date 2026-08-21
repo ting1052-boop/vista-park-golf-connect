@@ -81,23 +81,28 @@ export async function listBaysWithAvailability(
   startsAt: Date,
   endsAt: Date
 ): Promise<BayAvailability[]> {
-  const { data: bays, error: bayError } = await supabase
-    .from("bays")
-    .select("id, bay_code, display_name, status")
-    .eq("store_id", storeId)
-    .order("bay_code", { ascending: true });
+  // 두 조회는 서로를 필요로 하지 않는다. 키오스크 첫 화면 응답 속도에 직접
+  // 영향을 주는 경로라 왕복 한 번을 줄이려고 함께 보낸다.
+  const [bayResult, overlapResult] = await Promise.all([
+    supabase
+      .from("bays")
+      .select("id, bay_code, display_name, status")
+      .eq("store_id", storeId)
+      .order("bay_code", { ascending: true }),
+    supabase
+      .from("reservations")
+      .select("bay_id")
+      .eq("store_id", storeId)
+      .not("status", "in", `(${INACTIVE_RESERVATION_STATUSES.join(",")})`)
+      .lt("starts_at", endsAt.toISOString())
+      .gt("ends_at", startsAt.toISOString())
+  ]);
+
+  const { data: bays, error: bayError } = bayResult;
+  const { data: overlapping, error: overlapError } = overlapResult;
 
   if (bayError) throw new Error(bayError.message);
   if (!bays || bays.length === 0) return [];
-
-  const { data: overlapping, error: overlapError } = await supabase
-    .from("reservations")
-    .select("bay_id")
-    .eq("store_id", storeId)
-    .not("status", "in", `(${INACTIVE_RESERVATION_STATUSES.join(",")})`)
-    .lt("starts_at", endsAt.toISOString())
-    .gt("ends_at", startsAt.toISOString());
-
   if (overlapError) throw new Error(overlapError.message);
 
   const blocked = new Set((overlapping ?? []).map((row) => row.bay_id).filter(Boolean));
