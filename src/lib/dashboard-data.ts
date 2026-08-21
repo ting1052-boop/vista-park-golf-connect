@@ -1,5 +1,3 @@
-import { FileText, MonitorCog, Power, Timer } from "lucide-react";
-
 export type LiveBayStatus = "in_use" | "available" | "waiting" | "maintenance";
 export type LogTone = "success" | "control" | "warning" | "danger";
 export type AlertTone = "danger" | "warning";
@@ -69,32 +67,6 @@ export const adminNavItems = [
   { label: "리포트", href: "/admin/reports", active: false }
 ] as const;
 
-export const quickActions = [
-  {
-    label: "입장 세션 시작",
-    description: "예약자 또는 현장 방문 고객에게 이용 시간을 부여하고 자동제어를 실행합니다.",
-    href: "/admin/automation",
-    icon: Timer
-  },
-  {
-    label: "매장 준비 ON",
-    description: "로비 조명, 키오스크, 냉난방기, 해당 타석 전원을 순차적으로 켭니다.",
-    href: "/admin/automation",
-    icon: Power
-  },
-  {
-    label: "타석 배정",
-    description: "고객 인원과 예약 시간에 맞춰 이용 타석과 키오스크 시간을 배정합니다.",
-    href: "/admin/bays",
-    icon: MonitorCog
-  },
-  {
-    label: "제어 로그 출력",
-    description: "장비 ON/OFF, 이용시간 연장, 강제 종료 이력을 확인합니다.",
-    href: "/admin/reports",
-    icon: FileText
-  }
-] as const;
 export const featureChecks = [
   ["입장 인증", "예약 QR 또는 전화번호로 고객 확인 후 키오스크 세션 시작"],
   ["헤이홈/Tapo 연동 구조", "조명, 냉난방, 키오스크, 타석 전원 중심으로 1차 구성"],

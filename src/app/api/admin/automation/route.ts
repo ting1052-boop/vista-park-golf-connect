@@ -338,6 +338,29 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 조명·냉난방과 모든 타석 장비를 한 번에 켠다. 단체 예약이나 점검 준비용.
+    // 평소 영업은 손님이 입장할 때 해당 타석만 켜지므로 이 동작이 필요 없다.
+    if (body.action === "store_prepare") {
+      const scripts = [
+        { name: "공용 조명·냉난방 ON", script: commonAutomationScripts.on },
+        ...siheungBayAutomation.map((bay) => ({
+          name: `${bay.label} 장비 ON`,
+          script: bay.enterScript
+        }))
+      ];
+      const command = await enqueueManualAutomation(supabase, {
+        storeId: CURRENT_STORE_ID,
+        scripts,
+        action: "store_prepare"
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: `공용 조명·냉난방과 타석 ${siheungBayAutomation.length}곳의 장비 ON 명령을 전달했습니다.`,
+        command
+      });
+    }
+
     const scriptsByAction = {
       shared_on: [{ name: "공용 장비 준비", script: commonAutomationScripts.on }],
       shared_off: [{ name: "공용 장비 종료", script: commonAutomationScripts.off }]

@@ -15,6 +15,7 @@ import {
   Clock3,
   Home,
   LayoutDashboard,
+  Lightbulb,
   LogOut,
   Menu,
   PlusCircle,
@@ -24,19 +25,19 @@ import {
   UserCheck,
   Wifi,
   Wrench,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import {
   adminNavItems,
   featureChecks,
-  quickActions,
   type AdminAlert,
   type ControlLog,
   type LiveBay,
   type LiveBayStatus,
   type LogTone
 } from "@/lib/dashboard-data";
-import type { AutomationDeviceStatusRow } from "@/lib/supabase/automation-status";
+import type { AutomationDeviceStatusRow, PowerState } from "@/lib/supabase/automation-status";
 import { durationOptions, getBlockMinutes } from "@/lib/reservation-policy";
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
@@ -144,6 +145,7 @@ type DashboardClientProps = {
   initialNoShows?: NoShowRow[];
   initialTodayReservationSummary?: DashboardReservationSummary;
   initialAutomationDevices?: AutomationDeviceStatusRow[];
+  initialSharedPower?: PowerState;
   initialError?: string | null;
 };
 
@@ -181,6 +183,7 @@ export function DashboardClient({
   initialNoShows = [],
   initialTodayReservationSummary = emptyTodayReservationSummary,
   initialAutomationDevices = [],
+  initialSharedPower = { on: null, failed: false, lastRunAt: null },
   initialError = null
 }: DashboardClientProps) {
   const router = useRouter();
@@ -199,6 +202,7 @@ export function DashboardClient({
   const [isUsageDetailOpen, setIsUsageDetailOpen] = useState(false);
   const storeSummaries: DashboardStoreSummary[] = initialStoreSummaries;
   const automationDevices: AutomationDeviceStatusRow[] = initialAutomationDevices;
+  const sharedPower: PowerState = initialSharedPower;
 
   useEffect(() => {
     setNow(new Date());
@@ -315,6 +319,45 @@ export function DashboardClient({
 
     setDataError(null);
     return true;
+  };
+
+  // 매장 단위 장비 제어. 무인제어 탭으로 넘어가지 않고 대시보드에서 바로 실행한다.
+  const handleStoreControl = async (
+    action: "shared_on" | "shared_off" | "store_prepare" | "store_close",
+    confirmation: string,
+    logLabel: string
+  ) => {
+    if (!window.confirm(confirmation)) return;
+
+    setIsSyncing(true);
+    try {
+      const response = await fetch("/api/admin/automation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const data = (await response.json()) as { ok?: boolean; message?: string };
+
+      if (!response.ok || data.ok === false) {
+        const message = data.message ?? "장비 제어에 실패했습니다.";
+        setDataError(message);
+        addLog("매장", logLabel, "실패", "danger");
+        setToast(message);
+        return;
+      }
+
+      setDataError(null);
+      addLog("매장", logLabel, "요청됨", "control");
+      setToast(data.message ?? "매장 제어기에 명령을 전달했습니다.");
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "장비 제어 중 오류가 발생했습니다.";
+      setDataError(message);
+      addLog("매장", logLabel, "실패", "danger");
+      setToast(message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handlePowerOff = async (bay: LiveBay) => {
@@ -731,26 +774,105 @@ export function DashboardClient({
               </section>
             ) : null}
 
-            <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="빠른 작업">
-              {quickActions.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Link
-                    key={action.label}
-                    href={action.href}
-                    className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="grid size-12 place-items-center rounded-md bg-vista-leaf text-white">
-                        <Icon size={22} aria-hidden="true" />
-                      </span>
-                      <ArrowRight size={18} className="text-[#7a8678]" aria-hidden="true" />
-                    </div>
-                    <h3 className="mt-4 text-lg font-extrabold">{action.label}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[#697468]">{action.description}</p>
-                  </Link>
-                );
-              })}
+            <section className="mt-5 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line" aria-label="매장 장비 제어">
+              <div className="flex flex-col gap-2 border-b border-[#e5ece1] p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-vista-leaf">매장 장비 제어</p>
+                  <h3 className="mt-1 text-lg font-extrabold">여기서 바로 켜고 끕니다</h3>
+                </div>
+                <span
+                  className={cn(
+                    "inline-flex w-fit items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-extrabold",
+                    sharedPower.failed
+                      ? "border-rose-300 bg-rose-50 text-rose-700"
+                      : sharedPower.on
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-gray-300 bg-gray-100 text-gray-500"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "size-2 rounded-full",
+                      sharedPower.failed ? "bg-rose-500" : sharedPower.on ? "bg-emerald-500" : "bg-gray-400"
+                    )}
+                  />
+                  조명·냉난방{" "}
+                  {sharedPower.failed ? "제어 실패" : sharedPower.on === null ? "상태 기록 없음" : sharedPower.on ? "ON" : "OFF"}
+                </span>
+              </div>
+
+              <div className="grid gap-4 p-5 md:grid-cols-3">
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={() =>
+                    void handleStoreControl(
+                      sharedPower.on ? "shared_off" : "shared_on",
+                      sharedPower.on
+                        ? "매장 조명과 냉난방을 끕니다. 타석 장비는 그대로 둡니다. 진행할까요?"
+                        : "매장 조명과 냉난방을 켭니다. 타석 장비는 켜지 않습니다. 진행할까요?",
+                      sharedPower.on ? "매장 조명·냉난방 OFF" : "매장 조명·냉난방 ON"
+                    )
+                  }
+                  className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="grid size-12 place-items-center rounded-md bg-vista-leaf text-white">
+                    <Lightbulb size={22} aria-hidden="true" />
+                  </span>
+                  <h4 className="mt-4 text-lg font-extrabold">매장 조명 {sharedPower.on ? "OFF" : "ON"}</h4>
+                  <p className="mt-2 text-sm leading-6 text-[#697468]">
+                    로비·홀 조명과 냉난방만 {sharedPower.on ? "끕니다" : "켭니다"}. 개점·폐점 때 쓰는 버튼입니다.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={() =>
+                    void handleStoreControl(
+                      "store_prepare",
+                      "조명·냉난방과 모든 타석의 프로젝터·PC를 함께 켭니다.\n\n평소에는 손님이 입장할 때 해당 타석만 자동으로 켜집니다. 단체 예약이나 점검처럼 전체를 미리 켜야 할 때만 사용하세요. 진행할까요?",
+                      "매장 전체 준비 ON"
+                    )
+                  }
+                  className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="grid size-12 place-items-center rounded-md bg-vista-leaf text-white">
+                    <Zap size={22} aria-hidden="true" />
+                  </span>
+                  <h4 className="mt-4 text-lg font-extrabold">매장 전체 준비 ON</h4>
+                  <p className="mt-2 text-sm leading-6 text-[#697468]">
+                    조명·냉난방과 전 타석 프로젝터·PC를 모두 켭니다. 단체 예약·점검용입니다.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={() =>
+                    void handleStoreControl(
+                      "store_close",
+                      "매장을 종료합니다. 타석 PC를 정상 종료하고 모든 장비와 조명·냉난방을 끕니다. 이용 중인 고객이 없을 때만 실행됩니다. 진행할까요?",
+                      "매장 종료"
+                    )
+                  }
+                  className="rounded-md border border-[#efc7c7] bg-[#fff8f8] p-5 text-left shadow-soft-line transition hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="grid size-12 place-items-center rounded-md bg-rose-600 text-white">
+                    <Power size={22} aria-hidden="true" />
+                  </span>
+                  <h4 className="mt-4 text-lg font-extrabold">매장 종료</h4>
+                  <p className="mt-2 text-sm leading-6 text-[#697468]">
+                    타석 PC를 정상 종료한 뒤 모든 장비와 조명·냉난방을 끕니다.
+                  </p>
+                </button>
+              </div>
+
+              <div className="border-t border-[#edf2ea] px-5 py-3">
+                <Link href="/admin/automation" className="text-sm font-extrabold text-vista-leaf hover:underline">
+                  타석별 개별 ON/OFF와 제어 기록은 무인제어에서 확인합니다 →
+                </Link>
+              </div>
             </section>
 
             <section className="mt-6">

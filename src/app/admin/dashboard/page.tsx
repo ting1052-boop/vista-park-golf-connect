@@ -1,4 +1,6 @@
-import { getAutomationDeviceStatuses } from "@/lib/supabase/automation-status";
+import { commonAutomationScripts } from "@/lib/automation/device-map";
+import { getAutomationDeviceStatuses, getLatestScriptRuns, getPowerState } from "@/lib/supabase/automation-status";
+import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
 import { getStoreSummaries } from "@/lib/supabase/stores";
@@ -11,15 +13,23 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminDashboardPage() {
-  const [bayResult, storeResult, dashboardResult, automationResult] = await Promise.allSettled([
+  const [bayResult, storeResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
     getDashboardBays(CURRENT_STORE_ID),
     getStoreSummaries(),
     getDashboardOperationalRows(CURRENT_STORE_ID),
-    getAutomationDeviceStatuses(CURRENT_STORE_ID)
+    getAutomationDeviceStatuses(CURRENT_STORE_ID),
+    // 공용 조명·냉난방의 현재 상태. 대시보드 조명 버튼이 ON/OFF 중 무엇을 보여줄지 결정한다.
+    getLatestScriptRuns(createSupabaseAdminClient(), CURRENT_STORE_ID).then((runs) =>
+      getPowerState(runs, commonAutomationScripts.on, commonAutomationScripts.off)
+    )
   ]);
   const bays = bayResult.status === "fulfilled" ? bayResult.value : [];
   const stores = storeResult.status === "fulfilled" ? storeResult.value : [];
   const automationDevices = automationResult.status === "fulfilled" ? automationResult.value : [];
+  const sharedPower =
+    sharedPowerResult.status === "fulfilled"
+      ? sharedPowerResult.value
+      : { on: null, failed: false, lastRunAt: null };
   const dashboardRows =
     dashboardResult.status === "fulfilled"
       ? dashboardResult.value
@@ -54,6 +64,7 @@ export default async function AdminDashboardPage() {
       initialNoShows={dashboardRows.noShows}
       initialTodayReservationSummary={dashboardRows.todaySummary}
       initialAutomationDevices={automationDevices}
+      initialSharedPower={sharedPower}
       initialError={errors.length > 0 ? errors.join(" / ") : null}
     />
   );
