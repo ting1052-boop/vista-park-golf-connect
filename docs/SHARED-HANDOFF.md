@@ -269,6 +269,19 @@ commit/push/deploy:
 - Verification: `npm run typecheck`, `npm run lint`, `npm run build` all pass. Not visually verified in the running app — the automation page requires an admin session and this environment's browser tool cannot capture screenshots, so the owner should eyeball the toggle once.
 - Known limitation (unchanged by this work): the state is inferred from the last command we sent, not read back from the devices. If a projector is switched off by its physical remote, the toggle will still show ON until the next command runs.
 
+## Kiosk Walk-in Button Responsiveness (2026-08-21, Claude Code)
+
+- Status: completed.
+- Reported symptom: on `/kiosk/entrance`, "예약하고 왔어요" switches screens instantly but "바로이용" feels slow after tapping.
+- Root cause: the reservation button only calls `setScreen("phone")` (local state), while the walk-in button awaited `/api/kiosk/bays` and called `setScreen("walkin-bay")` **only after the response arrived**. The home screen rendered no loading indicator during that wait, so the kiosk looked frozen.
+- Measured production latency for `POST /api/kiosk/bays`: 1.2–1.5s in the first sample set, and 0.49–2.1s across later samples. Latency is highly variable, so this path cannot be made reliably fast — the UI must not block on it.
+- Changes:
+  - Walk-in button switches the screen immediately, then loads bays in the background.
+  - The bay grid shows a loading placeholder while fetching. Previously an empty "표시할 타석이 없습니다" state could flash before data arrived.
+  - Bay data is prefetched while the kiosk idles on the home screen, so the tap usually renders instantly and refreshes quietly afterwards. Stale prefetch is safe: walk-in start re-validates availability and already returns a clear 409 message if the chosen bay was taken.
+  - `listBaysWithAvailability` now issues the independent `bays` and `reservations` queries with `Promise.all` instead of sequentially, removing one DB round trip.
+- Verification: `npm run typecheck`, `npm run lint`, `npm run build` pass; deployed and re-measured the endpoint. The parallel query removes a round trip, but serverless variance dominates the numbers, so no specific speedup figure is claimed. Not verified on the physical kiosk tablet — the owner should confirm the perceived responsiveness there.
+
 ## Current Work (2026-08-16, Codex - Agent expiry release log)
 
 - Status: implementation and local verification completed; owner approved a scoped commit and deployment.
