@@ -34,24 +34,6 @@ const timeSlots = Array.from({ length: 26 }, (_, index) => {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 });
 
-const timePeriods = [
-  { id: "morning", label: "오전", description: "08:00~11:30", startMinutes: 8 * 60, endMinutes: 12 * 60 },
-  { id: "afternoon", label: "오후", description: "12:00~16:30", startMinutes: 12 * 60, endMinutes: 17 * 60 },
-  { id: "evening", label: "저녁", description: "17:00~20:30", startMinutes: 17 * 60, endMinutes: 21 * 60 }
-] as const;
-
-type TimePeriodId = (typeof timePeriods)[number]["id"];
-
-function getMinutesFromTime(time: string) {
-  const [hour, minute] = time.split(":").map(Number);
-  return hour * 60 + minute;
-}
-
-function getPeriodForTime(time: string): TimePeriodId {
-  const minutes = getMinutesFromTime(time);
-  return timePeriods.find((period) => minutes >= period.startMinutes && minutes < period.endMinutes)?.id ?? "morning";
-}
-
 type StoreRow = {
   id: string;
   name: string;
@@ -212,9 +194,6 @@ export default function MemberAppPage() {
   const [selectedBayId, setSelectedBayId] = useState("auto");
   const [selectedDate, setSelectedDate] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).date);
   const [selectedTime, setSelectedTime] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).time);
-  const [selectedTimePeriod, setSelectedTimePeriod] = useState<TimePeriodId>(() =>
-    getPeriodForTime(getNextAvailableSelection(getDateOptions(new Date()), new Date()).time)
-  );
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [customerName, setCustomerName] = useState("");
   const [phoneLast4, setPhoneLast4] = useState("");
@@ -222,7 +201,6 @@ export default function MemberAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
-  const [memberUserId, setMemberUserId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const dateOptions = useMemo(() => getDateOptions(now), [now]);
 
@@ -285,50 +263,6 @@ export default function MemberAppPage() {
     () => timeSlotStates.filter((slot) => !slot.isPast && !slot.isClosed && !slot.isSoldOut).map((slot) => slot.time),
     [timeSlotStates]
   );
-
-  const visibleTimeSlots = useMemo(() => {
-    const period = timePeriods.find((item) => item.id === selectedTimePeriod) ?? timePeriods[0];
-
-    return timeSlotStates.filter((slot) => {
-      const minutes = getMinutesFromTime(slot.time);
-      return minutes >= period.startMinutes && minutes < period.endMinutes && !slot.isPast && !slot.isClosed;
-    });
-  }, [selectedTimePeriod, timeSlotStates]);
-
-  const timePeriodAvailability = useMemo(
-    () =>
-      timePeriods.map((period) => {
-        const slots = timeSlotStates.filter((slot) => {
-          const minutes = getMinutesFromTime(slot.time);
-          return minutes >= period.startMinutes && minutes < period.endMinutes && !slot.isPast && !slot.isClosed;
-        });
-
-        return {
-          ...period,
-          remainingSlots: slots.length,
-          availableSlots: slots.filter((slot) => !slot.isSoldOut).length
-        };
-      }),
-    [timeSlotStates]
-  );
-
-  const selectTimePeriod = (periodId: TimePeriodId) => {
-    setSelectedTimePeriod(periodId);
-    const period = timePeriods.find((item) => item.id === periodId);
-    if (!period) return;
-
-    const firstAvailable = timeSlotStates.find((slot) => {
-      const minutes = getMinutesFromTime(slot.time);
-      return (
-        minutes >= period.startMinutes &&
-        minutes < period.endMinutes &&
-        !slot.isPast &&
-        !slot.isClosed &&
-        !slot.isSoldOut
-      );
-    });
-    if (firstAvailable) setSelectedTime(firstAvailable.time);
-  };
 
   const blockedBayIds = useMemo(
     () => getBlockedBayIds(previewStartsAt, previewEndsAt),
@@ -393,50 +327,9 @@ export default function MemberAppPage() {
     }
   };
 
-  const loadMyReservations = async () => {
-    const response = await fetch("/api/member/my-reservations", { cache: "no-store" });
-    if (response.status === 401) return;
-
-    const payload = (await response.json()) as { ok?: boolean; message?: string; reservations?: ReservationRow[] };
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.message ?? "내 예약을 불러오지 못했습니다.");
-    }
-
-    setReservations(payload.reservations ?? []);
-  };
-
   useEffect(() => {
     void loadData();
-    // Initial reservation data is loaded once; later changes use explicit refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const supabase = createBrowserSupabaseClient();
-
-    const applyUser = (
-      user: { id: string; app_metadata: Record<string, unknown>; user_metadata: Record<string, unknown> } | null
-    ) => {
-      const isKakaoMember = user?.app_metadata.provider === "kakao";
-      setMemberUserId(isKakaoMember ? user.id : null);
-      if (!user || !isKakaoMember) return;
-
-      const metadata = user.user_metadata;
-      const nickname = [metadata.user_name, metadata.nickname, metadata.full_name, metadata.name].find(
-        (value): value is string => typeof value === "string" && value.trim().length > 0
-      );
-      if (nickname) {
-        setCustomerName((current) => current || nickname.trim());
-      }
-      void loadMyReservations().catch((caughtError) => {
-        setError(caughtError instanceof Error ? caughtError.message : "내 예약을 불러오지 못했습니다.");
-      });
-    };
-
-    void supabase.auth.getUser().then(({ data }) => applyUser(data.user));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => applyUser(session?.user ?? null));
-
-    return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -466,10 +359,6 @@ export default function MemberAppPage() {
     setSelectedDate(nextSelection.date);
     setSelectedTime(nextSelection.time);
   }, [availableTimeSlots, dateOptions, now, selectedDate, selectedTime]);
-
-  useEffect(() => {
-    setSelectedTimePeriod(getPeriodForTime(selectedTime));
-  }, [selectedTime]);
 
   useEffect(() => {
     if (selectedBayId === "auto") return;
@@ -574,61 +463,37 @@ export default function MemberAppPage() {
         return;
       }
 
-      if (memberUserId) {
-        const response = await fetch("/api/member/book", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            storeId: selectedStoreId,
-            bayId: selectedBay.id,
-            guestName: customerName.trim(),
-            phoneLast4,
-            startsAt: startsAt.toISOString(),
-            endsAt: endsAt.toISOString(),
-            approvalRequired
-          })
-        });
-        const payload = (await response.json()) as { ok?: boolean; message?: string };
+      const { error: insertError } = await supabase.from("reservations").insert({
+        store_id: selectedStoreId,
+        bay_id: selectedBay.id,
+        guest_name: customerName.trim(),
+        guest_phone_last4: phoneLast4,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        party_size: 1,
+        channel: "member_app",
+        status: approvalRequired ? "requested" : "confirmed",
+        approval_required: approvalRequired,
+        memo: approvalRequired ? "고객 앱 예약, 매장 승인 필요" : "고객 앱 예약, 자동 확정"
+      });
 
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.message ?? "회원 예약 신청에 실패했습니다.");
+      if (insertError) {
+        if (insertError.code === "23P01") {
+          setError(toReservationErrorMessage(insertError));
+          await loadData();
+          setIsLoading(false);
+          return;
         }
-      } else {
-        const { error: insertError } = await supabase.from("reservations").insert({
-          store_id: selectedStoreId,
-          bay_id: selectedBay.id,
-          guest_name: customerName.trim(),
-          guest_phone_last4: phoneLast4,
-          starts_at: startsAt.toISOString(),
-          ends_at: endsAt.toISOString(),
-          party_size: 1,
-          channel: "member_app",
-          status: approvalRequired ? "requested" : "confirmed",
-          approval_required: approvalRequired,
-          memo: approvalRequired ? "고객 앱 예약, 매장 승인 필요" : "고객 앱 예약, 자동 확정"
-        });
 
-        if (insertError) {
-          if (insertError.code === "23P01") {
-            setError(toReservationErrorMessage(insertError));
-            await loadData();
-            setIsLoading(false);
-            return;
-          }
-
-          throw new Error(insertError.message);
-        }
+        throw new Error(insertError.message);
       }
 
       setMessage(approvalRequired ? "예약 신청이 접수되었습니다. 매장 승인 후 확정됩니다." : "예약이 확정되었습니다.");
-      if (!memberUserId) {
-        setCustomerName("");
-        setPhoneLast4("");
-      }
+      setCustomerName("");
+      setPhoneLast4("");
       setSelectedBayId("auto");
       setIsReviewing(false);
       await loadData();
-      if (memberUserId) await loadMyReservations();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "예약 신청에 실패했습니다.");
     } finally {
@@ -650,10 +515,6 @@ export default function MemberAppPage() {
         </header>
 
         <PwaInstallCard />
-
-        <div className="mt-5">
-          <SocialLoginPanel />
-        </div>
 
         <section className="mt-5">
           <div className="flex items-center gap-2">
@@ -754,37 +615,8 @@ export default function MemberAppPage() {
             ))}
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2" role="tablist" aria-label="시간대 선택">
-            {timePeriodAvailability.map((period) => {
-              const isUnavailable = period.remainingSlots === 0;
-
-              return (
-                <button
-                  key={period.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedTimePeriod === period.id}
-                  disabled={isUnavailable}
-                  onClick={() => selectTimePeriod(period.id)}
-                  className={`min-h-[58px] rounded-md px-2 py-2 text-sm font-extrabold ${
-                    isUnavailable
-                      ? "cursor-not-allowed border border-[#d8ddd5] bg-[#f0f2ee] text-[#9aa39a]"
-                      : selectedTimePeriod === period.id
-                        ? "bg-vista-leaf text-white"
-                        : "border border-[#cad8c6] bg-white"
-                  }`}
-                >
-                  <span className="block">{period.label}</span>
-                  <span className={`mt-0.5 block text-[10px] ${selectedTimePeriod === period.id ? "text-white/80" : "text-[#697468]"}`}>
-                    {isUnavailable ? "선택 종료" : period.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {visibleTimeSlots.map((slot) => {
+            {timeSlotStates.map((slot) => {
               const isDisabled = slot.isPast || slot.isClosed || slot.isSoldOut;
 
               return (
@@ -811,12 +643,6 @@ export default function MemberAppPage() {
               );
             })}
           </div>
-
-          {visibleTimeSlots.length === 0 ? (
-            <p className="mt-3 rounded-md bg-[#f4f7f2] px-3 py-3 text-center text-sm font-bold text-[#697468]">
-              이 시간대에는 선택 가능한 예약 시간이 없습니다.
-            </p>
-          ) : null}
 
           <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
             <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
@@ -935,12 +761,10 @@ export default function MemberAppPage() {
         <section className="mt-5">
           <div className="flex items-center gap-2">
             <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">{memberUserId ? "내 예약" : "예약 현황"}</h2>
+            <h2 className="text-lg font-extrabold">예약 현황</h2>
           </div>
           <p className="mt-1 text-xs font-semibold text-[#697468]">
-            {memberUserId
-              ? "카카오 계정에 연결된 최근 예약만 표시합니다."
-              : "개인정보 보호를 위해 예약자 정보는 표시하지 않습니다. 카카오 로그인 시 내 예약만 확인할 수 있습니다."}
+            개인정보 보호를 위해 예약자 정보는 표시하지 않습니다.
           </p>
           <div className="mt-3 grid gap-3">
             {reservations.length > 0 ? (
@@ -973,6 +797,8 @@ export default function MemberAppPage() {
             )}
           </div>
         </section>
+
+        <SocialLoginPanel />
 
         <section className="mt-5 rounded-md border border-[#edd9c4] bg-[#fff9f0] p-4">
           <div className="flex items-start gap-3">
