@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { runBayAutomation } from "@/lib/automation/sessions";
 import { enqueueBayPreparation, isStoreControllerEnabled } from "@/lib/store-controller";
-import { getBlockMinutes, getPriceForDuration } from "@/lib/reservation-policy";
+import { getBonusMinutesForDuration, getPriceForDuration } from "@/lib/reservation-policy";
+import { findDurationOption, getStoreDurationOptions } from "@/lib/reservation-policy-server";
 
 export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
 
@@ -323,12 +324,16 @@ export async function startKioskSession(args: StartKioskSessionArgs): Promise<St
 
 export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<StartWalkInSessionResult> {
   const startsAt = new Date();
-  const endsAt = new Date(startsAt.getTime() + getBlockMinutes(args.durationMinutes) * 60_000);
+  // 요금·서비스 시간은 관리자 요금설정(store_settings.duration_options)을 우선한다.
+  // 관리자 수동 입장처럼 요금표에 없는 시간은 시간 비례로 계산한다.
+  const storeOptions = await getStoreDurationOptions(args.storeId, args.supabase);
+  const matched = findDurationOption(storeOptions, args.durationMinutes);
+  const bonusMinutes = matched ? matched.bonusMinutes : getBonusMinutesForDuration(args.durationMinutes);
+  const price = matched ? matched.price : getPriceForDuration(args.durationMinutes);
+  const endsAt = new Date(startsAt.getTime() + (args.durationMinutes + bonusMinutes) * 60_000);
   const partySize = args.partySize ?? 1;
   const guestName = args.guestName?.trim() || "현장 고객";
   const memoPrefix = args.memoPrefix?.trim() || "현장 이용";
-  // 관리자가 지정한 시간은 이용시간표에 없을 수 있어 비례 계산을 함께 쓴다.
-  const price = getPriceForDuration(args.durationMinutes);
   const freeBays = await findFreeBays(args.supabase, args.storeId, startsAt, endsAt);
 
   if (freeBays.length === 0) {

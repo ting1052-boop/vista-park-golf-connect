@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { checkKioskKey, listBaysWithAvailability } from "@/lib/kiosk";
-import { getBlockMinutes, isSupportedDuration } from "@/lib/reservation-policy";
+import { findDurationOption, getStoreDurationOptions } from "@/lib/reservation-policy-server";
 
 type BaysBody = {
   storeId?: unknown;
@@ -24,14 +24,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, message: "storeId가 올바르지 않습니다." }, { status: 400 });
   }
 
+  const targetStoreId = body.storeId;
+  // 요금표는 관리자 요금설정을 따른다. 키오스크가 항상 최신 값을 쓰도록 함께 내려준다.
+  const storeDurationOptions = await getStoreDurationOptions(targetStoreId);
+
   const durationMinutes = Number(body.durationMinutes);
-  if (!isSupportedDuration(durationMinutes)) {
-    return NextResponse.json({ ok: false, message: "이용시간이 올바르지 않습니다." }, { status: 400 });
+  const selected = findDurationOption(storeDurationOptions, durationMinutes) ?? storeDurationOptions[0];
+  if (!selected) {
+    return NextResponse.json({ ok: false, message: "이용시간 설정이 비어 있습니다." }, { status: 500 });
   }
 
-  const targetStoreId = body.storeId;
   const startsAt = new Date();
-  const endsAt = new Date(startsAt.getTime() + getBlockMinutes(durationMinutes) * 60_000);
+  const endsAt = new Date(startsAt.getTime() + (selected.minutes + selected.bonusMinutes) * 60_000);
 
   let supabase;
   try {
@@ -47,6 +51,7 @@ export async function POST(request: NextRequest) {
     const bays = await listBaysWithAvailability(supabase, targetStoreId, startsAt, endsAt);
     return NextResponse.json({
       ok: true,
+      durationOptions: storeDurationOptions,
       bays: bays.map((bay) => ({
         id: bay.id,
         bayCode: bay.bay_code,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarCheck, Delete, Loader2, MonitorPlay, Phone, Store } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { durationOptions, getDurationLabel, priceByDuration } from "@/lib/reservation-policy";
+import { durationOptions } from "@/lib/reservation-policy";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const DONE_AUTO_RESET_SECONDS = 30;
@@ -61,6 +61,19 @@ type KioskBayInfo = {
   isFree: boolean;
 };
 
+// 요금표는 관리자 요금설정에서 내려받는다. 응답이 오기 전에는 코드 기본값을 쓴다.
+type KioskDurationOption = { minutes: number; price: number; bonusMinutes: number };
+
+const fallbackDurationOptions: KioskDurationOption[] = durationOptions.map((option) => ({
+  minutes: option.minutes,
+  price: option.price,
+  bonusMinutes: option.bonusMinutes
+}));
+
+function formatDurationOptionLabel(option: KioskDurationOption) {
+  return option.bonusMinutes > 0 ? `${option.minutes}분 + ${option.bonusMinutes}분` : `${option.minutes}분`;
+}
+
 function formatClock(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -110,6 +123,8 @@ export default function KioskEntrancePage() {
   const [phoneLast4, setPhoneLast4] = useState("");
   const [reservations, setReservations] = useState<KioskReservation[]>([]);
   const [durationMinutes, setDurationMinutes] = useState(60);
+  const [options, setOptions] = useState<KioskDurationOption[]>(fallbackDurationOptions);
+  const selectedOption = options.find((option) => option.minutes === durationMinutes) ?? null;
   const [bays, setBays] = useState<KioskBayInfo[]>([]);
   const [selectedBay, setSelectedBay] = useState<KioskBayInfo | null>(null);
   const [processingText, setProcessingText] = useState("처리 중입니다");
@@ -147,10 +162,14 @@ export default function KioskEntrancePage() {
     setError(null);
 
     try {
-      const data = await callKioskApi<{ bays: KioskBayInfo[] }>("/api/kiosk/bays", {
-        storeId: DEFAULT_STORE_ID,
-        durationMinutes: minutes
-      });
+      const data = await callKioskApi<{ bays: KioskBayInfo[]; durationOptions?: KioskDurationOption[] }>(
+        "/api/kiosk/bays",
+        {
+          storeId: DEFAULT_STORE_ID,
+          durationMinutes: minutes
+        }
+      );
+      if (data.durationOptions?.length) setOptions(data.durationOptions);
       setBays(data.bays);
       setScreen("walkin-bay");
     } catch (caughtError) {
@@ -176,11 +195,16 @@ export default function KioskEntrancePage() {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await callKioskApi<{ bays: KioskBayInfo[] }>("/api/kiosk/bays", {
-          storeId: DEFAULT_STORE_ID,
-          durationMinutes
-        });
-        if (!cancelled) setBays(data.bays);
+        const data = await callKioskApi<{ bays: KioskBayInfo[]; durationOptions?: KioskDurationOption[] }>(
+          "/api/kiosk/bays",
+          {
+            storeId: DEFAULT_STORE_ID,
+            durationMinutes
+          }
+        );
+        if (cancelled) return;
+        if (data.durationOptions?.length) setOptions(data.durationOptions);
+        setBays(data.bays);
       } catch {
         // 미리 불러오기 실패는 화면에 표시하지 않는다. 버튼을 누를 때 다시 시도한다.
       }
@@ -261,7 +285,7 @@ export default function KioskEntrancePage() {
       });
 
       // 후불이므로 완료 화면에서 입금 안내를 위해 금액을 함께 전달한다.
-      setDone({ ...data, amountDue: priceByDuration[durationMinutes] });
+      setDone({ ...data, amountDue: selectedOption?.price ?? null });
       setScreen("done");
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "현장 이용 처리에 실패했습니다.");
@@ -395,7 +419,7 @@ export default function KioskEntrancePage() {
           <section className="rounded-[24px] border border-[#d9e3d5] bg-white p-8 shadow-soft-line">
             <h2 className="text-center text-[30px] font-extrabold">이용시간을 선택해주세요</h2>
             <div className="mt-6 grid gap-4">
-              {durationOptions.map((option) => (
+              {options.map((option) => (
                 <button
                   key={option.minutes}
                   type="button"
@@ -407,7 +431,7 @@ export default function KioskEntrancePage() {
                   disabled={isLoading}
                   className="flex min-h-[88px] items-center justify-between rounded-[20px] border-2 border-[#cad8c6] bg-white px-6 text-[24px] font-extrabold active:bg-vista-fairway disabled:opacity-60"
                 >
-                  <span>{getDurationLabel(option.minutes)}</span>
+                  <span>{formatDurationOptionLabel(option)}</span>
                   <span className="text-vista-leaf">{option.price.toLocaleString("ko-KR")}원</span>
                 </button>
               ))}
@@ -423,7 +447,7 @@ export default function KioskEntrancePage() {
             </p>
 
             <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-              {durationOptions.map((option) => (
+              {options.map((option) => (
                 <button
                   key={option.minutes}
                   type="button"
@@ -439,7 +463,7 @@ export default function KioskEntrancePage() {
                       : "border-[#cad8c6] bg-white text-vista-ink"
                   }`}
                 >
-                  <span className="block">{getDurationLabel(option.minutes)}</span>
+                  <span className="block">{formatDurationOptionLabel(option)}</span>
                   <span className={`mt-1 block text-[15px] ${durationMinutes === option.minutes ? "text-white/85" : "text-vista-leaf"}`}>
                     {option.price.toLocaleString("ko-KR")}원
                   </span>
@@ -519,8 +543,8 @@ export default function KioskEntrancePage() {
               {[
                 ["매장", store?.name ?? "비스타파크골프"],
                 ["타석", selectedBay ? `${selectedBay.bayCode} · ${selectedBay.displayName}` : "빈 타석 자동 배정"],
-                ["이용시간", getDurationLabel(durationMinutes)],
-                ["요금", `${priceByDuration[durationMinutes].toLocaleString("ko-KR")}원`],
+                ["이용시간", selectedOption ? formatDurationOptionLabel(selectedOption) : `${durationMinutes}분`],
+                ["요금", `${(selectedOption?.price ?? 0).toLocaleString("ko-KR")}원`],
                 ["결제 방식", "후불 · 계좌이체"]
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between rounded-[14px] bg-vista-fairway px-5 py-4">

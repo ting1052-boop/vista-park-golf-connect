@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { checkKioskKey, startWalkInSession } from "@/lib/kiosk";
-import { isSupportedDuration } from "@/lib/reservation-policy";
+import { findDurationOption, getStoreDurationOptions } from "@/lib/reservation-policy-server";
 
 type WalkInBody = {
   storeId?: unknown;
@@ -32,8 +32,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, message: "인원은 1~6명만 선택할 수 있습니다." }, { status: 400 });
   }
 
+  // 관리자 요금설정에 등록된 이용시간만 허용한다(설정이 없으면 기본 요금표).
   const durationMinutes = Number(body.durationMinutes);
-  if (!isSupportedDuration(durationMinutes)) {
+  const storeDurationOptions = await getStoreDurationOptions(String(body.storeId));
+  if (!findDurationOption(storeDurationOptions, durationMinutes)) {
     return NextResponse.json({ ok: false, message: "이용시간이 올바르지 않습니다." }, { status: 400 });
   }
 
