@@ -34,6 +34,7 @@ type ControllerLogRow = {
   error_message: string | null;
   payload: { scripts?: Array<{ name?: string; script?: string }> } | null;
 };
+type ControllerQueueRow = { created_at: string; status: string };
 
 type BayRow = { id: string; bay_code: string; display_name: string | null };
 type AgentRow = {
@@ -44,6 +45,7 @@ type AgentRow = {
 };
 
 const AGENT_ONLINE_THRESHOLD_MS = 120_000;
+const CONTROLLER_STALLED_THRESHOLD_MS = 30_000;
 
 const commandTypeLabels: Record<string, string> = {
   prepare_bay: "타석 준비",
@@ -80,7 +82,7 @@ export async function GET() {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const [sessionsResult, logsResult, baysResult, agentsResult] = await Promise.all([
+    const [sessionsResult, logsResult, queueResult, baysResult, agentsResult] = await Promise.all([
       supabase
         .from("access_sessions")
         .select("id, bay_id, guest_name, started_at, ends_at, status, bays(bay_code, display_name)")
@@ -94,6 +96,14 @@ export async function GET() {
         .order("created_at", { ascending: false })
         .limit(8),
       supabase
+        .from("store_controller_commands")
+        .select("created_at, status")
+        .eq("store_id", CURRENT_STORE_ID)
+        .in("status", ["pending", "processing"])
+        .in("command_type", ["prepare_bay", "release_bay", "run_scripts"])
+        .order("created_at", { ascending: true })
+        .limit(100),
+      supabase
         .from("bays")
         .select("id, bay_code, display_name")
         .eq("store_id", CURRENT_STORE_ID)
@@ -106,6 +116,7 @@ export async function GET() {
 
     if (sessionsResult.error) throw new Error(sessionsResult.error.message);
     if (logsResult.error) throw new Error(logsResult.error.message);
+    if (queueResult.error) throw new Error(queueResult.error.message);
     if (baysResult.error) throw new Error(baysResult.error.message);
     if (agentsResult.error) throw new Error(agentsResult.error.message);
 
@@ -139,6 +150,16 @@ export async function GET() {
         status: row.status
       };
     });
+
+    const stalePendingLogs = ((queueResult.data ?? []) as ControllerQueueRow[]).filter(
+      (row) => row.status === "pending" && now - new Date(row.created_at).getTime() > CONTROLLER_STALLED_THRESHOLD_MS
+    );
+    const staleProcessingLogs = ((queueResult.data ?? []) as ControllerQueueRow[]).filter(
+      (row) => row.status === "processing" && now - new Date(row.created_at).getTime() > CONTROLLER_STALLED_THRESHOLD_MS
+    );
+    const staleControllerCommands = [...stalePendingLogs, ...staleProcessingLogs];
+    const controllerEnabled = isStoreControllerEnabled();
+    const controllerStalled = controllerEnabled && staleControllerCommands.length > 0;
 
     const agentsByBayId = new Map<string, AgentRow>();
     for (const agent of (agentsResult.data ?? []) as AgentRow[]) {
@@ -182,7 +203,15 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
-      controllerEnabled: isStoreControllerEnabled(),
+      controllerEnabled,
+      controllerStalled,
+      stalePendingCount: staleControllerCommands.length,
+      oldestPendingAt:
+        staleControllerCommands.length > 0
+          ? staleControllerCommands.reduce((oldest, row) =>
+              new Date(row.created_at).getTime() < new Date(oldest).getTime() ? row.created_at : oldest
+            , staleControllerCommands[0].created_at)
+          : null,
       sessions,
       logs,
       bays

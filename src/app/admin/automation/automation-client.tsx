@@ -34,6 +34,9 @@ type BayControlRow = {
 
 type AutomationStatus = {
   controllerEnabled: boolean;
+  controllerStalled: boolean;
+  stalePendingCount: number;
+  oldestPendingAt: string | null;
   sessions: SessionRow[];
   logs: LogRow[];
   bays: BayControlRow[];
@@ -191,6 +194,7 @@ export function AutomationClient() {
   }
 
   const expiredCount = status?.sessions.filter((session) => session.expired).length ?? 0;
+  const controllerReady = Boolean(status?.controllerEnabled && !status?.controllerStalled);
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
@@ -204,11 +208,29 @@ export function AutomationClient() {
                 종료 시간이 지난 이용을 정리하고, 매장 노트북 제어기를 통해 공용 장비 준비와 종료 명령을 전달합니다.
               </p>
             </div>
-            <div className={`rounded-md px-4 py-3 text-sm font-extrabold ${status?.controllerEnabled ? "bg-[#edf6ef] text-vista-leaf" : "bg-[#fff4eb] text-[#9a561a]"}`}>
-              {status?.controllerEnabled ? "매장 제어기 연결 사용" : "매장 제어기 연결 확인 필요"}
+            <div className={`rounded-md px-4 py-3 text-sm font-extrabold ${controllerReady ? "bg-[#edf6ef] text-vista-leaf" : status?.controllerStalled ? "bg-rose-50 text-rose-700" : "bg-[#fff4eb] text-[#9a561a]"}`}>
+              {controllerReady
+                ? "매장 제어기 사용 가능"
+                : status?.controllerStalled
+                  ? "매장 제어기 응답 없음"
+                  : "매장 제어기 연결 확인 필요"}
             </div>
           </div>
         </section>
+
+        {status?.controllerStalled && (
+          <div className="mt-5 flex items-start gap-3 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-800">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0" />
+            <div>
+              <p>HA 노트북의 VISTA Store Controller가 명령을 가져가지 않고 있습니다.</p>
+              <p className="mt-1 text-xs font-semibold text-rose-700">
+                대기 명령 {status.stalePendingCount}건
+                {status.oldestPendingAt ? ` · 최초 대기 ${new Date(status.oldestPendingAt).toLocaleString("ko-KR")}` : ""}
+                {" · 제어기를 확인하기 전에는 새 장비 명령을 보내지 않습니다."}
+              </p>
+            </div>
+          </div>
+        )}
 
         {(message || error) && (
           <div className={`mt-5 flex items-start gap-3 rounded-md border p-4 text-sm font-bold ${error ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
@@ -231,7 +253,7 @@ export function AutomationClient() {
 
           <button
             type="button"
-            disabled={busy !== null || !status?.controllerEnabled}
+            disabled={busy !== null || !controllerReady}
             onClick={() => void run("shared_on", "공용 조명과 냉난방 준비 명령을 보냅니다. 실행할까요?")}
             className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -242,7 +264,7 @@ export function AutomationClient() {
 
           <button
             type="button"
-            disabled={busy !== null || !status?.controllerEnabled}
+            disabled={busy !== null || !controllerReady}
             onClick={() =>
               void run(
                 "store_close",
@@ -291,7 +313,7 @@ export function AutomationClient() {
                 </p>
                 <BayPowerToggle
                   bay={bay}
-                  disabled={busy !== null || !status.controllerEnabled || !bay.hasAutomation}
+                  disabled={busy !== null || !controllerReady || !bay.hasAutomation}
                   pending={busy === `bay:${bay.id}`}
                   onToggle={(turnOn) =>
                     void run(

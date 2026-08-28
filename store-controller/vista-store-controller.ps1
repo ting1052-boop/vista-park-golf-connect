@@ -4,6 +4,24 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$logPath = Join-Path $PSScriptRoot "controller.log"
+$previousLogPath = Join-Path $PSScriptRoot "controller.previous.log"
+
+if ((Test-Path -LiteralPath $logPath) -and (Get-Item -LiteralPath $logPath).Length -gt 5MB) {
+  Move-Item -LiteralPath $logPath -Destination $previousLogPath -Force
+}
+
+function Write-ControllerMessage {
+  param(
+    [string]$Message,
+    [ValidateSet("INFO", "WARN")]
+    [string]$Level = "INFO"
+  )
+
+  $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
+  Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8
+  if ($Level -eq "WARN") { Write-Warning $Message } else { Write-Host $Message }
+}
 
 function Read-ControllerConfig {
   if (-not (Test-Path -LiteralPath $ConfigPath)) {
@@ -72,12 +90,12 @@ function Process-Command {
     try {
       Invoke-HomeAssistantScript -Config $Config -Step $step -Variables $Command.payload.variables
       $steps += @{ name = [string]$step.name; script = [string]$step.script; ok = $true; status = 200 }
-      Write-Host "[$($Command.id)] $($step.script) completed"
+      Write-ControllerMessage "[$($Command.id)] $($step.script) completed"
     } catch {
       $ok = $false
       $errorMessage = $_.Exception.Message
       $steps += @{ name = [string]$step.name; script = [string]$step.script; ok = $false; status = 500; error = $errorMessage }
-      Write-Warning "[$($Command.id)] $($step.script) failed: $errorMessage"
+      Write-ControllerMessage "[$($Command.id)] $($step.script) failed: $errorMessage" -Level "WARN"
     }
   }
 
@@ -90,8 +108,11 @@ $headers = @{ Authorization = "Bearer $($config.controllerToken)"; "x-store-cont
 $configuredInterval = if ($null -eq $config.pollIntervalSeconds) { 5 } else { [int]$config.pollIntervalSeconds }
 $interval = [Math]::Max(3, $configuredInterval)
 
-Write-Host "VISTA Store Controller started: $($config.controllerId)"
-Write-Host "Home Assistant: $($config.homeAssistantUrl)"
+Write-ControllerMessage "VISTA Store Controller started: $($config.controllerId)"
+Write-ControllerMessage "Home Assistant: $($config.homeAssistantUrl)"
+
+$lastPollError = $null
+$lastPollErrorAt = [DateTime]::MinValue
 
 while ($true) {
   try {
@@ -100,8 +121,17 @@ while ($true) {
       $result = Process-Command -Config $config -Command $command
       Invoke-JsonRequest -Method "POST" -Uri "$apiBase/api/store-controller/commands" -Headers $headers -Body $result | Out-Null
     }
+    if ($null -ne $lastPollError) {
+      Write-ControllerMessage "Controller connection recovered."
+      $lastPollError = $null
+    }
   } catch {
-    Write-Warning "Controller poll failed: $($_.Exception.Message)"
+    $pollError = $_.Exception.Message
+    if ($pollError -ne $lastPollError -or ((Get-Date) - $lastPollErrorAt).TotalSeconds -ge 60) {
+      Write-ControllerMessage "Controller poll failed: $pollError" -Level "WARN"
+      $lastPollError = $pollError
+      $lastPollErrorAt = Get-Date
+    }
   }
 
   Start-Sleep -Seconds $interval

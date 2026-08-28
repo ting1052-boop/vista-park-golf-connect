@@ -27,8 +27,12 @@ Assistant directly.
 powershell -ExecutionPolicy Bypass -File .\install-startup.ps1
 ```
 
-The Windows Task Scheduler then starts the controller automatically after the
-Home Assistant laptop is signed in.
+The Windows Task Scheduler then starts the controller automatically as soon as
+Windows boots, even before sign-in. It runs as SYSTEM and restarts after one
+minute if the process stops. Runtime messages are saved to `controller.log`.
+
+Re-run `install-startup.ps1` after replacing the controller files so the more
+reliable startup settings are applied.
 
 ## What should happen
 

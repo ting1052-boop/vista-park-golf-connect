@@ -14,6 +14,10 @@ type CommandRow = {
   attempts: number;
 };
 
+const CONTROLLER_COMMAND_TYPES = ["prepare_bay", "release_bay", "run_scripts"] as const;
+const COMMAND_MAX_AGE_MS = 15 * 60 * 1000;
+const COMMAND_MAX_ATTEMPTS = 20;
+
 function getControllerId(request: NextRequest) {
   return request.headers.get("x-store-controller-id")?.trim() || "vista-store-controller";
 }
@@ -50,8 +54,60 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
   const nowIso = now.toISOString();
+  const staleBeforeIso = new Date(now.getTime() - COMMAND_MAX_AGE_MS).toISOString();
   const controllerId = getControllerId(request);
   const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
+
+  // 제어기가 장시간 꺼졌다가 다시 켜져도 과거 ON/OFF 명령을 실행하지 않는다.
+  // 운영 장비 명령은 생성 후 15분이 지나면 안전하게 폐기한다.
+  const { error: stalePendingError } = await supabase
+    .from("store_controller_commands")
+    .update({
+      status: "cancelled",
+      completed_at: nowIso,
+      lease_expires_at: null,
+      error_message: "명령 유효시간(15분)이 지나 자동 취소되었습니다."
+    })
+    .eq("status", "pending")
+    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
+    .lt("created_at", staleBeforeIso);
+
+  if (stalePendingError) {
+    return NextResponse.json({ ok: false, message: stalePendingError.message }, { status: 500 });
+  }
+
+  const { error: staleProcessingError } = await supabase
+    .from("store_controller_commands")
+    .update({
+      status: "cancelled",
+      completed_at: nowIso,
+      lease_expires_at: null,
+      error_message: "처리 중 응답이 끊겼고 명령 유효시간이 지나 자동 취소되었습니다."
+    })
+    .eq("status", "processing")
+    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
+    .lt("lease_expires_at", nowIso)
+    .lt("created_at", staleBeforeIso);
+
+  if (staleProcessingError) {
+    return NextResponse.json({ ok: false, message: staleProcessingError.message }, { status: 500 });
+  }
+
+  const { error: exhaustedError } = await supabase
+    .from("store_controller_commands")
+    .update({
+      status: "failed",
+      completed_at: nowIso,
+      lease_expires_at: null,
+      error_message: "제어기 재시도 한도를 초과했습니다."
+    })
+    .eq("status", "pending")
+    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
+    .gte("attempts", COMMAND_MAX_ATTEMPTS);
+
+  if (exhaustedError) {
+    return NextResponse.json({ ok: false, message: exhaustedError.message }, { status: 500 });
+  }
 
   const { error: recoverError } = await supabase
     .from("store_controller_commands")
@@ -65,7 +121,9 @@ export async function GET(request: NextRequest) {
     .from("store_controller_commands")
     .select("id, store_id, bay_id, access_session_id, reservation_id, command_type, payload, attempts")
     .eq("status", "pending")
-    .in("command_type", ["prepare_bay", "release_bay", "run_scripts"])
+    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
+    .gte("created_at", staleBeforeIso)
+    .lt("attempts", COMMAND_MAX_ATTEMPTS)
     .order("created_at", { ascending: true })
     .limit(parseLimit(request.nextUrl.searchParams.get("limit")));
 

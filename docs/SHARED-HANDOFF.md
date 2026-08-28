@@ -24,6 +24,7 @@
 | Claude Code | 완료 | 대시보드 "무인 장비 상태" 표를 store_controller_commands 기반 실제 실행 상태로 교체, 미사용 mock 데이터 제거 | `src/lib/supabase/automation-status.ts`(신규), `src/app/admin/dashboard/page.tsx`, `dashboard-client.tsx`, `src/lib/dashboard-data.ts` |
 | Claude Code | 완료 | 무인제어 화면의 타석 장비 OFF 버튼을 ON/OFF 토글로 전환(bay_on 액션 추가, 현재 상태 표시, 이용 중 타석 오조작 방지) | `src/app/api/admin/automation/route.ts`, `src/app/admin/automation/automation-client.tsx`, `src/lib/supabase/automation-status.ts` |
 | Codex | 완료 | 자동 종료 로그 누락과 대시보드 오늘 예약 2건 집계 원인 점검 | Agent 종료 경로의 장비 반납 명령 누락 수정, 오늘 합계를 예약·입장으로 명확화 |
+| Codex | 배포 진행 중 | 키오스크·관리자 입장 공통 장비 ON 중단 진단 및 재발 방지 구현 | 사용자 승인 완료, 오래된 명령 폐기·운영 경고·부팅 자동실행 강화 검증 후 배포 진행 |
 
 ## 저장소와 배포 상태
 
@@ -292,3 +293,15 @@ commit/push/deploy:
 - UI: dashboard KPI and mini status labels now say `오늘 예약·입장`, matching the existing calculation and its app versus walk-in/phone breakdown.
 - Files: `src/app/api/agent/session/end/route.ts`, `src/app/admin/dashboard/dashboard-client.tsx`, `docs/SHARED-HANDOFF.md`.
 - Verification: `npm run typecheck` and targeted ESLint passed. Full `npm run lint` remains blocked by the existing inaccessible `.tmp_pysdcp` folder. No production database write or physical device command was performed; the owner approved the scoped GitHub/Vercel release.
+
+## Current Work (2026-08-28, Codex - Store Controller outage recovery)
+
+- Status: owner approved the scoped release. Root cause and safeguards are confirmed; commit/deployment are in progress, while HA-laptop installation remains a field step.
+- Production read-only finding: kiosk and administrator admission both create `prepare_bay` commands correctly. There are 21 `pending`/`processing` equipment commands with zero processing progress, ranging from 2026-08-19 through 2026-08-27. The last successful command by `vista-siheung-controller` completed on 2026-08-19 KST. This proves the shared failure is the stopped store-local controller, not either admission screen.
+- Production read-only finding: one access session is still active after its end time, consistent with the HA-laptop scheduler also not running.
+- Server safety: controller polling now cancels pending or abandoned processing commands older than 15 minutes, fails commands that exhausted 20 attempts, and never returns stale commands to the HA laptop. This prevents an old ON/OFF backlog from executing after a reboot.
+- Admin UI: `/admin/automation` separately checks all pending/processing controller commands. A command waiting more than 30 seconds shows `매장 제어기 응답 없음`, displays the queue age/count, and disables new equipment commands instead of incorrectly saying the controller is connected.
+- HA laptop reliability: the startup installer now registers a SYSTEM task at Windows startup, restarts it after failure, permits battery operation, starts it immediately, and the controller writes a rotating `controller.log` with throttled connection errors and recovery messages.
+- Files: `src/app/api/store-controller/commands/route.ts`, `src/app/api/admin/automation/route.ts`, `src/app/admin/automation/automation-client.tsx`, `store-controller/install-startup.ps1`, `store-controller/vista-store-controller.ps1`, `store-controller/README.md`, `docs/SHARED-HANDOFF.md`.
+- Verification: `npm run typecheck`, targeted ESLint, PowerShell parser checks for both scripts, `git diff --check`, and the full `npm run build` (46 routes) passed. No production device command was performed during local verification.
+- Safe recovery order: deploy server safeguards first; then update/reinstall and start the HA-laptop controller; confirm stale commands become cancelled; run `이용 종료 정리` for the expired session; finally perform one fresh bay-ON admission test.
