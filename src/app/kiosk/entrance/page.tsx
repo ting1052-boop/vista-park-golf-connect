@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarCheck, Delete, Loader2, MonitorPlay, Phone, Store } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { durationOptions } from "@/lib/reservation-policy";
@@ -74,6 +74,16 @@ function formatDurationOptionLabel(option: KioskDurationOption) {
   return option.bonusMinutes > 0 ? `${option.minutes}분 + ${option.bonusMinutes}분` : `${option.minutes}분`;
 }
 
+// 같은 입장 요청임을 서버가 알아볼 수 있게 하는 번호.
+// randomUUID 를 못 쓰는 구형 브라우저(키오스크 태블릿)도 있어 대비해 둔다.
+function createRequestId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `walkin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function formatClock(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -131,6 +141,11 @@ export default function KioskEntrancePage() {
   const [done, setDone] = useState<DoneInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // 입장 요청이 진행 중인지, 그리고 이번 손님의 요청번호. 화면 상태와 달리
+  // 즉시 반영돼야 해서 ref 를 쓴다(리렌더 전에 두 번째 탭이 들어오는 것을 막는다).
+  const isSubmittingRef = useRef(false);
+  const walkInRequestIdRef = useRef<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -154,6 +169,9 @@ export default function KioskEntrancePage() {
     setDone(null);
     setError(null);
     setIsLoading(false);
+    // 다음 손님은 새 요청번호를 쓴다.
+    walkInRequestIdRef.current = null;
+    isSubmittingRef.current = false;
   }, []);
 
   // 이용시간 선택 후 타석 배치도(가용성)를 불러온다.
@@ -271,6 +289,15 @@ export default function KioskEntrancePage() {
   };
 
   const startWalkIn = async () => {
+    // 어르신 손님의 더블탭 등으로 같은 입장이 두 번 접수되지 않도록 막는다.
+    // 서버에도 요청번호를 보내 재전송까지 한 번만 처리되게 한다.
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
+    const requestId = walkInRequestIdRef.current ?? createRequestId();
+    walkInRequestIdRef.current = requestId;
+
     setScreen("processing");
     setProcessingText("타석을 준비하고 있습니다");
     setError(null);
@@ -281,7 +308,8 @@ export default function KioskEntrancePage() {
         partySize: 1,
         durationMinutes,
         bayId: selectedBay?.id ?? null,
-        paymentStatus: "postpaid"
+        paymentStatus: "postpaid",
+        requestId
       });
 
       // 후불이므로 완료 화면에서 입금 안내를 위해 금액을 함께 전달한다.
@@ -291,6 +319,9 @@ export default function KioskEntrancePage() {
       setError(caughtError instanceof Error ? caughtError.message : "현장 이용 처리에 실패했습니다.");
       // 선택한 타석이 마감됐을 수 있으니 타석 선택 화면으로 되돌려 다시 고르게 한다.
       await loadBays(durationMinutes);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -559,7 +590,8 @@ export default function KioskEntrancePage() {
             <button
               type="button"
               onClick={startWalkIn}
-              className="mt-5 flex min-h-[88px] w-full items-center justify-center rounded-[20px] bg-vista-leaf text-[26px] font-extrabold text-white"
+              disabled={isSubmitting}
+              className="mt-5 flex min-h-[88px] w-full items-center justify-center rounded-[20px] bg-vista-leaf text-[26px] font-extrabold text-white disabled:opacity-70"
             >
               이용 시작하기
             </button>

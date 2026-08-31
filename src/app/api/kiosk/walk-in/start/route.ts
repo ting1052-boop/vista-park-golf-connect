@@ -9,6 +9,7 @@ type WalkInBody = {
   durationMinutes?: unknown;
   paymentStatus?: unknown;
   bayId?: unknown;
+  requestId?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -65,7 +66,9 @@ export async function POST(request: NextRequest) {
       durationMinutes,
       bayId: typeof body.bayId === "string" ? body.bayId : null,
       guestName: "현장 고객",
-      memoPrefix: "현장 이용"
+      memoPrefix: "현장 이용",
+      // 같은 요청번호가 다시 오면 서버가 중복 접수를 막는다.
+      requestId: typeof body.requestId === "string" && body.requestId.length <= 100 ? body.requestId : null
     });
 
     return NextResponse.json({

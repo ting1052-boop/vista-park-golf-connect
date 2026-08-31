@@ -140,6 +140,8 @@ export type StartWalkInSessionArgs = {
   bayId?: string | null;
   guestName?: string | null;
   memoPrefix?: string;
+  /** 같은 입장 요청이 두 번 들어와도 한 번만 처리되도록 하는 요청번호 */
+  requestId?: string | null;
 };
 
 export type StartWalkInSessionResult = {
@@ -188,6 +190,49 @@ async function findKioskSessionId(supabase: SupabaseClient, accessSessionId: str
   if (error) return null;
 
   return data?.id ?? null;
+}
+
+// 이미 처리된 현장 이용 요청을 요청번호로 찾아 같은 응답을 재구성한다.
+// walk_in_request_id 컬럼이 없는 환경(마이그레이션 미적용)에서는 조용히 건너뛴다.
+async function findWalkInByRequestId(
+  supabase: SupabaseClient,
+  requestId: string
+): Promise<StartWalkInSessionResult | null> {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("id, bay_id, starts_at, ends_at, party_size, bays(bay_code)")
+    .eq("walk_in_request_id", requestId)
+    .maybeSingle();
+
+  if (error || !data?.bay_id) return null;
+
+  const { data: session } = await supabase
+    .from("access_sessions")
+    .select("id")
+    .eq("reservation_id", data.id)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!session?.id) return null;
+
+  const bay = Array.isArray(data.bays) ? data.bays[0] : data.bays;
+  const startsAt = new Date(data.starts_at as string);
+  const endsAt = new Date(data.ends_at as string);
+  const durationMinutes = Math.max(1, Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000));
+
+  return {
+    bayId: data.bay_id as string,
+    bayCode: (bay as { bay_code?: string } | null)?.bay_code ?? "",
+    startsAt,
+    endsAt,
+    durationMinutes,
+    price: 0,
+    reservationId: data.id as string,
+    accessSessionId: session.id as string,
+    automationStatus: "skipped",
+    automationDetail: "이미 접수된 입장 요청입니다."
+  };
 }
 
 async function rollbackCreatedAccessSession(supabase: SupabaseClient, accessSessionId: string, originalError: string) {
@@ -334,6 +379,14 @@ export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<
   const partySize = args.partySize ?? 1;
   const guestName = args.guestName?.trim() || "현장 고객";
   const memoPrefix = args.memoPrefix?.trim() || "현장 이용";
+
+  // 같은 요청번호가 다시 오면 새로 만들지 않고 이미 처리된 결과를 돌려준다.
+  // (더블탭, 네트워크 재전송 등으로 같은 입장이 두 번 접수되는 것을 막는다)
+  if (args.requestId) {
+    const already = await findWalkInByRequestId(args.supabase, args.requestId);
+    if (already) return already;
+  }
+
   const freeBays = await findFreeBays(args.supabase, args.storeId, startsAt, endsAt);
 
   if (freeBays.length === 0) {
@@ -354,22 +407,38 @@ export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<
   let assignedBay: (typeof freeBays)[number] | null = null;
 
   for (const bay of candidates) {
-    const { data: inserted, error: insertError } = await args.supabase
+    const baseRow = {
+      store_id: args.storeId,
+      bay_id: bay.id,
+      guest_name: guestName,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      party_size: partySize,
+      channel: "walk_in",
+      status: "checked_in",
+      approval_required: false,
+      memo: `${memoPrefix} · 후불 계좌이체 · 미결제 ${price.toLocaleString("ko-KR")}원`
+    };
+
+    const insertRow: Record<string, unknown> = args.requestId
+      ? { ...baseRow, walk_in_request_id: args.requestId }
+      : { ...baseRow };
+
+    let { data: inserted, error: insertError } = await args.supabase
       .from("reservations")
-      .insert({
-        store_id: args.storeId,
-        bay_id: bay.id,
-        guest_name: guestName,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        party_size: partySize,
-        channel: "walk_in",
-        status: "checked_in",
-        approval_required: false,
-        memo: `${memoPrefix} · 후불 계좌이체 · 미결제 ${price.toLocaleString("ko-KR")}원`
-      })
+      .insert(insertRow)
       .select("id")
       .single();
+
+    // walk_in_request_id 컬럼이 아직 없는 환경(마이그레이션 미적용)에서도
+    // 입장 자체는 되어야 한다. 중복 방지 없이 한 번 더 시도한다.
+    if (insertError && /walk_in_request_id/i.test(insertError.message)) {
+      ({ data: inserted, error: insertError } = await args.supabase
+        .from("reservations")
+        .insert(baseRow)
+        .select("id")
+        .single());
+    }
 
     if (!insertError && inserted) {
       reservationId = inserted.id;
@@ -377,7 +446,13 @@ export async function startWalkInSession(args: StartWalkInSessionArgs): Promise<
       break;
     }
 
-    if (insertError && insertError.code !== "23P01") {
+    // 같은 요청번호가 거의 동시에 두 번 들어온 경우. 먼저 처리된 결과를 돌려준다.
+    if (insertError?.code === "23505" && args.requestId) {
+      const already = await findWalkInByRequestId(args.supabase, args.requestId);
+      if (already) return already;
+    }
+
+    if (insertError && insertError.code !== "23P01" && insertError.code !== "23505") {
       throw new Error(insertError.message);
     }
   }
