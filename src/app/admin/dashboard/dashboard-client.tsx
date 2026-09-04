@@ -419,22 +419,52 @@ export function DashboardClient({
     setToast(automationFailed ? `${bay.name} 이용은 종료됐지만 장비 OFF 확인이 필요합니다.` : `${bay.name} 이용을 종료했습니다.`);
   };
 
+  // 이용 중인 타석의 종료 시각을 실제로 조정한다.
+  // 예전에는 화면 숫자만 바꿔 새로고침하면 원래대로 돌아갔다.
   const handleExtendTime = async (bay: LiveBay) => {
-    setBays((prev) =>
-      prev.map((item) =>
-        item.id === bay.id && item.status === "in_use"
-          ? {
-              ...item,
-              remainingMinutes: (item.remainingMinutes ?? 0) + 30,
-              endsAt: addMinutesToClock(item.endsAt, 30),
-              note: "관리자 30분 연장 적용"
-            }
-          : item
-      )
+    const input = window.prompt(
+      `${bay.name} 이용시간을 몇 분 조정할까요?\n연장은 30, 단축은 -30 처럼 입력합니다. (현재 종료 ${bay.endsAt ?? "-"})`,
+      "30"
     );
-    await syncBayStatus(bay, "in_use");
-    addLog(bay.name, "키오스크 이용시간 30분 연장", "성공", "success");
-    setToast(`${bay.name} 이용시간을 30분 연장했습니다.`);
+    if (input === null) return;
+
+    const minutes = Number(input.trim());
+    if (!Number.isInteger(minutes) || minutes === 0) {
+      setToast("조정할 시간을 분 단위 숫자로 입력해주세요. (예: 30, -30)");
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const response = await fetch("/api/admin/session/extend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          bay.accessSessionId ? { accessSessionId: bay.accessSessionId, minutes } : { bayId: bay.id, minutes }
+        )
+      });
+      const data = (await response.json()) as { ok?: boolean; message?: string; remainingMinutes?: number };
+
+      if (!response.ok || data.ok === false) {
+        const message = data.message ?? "이용시간 조정에 실패했습니다.";
+        setDataError(message);
+        addLog(bay.name, "관리자 이용시간 조정", "실패", "danger");
+        setToast(message);
+        return;
+      }
+
+      setDataError(null);
+      addLog(bay.name, minutes > 0 ? `관리자 ${minutes}분 연장` : `관리자 ${Math.abs(minutes)}분 단축`, "성공", "success");
+      setToast(data.message ?? "이용시간을 조정했습니다.");
+      router.refresh();
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "이용시간 조정 중 오류가 발생했습니다.";
+      setDataError(message);
+      addLog(bay.name, "관리자 이용시간 조정", "실패", "danger");
+      setToast(message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleCheckIn = async (bay: LiveBay) => {
@@ -763,7 +793,7 @@ export function DashboardClient({
                       key={`soon-${bay.id}`}
                       title={`${bay.name} 이용시간 종료 임박`}
                       description={`${bay.customer ?? "이용 고객"}의 남은 시간이 ${bay.remainingMinutes}분입니다. 연장 또는 종료 안내가 필요합니다.`}
-                      actionLabel="30분 연장"
+                      actionLabel="시간 조정"
                       onAction={() => handleExtendTime(bay)}
                     />
                   ))}
@@ -959,9 +989,9 @@ export function DashboardClient({
             <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
               <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
                 <div className="border-b border-[#e5ece1] p-5">
-                  <h3 className="text-lg font-extrabold">무인 장비 상태</h3>
+                  <h3 className="text-lg font-extrabold">무인 장비 마지막 명령</h3>
                   <p className="mt-1 text-sm text-[#697468]">
-                    실제 자동화 실행 기록에서 확인한 타석별 장비의 마지막 상태입니다.
+                    매장 제어기가 마지막으로 실행한 ON/OFF 명령입니다. 실제 PC 연결 상태는 위 타석 카드에서 확인합니다.
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -971,7 +1001,7 @@ export function DashboardClient({
                         <th className="px-5 py-3 font-bold">구역</th>
                         <th className="px-5 py-3 font-bold">장비</th>
                         <th className="px-5 py-3 font-bold">연동</th>
-                        <th className="px-5 py-3 font-bold">상태</th>
+                        <th className="px-5 py-3 font-bold">마지막 명령 결과</th>
                         <th className="px-5 py-3 font-bold">마지막 실행</th>
                       </tr>
                     </thead>
@@ -1271,7 +1301,7 @@ function BayCard({
             }
           >
             <span className={cn("size-2 rounded-full", bay.pcOnline ? "bg-emerald-500" : "bg-gray-400")} />
-            PC {bay.pcOnline ? "켜짐" : "꺼짐"}
+            PC {bay.pcOnline ? "켜짐" : "확인 안 됨"}
           </span>
           <span className="rounded-md bg-white/80 px-2 py-1 text-xs font-extrabold text-[#697468]">{bay.zone}</span>
         </div>
@@ -1332,7 +1362,7 @@ function BayCard({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-vista-leaf px-3 py-2.5 text-sm font-extrabold text-white transition hover:bg-[#3f7357]"
             >
               <PlusCircle size={18} aria-hidden="true" />
-              30분 연장
+              시간 조정
             </button>
           </>
         ) : null}
