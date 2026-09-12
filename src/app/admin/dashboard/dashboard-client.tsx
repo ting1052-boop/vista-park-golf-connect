@@ -1321,7 +1321,7 @@ function BayCard({
 
       <div
         className={cn(
-          "mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-bold",
+          "mt-3 flex items-center gap-2.5 rounded-md border px-4 py-2.5 text-base font-bold",
           gameStatus.tone === "active"
             ? "border-sky-200 bg-sky-50 text-sky-800"
             : gameStatus.tone === "idle"
@@ -1330,7 +1330,7 @@ function BayCard({
         )}
         title={gameStatus.detail}
       >
-        <Activity size={15} aria-hidden="true" />
+        <Activity size={20} aria-hidden="true" />
         <span>{gameStatus.label}</span>
       </div>
 
