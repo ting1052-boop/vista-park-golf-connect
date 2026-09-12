@@ -1278,6 +1278,7 @@ function BayCard({
   const meta = statusMeta[bay.status];
   const StatusIcon = meta.icon;
   const usageText = getBayUsageText(bay);
+  const gameStatus = getGameStatusDisplay(bay);
 
   return (
     <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", meta.card)}>
@@ -1316,6 +1317,21 @@ function BayCard({
         <div className={cn("grid size-11 shrink-0 place-items-center rounded-md", meta.iconBox)}>
           <StatusIcon size={23} aria-hidden="true" />
         </div>
+      </div>
+
+      <div
+        className={cn(
+          "mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-bold",
+          gameStatus.tone === "active"
+            ? "border-sky-200 bg-sky-50 text-sky-800"
+            : gameStatus.tone === "idle"
+              ? "border-gray-200 bg-white/80 text-gray-600"
+              : "border-amber-200 bg-amber-50 text-amber-800"
+        )}
+        title={gameStatus.detail}
+      >
+        <Activity size={15} aria-hidden="true" />
+        <span>{gameStatus.label}</span>
       </div>
 
       {bay.status === "in_use" ? (
@@ -1402,6 +1418,63 @@ function BayCard({
       </div>
     </article>
   );
+}
+
+function getGameStatusDisplay(bay: LiveBay) {
+  const telemetry = bay.gameTelemetry;
+  if (!telemetry) {
+    return {
+      label: bay.pcOnline ? "게임 감지 미지원" : "게임 상태 확인 불가",
+      detail: "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.",
+      tone: "unknown" as const
+    };
+  }
+
+  if (bay.gameTelemetryStale) {
+    return {
+      label: "게임 상태 확인 불가",
+      detail: `마지막 게임 관측: ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
+      tone: "unknown" as const
+    };
+  }
+
+  if (telemetry.gameRunning === false) {
+    return {
+      label: "골프 프로그램 미실행",
+      detail: `프로세스 확인 · ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
+      tone: "idle" as const
+    };
+  }
+
+  if (telemetry.gameRunning !== true) {
+    return {
+      label: "게임 상태 확인 불가",
+      detail: `사유: ${telemetry.reasonCode ?? "unknown"}`,
+      tone: "unknown" as const
+    };
+  }
+
+  if (telemetry.gameState === "playing") {
+    return {
+      label: telemetry.currentHole ? `라운드 진행 · ${telemetry.currentHole}번 홀` : "라운드 진행 · 홀 확인 불가",
+      detail: `출처: ${telemetry.stateSource} · 신뢰도: ${telemetry.confidence}`,
+      tone: "active" as const
+    };
+  }
+
+  if (telemetry.gameState === "menu") {
+    return { label: "메뉴·대기 화면", detail: `출처: ${telemetry.stateSource}`, tone: "idle" as const };
+  }
+
+  if (telemetry.roundStatus === "completed" || telemetry.gameState === "results") {
+    return { label: "라운드 종료 확인", detail: `출처: ${telemetry.stateSource}`, tone: "idle" as const };
+  }
+
+  return {
+    label: "골프 프로그램 실행 · 플레이 확인 불가",
+    detail: `출처: ${telemetry.stateSource} · ${telemetry.reasonCode ?? "상세 상태 없음"}`,
+    tone: "active" as const
+  };
 }
 
 function getBayUsageText(bay: LiveBay) {

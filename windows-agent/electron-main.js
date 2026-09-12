@@ -4,12 +4,19 @@ const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { randomUUID } = require("node:crypto");
 const { execFile } = require("node:child_process");
+const { mergeBaysConfig } = require("./agent-config");
+const { createGameLogProbe } = require("./game-log-probe");
+const { createScreenGolfMonitor } = require("./screen-golf-monitor");
 
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.4.0";
+const VERSION = "0.6.0";
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 
 // Writable locations. In a packaged exe, ROOT is inside a read-only archive,
 // so the selected bay, the local test session, and logs all live in userData.
@@ -29,6 +36,20 @@ let pollTimer = null;
 let endNotice = null;
 let shutdownTimer = null;
 const processingAgentCommandIds = new Set();
+const gameMonitorInstanceId = randomUUID();
+let gameSampleSequence = 0;
+let gameTelemetryRefreshPromise = null;
+let latestGameTelemetry = null;
+let gameLogProbeTimer = null;
+let screenGolfMonitor = null;
+
+app.on("second-instance", () => {
+  const window = setupWindow && !setupWindow.isDestroyed() ? setupWindow : mainWindow;
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+});
 
 function nowIso() {
   return new Date().toISOString();
@@ -51,16 +72,46 @@ function log(message, extra = undefined) {
   }
 }
 
+function writeGameDiagnostic(event) {
+  ensureLogDir();
+  try {
+    fs.appendFileSync(
+      path.join(LOG_DIR, "game-monitor-diagnostics.log"),
+      `${JSON.stringify({ agentVersion: VERSION, ...event })}\n`,
+      "utf8"
+    );
+  } catch {
+    // diagnostics must never interrupt the agent
+  }
+}
+
+async function startGameLogDiagnostics() {
+  if (gameLogProbeTimer) clearInterval(gameLogProbeTimer);
+  gameLogProbeTimer = null;
+  if (!config.gameLogDiagnosticsEnabled || config.gameLogDirectories.length === 0) return;
+
+  const probe = createGameLogProbe({
+    directories: config.gameLogDirectories,
+    onDiagnostic: writeGameDiagnostic
+  });
+  await probe.scan().catch((error) => {
+    writeGameDiagnostic({ event: "scan_failed", errorCode: error?.code ?? "unknown", observedAt: nowIso() });
+  });
+  gameLogProbeTimer = setInterval(() => {
+    void probe.scan().catch((error) => {
+      writeGameDiagnostic({ event: "scan_failed", errorCode: error?.code ?? "unknown", observedAt: nowIso() });
+    });
+  }, config.gameLogProbeIntervalSeconds * 1000);
+}
+
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function loadBaysConfig() {
-  const configPath = fs.existsSync(LOCAL_BAYS_CONFIG_PATH) ? LOCAL_BAYS_CONFIG_PATH : BAYS_CONFIG_PATH;
-  const raw = readJson(configPath);
-  const shared = raw.shared ?? {};
-  const bays = Array.isArray(raw.bays) ? raw.bays : [];
-  return { shared, bays };
+  const base = readJson(BAYS_CONFIG_PATH);
+  if (!fs.existsSync(LOCAL_BAYS_CONFIG_PATH)) return mergeBaysConfig(base);
+  return mergeBaysConfig(base, readJson(LOCAL_BAYS_CONFIG_PATH));
 }
 
 // The selected bay is stored as { bayCode } in userData. We merge shared
@@ -93,7 +144,17 @@ function loadConfig() {
     criticalBeforeMinutes: Number(merged.criticalBeforeMinutes || 3),
     extensionMinutes: Number(merged.extensionMinutes || 30),
     extensionPrice: Number(merged.extensionPrice || 6000),
+    gameMonitoringEnabled: merged.gameMonitoringEnabled === true,
     gameProcessNames: Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
+    gameStateLogFile:
+      typeof merged.gameStateLogFile === "string"
+        ? merged.gameStateLogFile
+        : "C:\\PARK_260713-VISTA\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log",
+    gameLogDiagnosticsEnabled: merged.gameLogDiagnosticsEnabled !== false,
+    gameLogDirectories: Array.isArray(merged.gameLogDirectories)
+      ? merged.gameLogDirectories
+      : ["C:\\PARK_260713-VISTA\\Launch\\Logs"],
+    gameLogProbeIntervalSeconds: Math.max(5, Number(merged.gameLogProbeIntervalSeconds || 10)),
     allowCloseWithEsc: merged.allowCloseWithEsc !== false
   };
 }
@@ -312,22 +373,129 @@ function beginEndNotice(session) {
 
 function runTasklist() {
   return new Promise((resolve) => {
-    execFile("tasklist.exe", ["/FO", "CSV", "/NH"], { windowsHide: true }, (error, stdout) => {
+    execFile("tasklist.exe", ["/FO", "CSV", "/NH"], { windowsHide: true, timeout: 2_000 }, (error, stdout) => {
       if (error) {
-        resolve("");
+        resolve({ ok: false, stdout: "", reason: error.killed ? "timeout" : "process_query_failed" });
         return;
       }
 
-      resolve(stdout || "");
+      resolve({ ok: true, stdout: stdout || "", reason: null });
     });
   });
 }
 
-async function isAnyGameRunning(processNames) {
-  if (processNames.length === 0) return false;
+function createGameTelemetry({
+  gameRunning,
+  gameState,
+  currentHole = null,
+  roundStatus,
+  stateSource,
+  confidence,
+  reasonCode,
+  detectorVersion = `process-v1-agent-${VERSION}`
+}) {
+  gameSampleSequence += 1;
+  return {
+    schemaVersion: 1,
+    sampleSequence: gameSampleSequence,
+    monitorInstanceId: gameMonitorInstanceId,
+    gameRunning,
+    gameState,
+    currentHole,
+    roundStatus,
+    stateSource,
+    confidence,
+    observedAt: nowIso(),
+    reasonCode,
+    detectorVersion
+  };
+}
 
-  const tasklist = (await runTasklist()).toLowerCase();
-  return processNames.some((name) => tasklist.includes(`"${name.toLowerCase()}"`));
+async function collectGameTelemetry() {
+  if (!config.gameMonitoringEnabled) {
+    return createGameTelemetry({
+      gameRunning: null,
+      gameState: "unknown",
+      roundStatus: "unknown",
+      stateSource: "none",
+      confidence: "unknown",
+      reasonCode: "unsupported"
+    });
+  }
+
+  const processNames = config.gameProcessNames.map((name) => String(name).trim()).filter(Boolean);
+  if (processNames.length === 0) {
+    return createGameTelemetry({
+      gameRunning: null,
+      gameState: "unknown",
+      roundStatus: "unknown",
+      stateSource: "none",
+      confidence: "unknown",
+      reasonCode: "unconfigured"
+    });
+  }
+
+  const result = await runTasklist();
+  if (!result.ok) {
+    return createGameTelemetry({
+      gameRunning: null,
+      gameState: "unknown",
+      roundStatus: "unknown",
+      stateSource: "process",
+      confidence: "unknown",
+      reasonCode: result.reason
+    });
+  }
+
+  const configuredNames = new Set(processNames.map((name) => name.toLowerCase()));
+  const runningNames = result.stdout
+    .split(/\r?\n/)
+    .map((line) => /^"((?:[^"]|"")*)"/.exec(line)?.[1]?.replace(/""/g, '"').toLowerCase())
+    .filter(Boolean);
+  const gameRunning = runningNames.some((name) => configuredNames.has(name));
+
+  const observedState = screenGolfMonitor ? await screenGolfMonitor.observe(gameRunning) : null;
+  if (observedState) {
+    return createGameTelemetry({
+      gameRunning,
+      ...observedState,
+      detectorVersion: `screen-golf-log-v1-agent-${VERSION}`
+    });
+  }
+
+  return createGameTelemetry({
+    gameRunning,
+    gameState: gameRunning ? "unknown" : "not_running",
+    roundStatus: gameRunning ? "unknown" : "not_started",
+    stateSource: "process",
+    confidence: "high",
+    reasonCode: gameRunning ? "process_only" : null
+  });
+}
+
+function refreshGameTelemetry() {
+  if (gameTelemetryRefreshPromise) return gameTelemetryRefreshPromise;
+  gameTelemetryRefreshPromise = collectGameTelemetry()
+    .then((telemetry) => {
+      latestGameTelemetry = telemetry;
+      return telemetry;
+    })
+    .catch((error) => {
+      log("Game telemetry refresh failed", { error: error.message });
+      latestGameTelemetry = createGameTelemetry({
+        gameRunning: null,
+        gameState: "unknown",
+        roundStatus: "unknown",
+        stateSource: "none",
+        confidence: "unknown",
+        reasonCode: "process_query_failed"
+      });
+      return latestGameTelemetry;
+    })
+    .finally(() => {
+      gameTelemetryRefreshPromise = null;
+    });
+  return gameTelemetryRefreshPromise;
 }
 
 function determineMode(session, remainingSeconds) {
@@ -457,7 +625,18 @@ async function postHeartbeat(payload) {
 async function tick() {
   let session = await loadSession();
   let remainingSeconds = getRemainingSeconds(session);
-  const gameAppRunning = await isAnyGameRunning(config.gameProcessNames);
+  void refreshGameTelemetry();
+  const gameTelemetry =
+    latestGameTelemetry ??
+    createGameTelemetry({
+      gameRunning: null,
+      gameState: "unknown",
+      roundStatus: "unknown",
+      stateSource: "none",
+      confidence: "unknown",
+      reasonCode: config.gameMonitoringEnabled ? "unconfigured" : "unsupported"
+    });
+  const gameAppRunning = gameTelemetry.gameRunning;
   let mode = "hidden";
 
   if (session && (remainingSeconds ?? 0) <= 0) {
@@ -545,6 +724,7 @@ async function tick() {
       accessSessionId: session?.accessSessionId ?? null,
       remainingSeconds,
       gameAppRunning,
+      ...(config.gameMonitoringEnabled ? { gameTelemetry } : {}),
       screenLocked: mode === "lock",
       lastSeenAt: nowIso()
     });
@@ -676,6 +856,12 @@ ipcMain.handle("select-bay", (_event, bayCode) => {
 });
 
 async function startAgentLoop() {
+  screenGolfMonitor = createScreenGolfMonitor({
+    logFile: config.gameStateLogFile,
+    onDiagnostic: writeGameDiagnostic
+  });
+  await startGameLogDiagnostics();
+  await refreshGameTelemetry();
   await tick();
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
@@ -717,4 +903,5 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   if (pollTimer) clearInterval(pollTimer);
+  if (gameLogProbeTimer) clearInterval(gameLogProbeTimer);
 });

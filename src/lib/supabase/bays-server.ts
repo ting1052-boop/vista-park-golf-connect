@@ -1,15 +1,23 @@
 import type { LiveBay } from "@/lib/dashboard-data";
+import { normalizeGameTelemetry, type GameTelemetry } from "@/lib/game-telemetry";
 import { getBays } from "@/lib/supabase/bays";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { closeSingleSession } from "@/lib/session-cleanup";
 
 // 마지막 하트비트가 이 시간 안이면 PC가 켜진 것으로 본다(에이전트는 약 15초마다 신호).
 const PC_ONLINE_THRESHOLD_MS = 120_000;
+const GAME_TELEMETRY_STALE_MS = 45_000;
 // 종료시각이 지난 뒤 이 시간이 더 지나도록 방치된(에이전트/크론이 못 닫은) 세션만
 // 대시보드 조회 시 자동 정리한다. 정상 종료 흐름(에이전트 5분 대기)과 겹치지 않게 여유를 둔다.
 const SELF_HEAL_GRACE_MS = 10 * 60_000;
 
-type AgentDeviceRow = { bay_id: string | null; last_seen_at: string | null; is_active: boolean | null };
+type AgentDeviceRow = {
+  bay_id: string | null;
+  last_seen_at: string | null;
+  is_active: boolean | null;
+  game_telemetry?: unknown;
+  game_telemetry_received_at?: string | null;
+};
 
 type ActiveSessionRow = {
   id: string;
@@ -114,7 +122,7 @@ function clearStaleInUseBay(bay: LiveBay): LiveBay {
 
 export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   const admin = createSupabaseAdminClient();
-  const [bays, sessionResult, agentResult] = await Promise.all([
+  const [bays, sessionResult, initialAgentResult] = await Promise.all([
     getBays(storeId),
     admin
       .from("access_sessions")
@@ -125,25 +133,50 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       .in("status", ACTIVE_SESSION_STATUSES)
       .not("bay_id", "is", null)
       .order("started_at", { ascending: false }),
-    admin.from("agent_devices").select("bay_id, last_seen_at, is_active").eq("store_id", storeId)
+    admin
+      .from("agent_devices")
+      .select("bay_id, last_seen_at, is_active, game_telemetry, game_telemetry_received_at")
+      .eq("store_id", storeId)
   ]);
 
   if (sessionResult.error) {
     throw new Error(sessionResult.error.message);
   }
 
+  let agentRows: AgentDeviceRow[] = [];
+  if (initialAgentResult.error?.message.includes("game_telemetry")) {
+    const fallbackAgentResult = await admin
+      .from("agent_devices")
+      .select("bay_id, last_seen_at, is_active")
+      .eq("store_id", storeId);
+    if (fallbackAgentResult.error) throw new Error(fallbackAgentResult.error.message);
+    agentRows = (fallbackAgentResult.data ?? []) as AgentDeviceRow[];
+  } else if (initialAgentResult.error) {
+    throw new Error(initialAgentResult.error.message);
+  } else {
+    agentRows = (initialAgentResult.data ?? []) as AgentDeviceRow[];
+  }
+
   const now = new Date();
 
   // 각 타석 PC 온라인 여부 (agent_devices.last_seen_at 기준). 같은 타석에 여러 기기면 하나라도 켜져 있으면 온라인.
-  const pcByBayId = new Map<string, { online: boolean; lastSeenIso?: string }>();
-  for (const dev of (agentResult.data ?? []) as AgentDeviceRow[]) {
+  const pcByBayId = new Map<
+    string,
+    { online: boolean; lastSeenIso?: string; gameTelemetry?: GameTelemetry; gameTelemetryReceivedAt?: string }
+  >();
+  for (const dev of agentRows) {
     if (!dev.bay_id) continue;
     const lastMs = dev.last_seen_at ? new Date(dev.last_seen_at).getTime() : 0;
     const online = dev.is_active !== false && lastMs > 0 && now.getTime() - lastMs <= PC_ONLINE_THRESHOLD_MS;
     const prev = pcByBayId.get(dev.bay_id);
+    const isNewerAgent = !prev?.lastSeenIso || lastMs >= new Date(prev.lastSeenIso).getTime();
     pcByBayId.set(dev.bay_id, {
       online: (prev?.online ?? false) || online,
-      lastSeenIso: dev.last_seen_at ?? prev?.lastSeenIso
+      lastSeenIso: isNewerAgent ? dev.last_seen_at ?? prev?.lastSeenIso : prev?.lastSeenIso,
+      gameTelemetry: isNewerAgent ? normalizeGameTelemetry(dev.game_telemetry) ?? undefined : prev?.gameTelemetry,
+      gameTelemetryReceivedAt: isNewerAgent
+        ? dev.game_telemetry_received_at ?? undefined
+        : prev?.gameTelemetryReceivedAt
     });
   }
 
@@ -181,6 +214,15 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     const session = sessionsByBayId.get(bay.id);
     const base = session ? applySessionToBay(bay, session, now) : clearStaleInUseBay(bay);
     const pc = pcByBayId.get(bay.id);
-    return { ...base, pcOnline: pc?.online ?? false, pcLastSeenIso: pc?.lastSeenIso };
+    return {
+      ...base,
+      pcOnline: pc?.online ?? false,
+      pcLastSeenIso: pc?.lastSeenIso,
+      gameTelemetry: pc?.gameTelemetry,
+      gameTelemetryReceivedAt: pc?.gameTelemetryReceivedAt,
+      gameTelemetryStale: pc?.gameTelemetry
+        ? now.getTime() - Date.parse(pc.gameTelemetry.observedAt) > GAME_TELEMETRY_STALE_MS
+        : undefined
+    };
   });
 }

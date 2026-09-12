@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
+import { isGameTelemetryNewer, normalizeGameTelemetry, type GameTelemetry } from "@/lib/game-telemetry";
 
 export type AgentDevice = {
   id: string;
@@ -75,6 +76,36 @@ export async function touchAgent(
       pc_name: args.pcName ?? agent.pc_name ?? undefined
     })
     .eq("id", agent.id);
+}
+
+export async function storeAgentGameTelemetry(
+  supabase: SupabaseClient,
+  agent: AgentDevice,
+  telemetry: GameTelemetry
+) {
+  const { data, error: readError } = await supabase
+    .from("agent_devices")
+    .select("game_telemetry")
+    .eq("id", agent.id)
+    .maybeSingle();
+
+  if (readError) throw new Error(readError.message);
+
+  const current = normalizeGameTelemetry(data?.game_telemetry);
+  if (!isGameTelemetryNewer(current, telemetry)) {
+    return { stored: false, reason: "older_sample" as const };
+  }
+
+  const { error: updateError } = await supabase
+    .from("agent_devices")
+    .update({
+      game_telemetry: telemetry,
+      game_telemetry_received_at: new Date().toISOString()
+    })
+    .eq("id", agent.id);
+
+  if (updateError) throw new Error(updateError.message);
+  return { stored: true, reason: null };
 }
 
 export async function getStoreExtensionSettings(

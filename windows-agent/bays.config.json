@@ -9,7 +9,15 @@
     "criticalBeforeMinutes": 3,
     "extensionMinutes": 30,
     "extensionPrice": 6000,
-    "gameProcessNames": ["ParkGolf.exe"],
+    "gameMonitoringEnabled": true,
+    "gameProcessNames": ["ScreenGolf.exe"],
+    "gameStateLogFile": "C:\\PARK_260713-VISTA\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log",
+    "gameLogDiagnosticsEnabled": true,
+    "gameLogDirectories": [
+      "C:\\PARK_260713-VISTA\\ScreenGolf\\Saved\\Logs",
+      "C:\\PARK_260713-VISTA\\ScreenGolf\\Binaries\\Win64\\Logs"
+    ],
+    "gameLogProbeIntervalSeconds": 10,
     "sessionFile": "agent-session.json",
     "allowCloseWithEsc": true
   },

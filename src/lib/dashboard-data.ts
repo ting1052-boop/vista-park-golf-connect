@@ -1,3 +1,5 @@
+import type { GameTelemetry } from "@/lib/game-telemetry";
+
 export type LiveBayStatus = "in_use" | "available" | "waiting" | "maintenance";
 export type LogTone = "success" | "control" | "warning" | "danger";
 export type AlertTone = "danger" | "warning";
@@ -25,6 +27,9 @@ export type LiveBay = {
   note: string;
   pcOnline?: boolean;
   pcLastSeenIso?: string;
+  gameTelemetry?: GameTelemetry;
+  gameTelemetryReceivedAt?: string;
+  gameTelemetryStale?: boolean;
 };
 
 export type ControlLog = {

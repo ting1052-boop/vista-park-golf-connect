@@ -345,6 +345,8 @@ create table public.agent_devices (
   last_seen_at timestamptz,
   agent_version text,
   pc_name text,
+  game_telemetry jsonb,
+  game_telemetry_received_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (bay_id)

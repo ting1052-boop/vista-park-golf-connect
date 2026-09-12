@@ -1,14 +1,14 @@
 {
   "name": "vista-windows-agent",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "Windows bay agent for VISTA Park Golf Connect",
   "main": "electron-main.js",
   "scripts": {
     "start": "electron .",
     "start:overlay": "electron .",
     "start:legacy": "node vista-agent.js",
-    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js",
+    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js && node game-log-probe.test.js && node screen-golf-monitor.test.js",
     "dist": "electron-builder --win portable"
   },
   "engines": {
@@ -23,6 +23,9 @@
     "productName": "VISTA Bay Agent",
     "files": [
       "electron-main.js",
+      "agent-config.js",
+      "game-log-probe.js",
+      "screen-golf-monitor.js",
       "electron-preload.js",
       "renderer/**",
       "screens/**",
