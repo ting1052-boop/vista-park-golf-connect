@@ -157,13 +157,22 @@ start-overlay.cmd
 
 ## 5. 시작프로그램 등록
 
-PowerShell을 열고 실행합니다.
+타석 PC는 매장 오픈 때 전원이 켜지므로, Agent도 부팅과 함께 자동 실행되어야
+한다. 등록하지 않으면 PC는 켜져 있는데 Agent만 꺼져 있어 남은 시간 표시와
+게임 상태 감지가 모두 동작하지 않는다.
+
+`VISTA-Bay-Agent.exe` 와 `install-startup.ps1` 을 같은 폴더에 두고 PowerShell
+에서 실행한다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-startup.ps1
 ```
 
-이후 Windows 부팅 시 Agent가 자동 실행됩니다.
+스크립트가 없으면 수동으로도 된다. `Win+R` 에 `shell:startup` 을 입력해 열린
+폴더에 `VISTA-Bay-Agent.exe` 의 바로가기를 넣으면 같은 효과다.
+
+등록 후 확인: PC를 재부팅하고 몇 분 뒤 관리자 대시보드에서 해당 타석이
+`PC 켜짐` 으로 바뀌는지 본다.
 
 ## 6. 서버 연동
 
