@@ -2,11 +2,10 @@
 
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
-export type MemberSocialProvider = "kakao" | "naver";
+export type MemberSocialProvider = "kakao";
 
 const providerLabels: Record<MemberSocialProvider, string> = {
-  kakao: "카카오",
-  naver: "네이버"
+  kakao: "카카오"
 };
 
 function getRedirectTo() {
@@ -16,10 +15,8 @@ function getRedirectTo() {
 
 export async function signInWithMemberProvider(provider: MemberSocialProvider) {
   const supabase = createBrowserSupabaseClient();
-  const oauthProvider = provider === "kakao" ? "kakao" : "custom:naver";
-
   const { error } = await supabase.auth.signInWithOAuth({
-    provider: oauthProvider,
+    provider: "kakao",
     options: {
       redirectTo: getRedirectTo()
     }
