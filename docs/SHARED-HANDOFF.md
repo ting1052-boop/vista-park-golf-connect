@@ -17,6 +17,7 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·배포 대기 | 미커밋 무인제어 상태 표시·타석별 ON/OFF·Agent 정상 종료 기능 마무리 및 기능 단위 커밋 | `src/lib/store-controller.ts`, `src/lib/supabase/automation-status.ts`, `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, 본 원장 |
 | Codex | 완료·배포 대기 | 회원 예약 화면 1차 정리: 관리자·비작동 링크 제거, 비로그인 예약 현황 숨김, 예약 입력 순서 재배치 | `src/app/member/app/page.tsx`, 본 원장 |
 | Codex | 완료·배포 대기 | 매장 제어기 폴링 시 만료 세션 자동 종료·타석 반납·장비 OFF 명령 연결 | `src/lib/session-cleanup.ts`, `src/app/api/store-controller/commands/route.ts`, 본 원장 |
 | Codex | 완료·현장/DB/배포 대기 | A-02 현장 진단 기반 Agent 게임 상태 구조 개편: 설정 병합, ScreenGolf 프로세스·실시간 로그 상태 머신, 단일 실행 | Agent 0.6.0 설치 ZIP, 게임 감지 모듈·설정·테스트·문서, telemetry 계약, 본 원장 |
@@ -470,3 +471,13 @@ Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 �
 - 앱 설치와 카카오 로그인 블록은 예약 안내 아래로 이동했다.
 - 검증: typecheck, 대상 ESLint, `git diff --check`, 프로덕션 빌드 통과. 로컬 비로그인 화면에서 섹션 순서와 제거 항목을 시각 확인했다.
 - 운영 DB에 예약을 생성하는 실제 접수 검증과 배포는 수행하지 않았다.
+
+## Admin Automation Completion (2026-09-15, Codex)
+
+- 남아 있던 무인제어 변경 4개 파일을 하나의 페이지+API 기능 단위로 마무리했다.
+- PC 전원 표시는 Agent 최근 2분 신호를 기준으로 하고, 프로젝터·타석 장비는 실제 상태로 오인하지 않도록 마지막 ON/OFF 명령과 실행 시각을 별도로 표시한다.
+- 타석별 PC 스위치가 켜진 상태에서는 Agent를 통한 Windows 정상 종료 명령을 보내며, 이용 중이면 서버와 화면에서 재확인을 요구한다. 꺼진 상태에서는 기존 타석 준비 명령으로 장비와 PC를 켠다.
+- 관리자 `이용 종료 정리`도 현재 시흥점 세션만 처리하도록 매장 필터를 적용했다.
+- 운영 상태 요약과 15초 자동 새로고침, 제어기 지연·이용 중 Agent 단절·실패 명령 경고를 추가했다.
+- 검증: typecheck, 대상 ESLint, `git diff --check`, 프로덕션 빌드 통과. 로컬 관리자 로그인 세션이 없어 실제 페이지 렌더와 장비 명령 실행은 하지 않았다.
+- 운영 DB·스키마 변경, 장비 제어, 배포는 수행하지 않았다.

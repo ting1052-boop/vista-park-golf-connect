@@ -196,6 +196,73 @@ export async function enqueueManualAutomation(
   });
 }
 
+async function enqueueAgentShutdownCommands(
+  supabase: SupabaseClient,
+  args: { storeId: string; bayIds: string[]; requestedFrom: string }
+) {
+  if (args.bayIds.length === 0) return { queued: 0, reused: 0 };
+
+  const activeCommandCutoff = new Date(Date.now() - SHUTDOWN_COMMAND_MAX_AGE_MS).toISOString();
+  const { data: existing, error: existingError } = await supabase
+    .from("store_controller_commands")
+    .select("bay_id")
+    .eq("store_id", args.storeId)
+    .eq("command_type", "shutdown_pc")
+    .in("status", ["pending", "processing"])
+    .gte("created_at", activeCommandCutoff)
+    .in("bay_id", args.bayIds);
+
+  if (existingError) throw new Error(existingError.message);
+
+  const existingBayIds = new Set(
+    ((existing ?? []) as AgentForShutdown[]).map((row) => row.bay_id).filter((id): id is string => Boolean(id))
+  );
+  const newBayIds = args.bayIds.filter((bayId) => !existingBayIds.has(bayId));
+
+  if (newBayIds.length > 0) {
+    const { error: insertError } = await supabase.from("store_controller_commands").insert(
+      newBayIds.map((bayId) => ({
+        store_id: args.storeId,
+        bay_id: bayId,
+        command_type: "shutdown_pc",
+        payload: {
+          scripts: [],
+          variables: { action: "shutdown_pc", requestedFrom: args.requestedFrom }
+        } satisfies StoreControllerCommandPayload
+      }))
+    );
+
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  return { queued: newBayIds.length, reused: existingBayIds.size };
+}
+
+export async function enqueueBayAgentShutdown(supabase: SupabaseClient, storeId: string, bayId: string) {
+  const { data: agents, error } = await supabase
+    .from("agent_devices")
+    .select("bay_id, last_seen_at")
+    .eq("store_id", storeId)
+    .eq("bay_id", bayId)
+    .eq("is_active", true);
+
+  if (error) throw new Error(error.message);
+
+  const agentOnline = ((agents ?? []) as AgentForShutdown[]).some((agent) => {
+    const lastSeenMs = agent.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0;
+    return lastSeenMs > 0 && Date.now() - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS;
+  });
+
+  if (!agentOnline) return { queued: 0, reused: 0, agentOnline: false };
+
+  const result = await enqueueAgentShutdownCommands(supabase, {
+    storeId,
+    bayIds: [bayId],
+    requestedFrom: "admin_bay_control"
+  });
+  return { ...result, agentOnline: true };
+}
+
 export async function enqueueStoreAgentShutdowns(supabase: SupabaseClient, storeId: string) {
   const { data: agents, error: agentsError } = await supabase
     .from("agent_devices")
@@ -218,40 +285,9 @@ export async function enqueueStoreAgentShutdowns(supabase: SupabaseClient, store
     )
   );
 
-  if (bayIds.length === 0) return { queued: 0, reused: 0 };
-
-  const activeCommandCutoff = new Date(Date.now() - SHUTDOWN_COMMAND_MAX_AGE_MS).toISOString();
-  const { data: existing, error: existingError } = await supabase
-    .from("store_controller_commands")
-    .select("bay_id")
-    .eq("store_id", storeId)
-    .eq("command_type", "shutdown_pc")
-    .in("status", ["pending", "processing"])
-    .gte("created_at", activeCommandCutoff)
-    .in("bay_id", bayIds);
-
-  if (existingError) throw new Error(existingError.message);
-
-  const existingBayIds = new Set(
-    ((existing ?? []) as AgentForShutdown[]).map((row) => row.bay_id).filter((id): id is string => Boolean(id))
-  );
-  const newBayIds = bayIds.filter((bayId) => !existingBayIds.has(bayId));
-
-  if (newBayIds.length > 0) {
-    const { error: insertError } = await supabase.from("store_controller_commands").insert(
-      newBayIds.map((bayId) => ({
-        store_id: storeId,
-        bay_id: bayId,
-        command_type: "shutdown_pc",
-        payload: {
-          scripts: [],
-          variables: { action: "shutdown_pc", requestedFrom: "admin_store_close" }
-        } satisfies StoreControllerCommandPayload
-      }))
-    );
-
-    if (insertError) throw new Error(insertError.message);
-  }
-
-  return { queued: newBayIds.length, reused: existingBayIds.size };
+  return enqueueAgentShutdownCommands(supabase, {
+    storeId,
+    bayIds,
+    requestedFrom: "admin_store_close"
+  });
 }

@@ -6,7 +6,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 //
 // 출처는 store_controller_commands 다. 매장 로컬 제어기가 명령을 가져가 실행한 뒤
 // 스크립트별 성공 여부를 response_payload.steps 에 기록하므로, 이 기록만으로
-// 각 타석 장비를 마지막으로 켰는지 껐는지 판단할 수 있다.
+// 각 타석 장비에 마지막으로 어떤 ON/OFF 명령이 성공했는지 판단할 수 있다.
+// 실제 전원 상태를 장비에서 읽어오는 값은 아니므로 UI에서도 "마지막 명령"으로 표시한다.
 //
 // 참고: 스키마에는 automation_logs 도 있으나 운영 DB에는 아직 생성되어 있지
 // 않아(2026-08-15 확인) 여기서는 사용하지 않는다.
@@ -17,7 +18,7 @@ export type AutomationDeviceStatusRow = {
   zone: string;
   device: string;
   provider: string;
-  /** 마지막으로 확인된 전원 상태 표시용 문구 */
+  /** 마지막으로 확인된 제어 명령 표시용 문구 */
   state: string;
   /** 상태 색상 판단용 */
   tone: "on" | "off" | "failed" | "unknown";
@@ -36,9 +37,9 @@ type ControllerCommandRecord = {
 
 export type ScriptRun = { ok: boolean; at: string };
 
-/** 스크립트 하나의 마지막 실행 결과로 본 전원 상태 */
+/** 스크립트 하나의 마지막 실행 결과로 본 마지막 제어 명령 */
 export type PowerState = {
-  /** true = 마지막으로 ON 실행됨, false = OFF, null = 실행 이력 없음 */
+  /** true = 마지막 ON 명령 성공, false = 마지막 OFF 명령 성공, null = 실행 이력 없음 */
   on: boolean | null;
   /** 마지막 실행이 실패했는지 */
   failed: boolean;
@@ -68,13 +69,13 @@ function buildLatestRunsByScript(commands: ControllerCommandRecord[]) {
   return latest;
 }
 
-// ON 스크립트와 OFF 스크립트의 마지막 실행을 비교해 현재 전원 상태를 추정한다.
+// ON 스크립트와 OFF 스크립트의 마지막 실행을 비교한다. 실제 장비 전원 상태는 추정하지 않는다.
 function resolveState(
   onRun: ScriptRun | undefined,
   offRun: ScriptRun | undefined
 ): Pick<AutomationDeviceStatusRow, "state" | "tone" | "lastRunAt"> {
   if (!onRun && !offRun) {
-    return { state: "실행 이력 없음", tone: "unknown", lastRunAt: null };
+    return { state: "명령 이력 없음", tone: "unknown", lastRunAt: null };
   }
 
   const newest =
@@ -83,14 +84,14 @@ function resolveState(
 
   if (!newest.ok) {
     return {
-      state: isOnNewest ? "켜기 실패 · 확인 필요" : "끄기 실패 · 확인 필요",
+      state: isOnNewest ? "마지막 ON 명령 실패" : "마지막 OFF 명령 실패",
       tone: "failed",
       lastRunAt: newest.at
     };
   }
 
   return {
-    state: isOnNewest ? "ON (이용 준비됨)" : "OFF (대기)",
+    state: isOnNewest ? "마지막 ON 명령 성공" : "마지막 OFF 명령 성공",
     tone: isOnNewest ? "on" : "off",
     lastRunAt: newest.at
   };
@@ -122,7 +123,7 @@ export async function getLatestScriptRuns(
   return buildLatestRunsByScript((data ?? []) as ControllerCommandRecord[]);
 }
 
-/** ON/OFF 스크립트의 마지막 실행을 비교해 전원 상태를 판단한다. */
+/** ON/OFF 스크립트의 마지막 실행을 비교해 마지막 제어 명령을 판단한다. */
 export function getPowerState(
   latest: Map<string, ScriptRun>,
   onScript: string,

@@ -6,6 +6,7 @@ import {
   siheungBayAutomation
 } from "@/lib/automation/device-map";
 import {
+  enqueueBayAgentShutdown,
   enqueueManualAutomation,
   enqueueStoreAgentShutdowns,
   isStoreControllerEnabled
@@ -170,8 +171,8 @@ export async function GET() {
       }
     }
 
-    // 타석별 장비 전원 상태(제어기 실행 기록 기준)와 이용 중 여부.
-    // 토글 UI 가 현재 상태를 보여주고, 이용 중인 타석을 실수로 끄지 않도록 쓰인다.
+    // 타석별 마지막 장비 명령(제어기 실행 기록 기준)과 이용 중 여부.
+    // 실제 PC 연결은 Agent 신호로 별도 표시하고, 이용 중인 타석을 실수로 끄지 않도록 쓰인다.
     const latestRuns = await getLatestScriptRuns(supabase, CURRENT_STORE_ID);
     const activeBayIds = new Set(
       ((sessionsResult.data ?? []) as ActiveSessionRow[]).map((row) => row.bay_id).filter((id): id is string => Boolean(id))
@@ -205,6 +206,7 @@ export async function GET() {
       ok: true,
       controllerEnabled,
       controllerStalled,
+      pendingCommandCount: (queueResult.data ?? []).length,
       stalePendingCount: staleControllerCommands.length,
       oldestPendingAt:
         staleControllerCommands.length > 0
@@ -241,13 +243,67 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
 
     if (body.action === "close_expired") {
-      const result = await closeExpiredSessions(supabase);
+      const result = await closeExpiredSessions(supabase, new Date(), { storeId: CURRENT_STORE_ID });
       return NextResponse.json({
         ok: true,
         message:
           result.scanned === 0
             ? "정리할 종료 초과 이용이 없습니다."
             : `${result.completed}건의 종료 초과 이용을 정리했습니다.`,
+        result
+      });
+    }
+
+    if (body.action === "pc_shutdown") {
+      if (typeof body.bayId !== "string" || body.bayId.length === 0) {
+        return NextResponse.json({ ok: false, message: "종료할 타석 PC를 선택해주세요." }, { status: 400 });
+      }
+
+      const { data: bay, error: bayError } = await supabase
+        .from("bays")
+        .select("id, bay_code")
+        .eq("id", body.bayId)
+        .eq("store_id", CURRENT_STORE_ID)
+        .maybeSingle();
+
+      if (bayError) throw new Error(bayError.message);
+      if (!bay) {
+        return NextResponse.json({ ok: false, message: "타석 정보를 찾을 수 없습니다." }, { status: 404 });
+      }
+
+      if (body.force !== true) {
+        const { count, error: countError } = await supabase
+          .from("access_sessions")
+          .select("id", { count: "exact", head: true })
+          .eq("bay_id", bay.id)
+          .in("status", ["active", "extended", "overdue"]);
+
+        if (countError) throw new Error(countError.message);
+        if ((count ?? 0) > 0) {
+          return NextResponse.json(
+            {
+              ok: false,
+              requiresForce: true,
+              message: `${bay.bay_code}은 현재 고객 이용 중입니다. 그래도 PC를 종료하려면 한 번 더 확인해주세요.`
+            },
+            { status: 409 }
+          );
+        }
+      }
+
+      const result = await enqueueBayAgentShutdown(supabase, CURRENT_STORE_ID, bay.id);
+      if (!result.agentOnline) {
+        return NextResponse.json(
+          { ok: false, message: `${bay.bay_code} Agent가 연결되어 있지 않아 PC 종료 명령을 보낼 수 없습니다.` },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        message: result.reused > 0
+          ? `${bay.bay_code} PC 종료 명령이 이미 전달되어 처리 중입니다.`
+          : `${bay.bay_code} PC에 Windows 정상 종료 명령을 전달했습니다. 약 10초 후 종료됩니다.`,
         result
       });
     }
