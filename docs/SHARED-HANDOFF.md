@@ -17,6 +17,7 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·배포 대기 | 매장 제어기 폴링 시 만료 세션 자동 종료·타석 반납·장비 OFF 명령 연결 | `src/lib/session-cleanup.ts`, `src/app/api/store-controller/commands/route.ts`, 본 원장 |
 | Codex | 완료·현장/DB/배포 대기 | A-02 현장 진단 기반 Agent 게임 상태 구조 개편: 설정 병합, ScreenGolf 프로세스·실시간 로그 상태 머신, 단일 실행 | Agent 0.6.0 설치 ZIP, 게임 감지 모듈·설정·테스트·문서, telemetry 계약, 본 원장 |
 | Codex | 완료·현장 진단 대기 | Agent 로컬 게임 로그 진단 모드 추가: 홀·라운드 상태 단서 존재 여부만 안전하게 기록 | Agent 0.5.1 및 설치 ZIP, 설정/문서/테스트, 본 원장; 배포 없음 |
 | Codex | 완료·DB 적용/배포 대기 | 골프 프로그램 상태 감지 MVP 구현: 프로세스 삼상값, 안전한 telemetry 저장, 관리자 대시보드 표시 | Agent 0.5.0, heartbeat/API, 신규 migration, 메인 대시보드, 본 원장 |
@@ -450,3 +451,12 @@ Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 �
 무인제어 정리 작업으로 보이는 변경을 그대로 뒀다. 내 작업과 섞지 않으려고 건드리지 않았다.
 `src/lib/store-controller.ts`, `src/lib/supabase/automation-status.ts`,
 `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`.
+
+## Expired Session Polling Closeout (2026-09-15, Codex)
+
+- `vercel.json` cron 대신 상시 실행 중인 매장 제어기의 `/api/store-controller/commands` 조회를 종료 스케줄러로 사용한다.
+- 인증된 제어기 조회마다 시흥점의 종료시각이 지난 활성 세션만 확인하고, 기존 `closeExpiredSessions`를 통해 세션 완료·타석 반납·장비 OFF 명령 등록을 수행한다.
+- 만료 정리를 예약 사전 준비보다 먼저 실행해 같은 조회에서 OFF와 ON이 함께 생기면 최종 명령 순서가 ON이 되도록 했다.
+- 정리 실패는 기존 명령 수령과 예약 준비를 막지 않으며, 동시 조회는 기존 조건부 상태 갱신으로 중복 종료를 방지한다.
+- 운영 DB·스키마 변경과 배포는 하지 않았다.
+- 검증: typecheck, 대상 ESLint, `git diff --check`, 프로덕션 빌드 통과. `npm run preflight`는 샌드박스의 내부 `git` 실행 제한(`spawnSync git EPERM`)으로 실패하여 원장 확인과 `git status`를 수동 수행했다.

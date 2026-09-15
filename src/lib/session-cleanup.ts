@@ -181,14 +181,21 @@ export async function closeSingleSession(
 
 export async function closeExpiredSessions(
   supabase: SupabaseClient,
-  now = new Date()
+  now = new Date(),
+  options: { storeId?: string } = {}
 ): Promise<SessionCleanupResult> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("access_sessions")
     .select("id, store_id, reservation_id, bay_id, ends_at")
     .in("status", [...EXPIRING_SESSION_STATUSES])
     .not("ends_at", "is", null)
-    .lte("ends_at", now.toISOString())
+    .lte("ends_at", now.toISOString());
+
+  if (options.storeId) {
+    query = query.eq("store_id", options.storeId);
+  }
+
+  const { data, error } = await query
     .order("ends_at", { ascending: true })
     .limit(50);
 

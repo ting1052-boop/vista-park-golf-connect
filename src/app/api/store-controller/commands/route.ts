@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { StoreControllerCommandPayload, StoreControllerCommandStatus } from "@/lib/store-controller";
 import { prepareDueReservations } from "@/lib/reservation-prepare";
+import { closeExpiredSessions } from "@/lib/session-cleanup";
 
 const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -61,9 +62,25 @@ export async function GET(request: NextRequest) {
   const controllerId = getControllerId(request);
   const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
 
-  // 곧 시작하는 예약의 타석을 미리 켠다. 매장 제어기는 상시 켜져 있고 몇 초마다
-  // 이 엔드포인트를 조회하므로, 별도 스케줄러 없이 여기서 시각을 확인한다.
-  // 준비에 실패해도 제어기가 명령을 받아가는 것은 막지 않는다.
+  // 매장 제어기가 상시 조회하는 이 엔드포인트를 종료·준비 스케줄러로 사용한다.
+  // 종료를 먼저 처리해야 같은 타석에 OFF와 ON이 함께 생길 때 최종 순서가 ON이 된다.
+  // 각 확인 실패는 격리해 기존 장비 명령 수령을 막지 않는다.
+  try {
+    const cleanup = await closeExpiredSessions(supabase, now, { storeId: CURRENT_STORE_ID });
+    if (cleanup.failed > 0) {
+      console.warn("만료 세션 일부 정리 실패", {
+        scanned: cleanup.scanned,
+        completed: cleanup.completed,
+        failed: cleanup.failed
+      });
+    }
+  } catch (error) {
+    console.warn("만료 세션 정리 확인 실패", {
+      error: error instanceof Error ? error.message : "unknown"
+    });
+  }
+
+  // 곧 시작하는 예약의 타석을 미리 켠다.
   try {
     await prepareDueReservations(supabase, CURRENT_STORE_ID, now);
   } catch (error) {
