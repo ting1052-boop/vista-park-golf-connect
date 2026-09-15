@@ -17,6 +17,10 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·현장/DB/배포 대기 | A-02 현장 진단 기반 Agent 게임 상태 구조 개편: 설정 병합, ScreenGolf 프로세스·실시간 로그 상태 머신, 단일 실행 | Agent 0.6.0 설치 ZIP, 게임 감지 모듈·설정·테스트·문서, telemetry 계약, 본 원장 |
+| Codex | 완료·현장 진단 대기 | Agent 로컬 게임 로그 진단 모드 추가: 홀·라운드 상태 단서 존재 여부만 안전하게 기록 | Agent 0.5.1 및 설치 ZIP, 설정/문서/테스트, 본 원장; 배포 없음 |
+| Codex | 완료·DB 적용/배포 대기 | 골프 프로그램 상태 감지 MVP 구현: 프로세스 삼상값, 안전한 telemetry 저장, 관리자 대시보드 표시 | Agent 0.5.0, heartbeat/API, 신규 migration, 메인 대시보드, 본 원장 |
+| Codex | 완료 | 골프 프로그램 상태 감지 구조 검토 및 계획서 작성만 수행 | `docs/agent-game-state-monitoring-plan.md`, 본 원장; 구현·배포 없음 |
 | Codex | 완료 | 매장 종료 시 각 타석 Agent를 통한 Windows 정상 종료 명령 추가 | DB migration·GitHub·Vercel 배포 완료, 0.4.0 실기기 교체 대기 |
 | Codex | 완료 | 대시보드 유령 이용 상태 원인 추적, 이용 상세·정확한 종료 조치 구현 | 커밋 `70b60f6`, Vercel 배포 및 A-02 과거 세션 정리 완료 |
 | Codex | 완료 | 2번 타석 입장 시 장비 미기동 및 만료 세션 미반납 장애 진단 | HA 내부 자동화 정상, Nabu Casa 구독·원격연결 및 Vercel 비밀값 불일치가 외부 호출을 차단함 |
@@ -25,6 +29,12 @@
 | Claude Code | 완료 | 무인제어 화면의 타석 장비 OFF 버튼을 ON/OFF 토글로 전환(bay_on 액션 추가, 현재 상태 표시, 이용 중 타석 오조작 방지) | `src/app/api/admin/automation/route.ts`, `src/app/admin/automation/automation-client.tsx`, `src/lib/supabase/automation-status.ts` |
 | Codex | 완료 | 자동 종료 로그 누락과 대시보드 오늘 예약 2건 집계 원인 점검 | Agent 종료 경로의 장비 반납 명령 누락 수정, 오늘 합계를 예약·입장으로 명확화 |
 | Codex | 배포 완료·현장 반영 대기 | 키오스크·관리자 입장 공통 장비 ON 중단 진단 및 재발 방지 구현 | 커밋 `adb729a`, GitHub·Vercel 배포 완료; HA 노트북 제어기 업데이트·재등록 필요 |
+| Codex | 완료·배포 대기 | 무인제어 운영 상태 감시 UI 및 타석별 PC 정상 종료 스위치 구현 | 로컬 화면·타입·대상 lint 검증 완료, 실제 종료 명령과 배포 미실행 |
+| Claude Code | 완료·배포됨 | Codex 의 게임 상태 감지 0.6.0 커밋·배포, A-02 진단서 반영 수정(연습장 오집계·라운드 종료 보존·과거 로그 오인·heartbeat 지연), Agent 0.7.0 빌드 | `windows-agent/screen-golf-monitor.js`·테스트, `electron-main.js`, `package.json`; 커밋 `933cd3a`·`94b22cf`·`0eca1ac` |
+| Claude Code | 완료·배포됨 | 예약 10분 전 타석 장비 자동 준비(제어기 조회 시점 실행, 켜져 있으면 생략) | `src/lib/reservation-prepare.ts`(신규), `src/app/api/automation/reservation-prepare/route.ts`, `src/app/api/store-controller/commands/route.ts`; 커밋 `fdcebeb` |
+| Claude Code | 완료·배포됨 | 회원 예약 화면 카카오 로그인·시간대 선택 배포, `/api/member/book` 이용시간 화이트리스트 버그 수정 | `src/app/member/app/page.tsx`, `src/components/social-login-panel.tsx`, `src/app/api/member/*`; 커밋 `06c3cba` |
+| Claude Code | 완료·배포됨 | 관리자 이용시간 조정을 실제 DB 반영으로 수정(기존 버튼은 화면만 바꿨음) | `src/app/api/admin/session/extend/route.ts`(신규), `dashboard-client.tsx`; 커밋 `5823ec0` |
+| Claude Code | 미해결·결정 필요 | 카카오 KOE205 는 코드로 해결 불가(Supabase 가 scope 를 덧붙임). 카카오 콘솔 동의항목 설정 필요 | 시도 후 되돌림: 커밋 `126b532` → `3079aa1` |
 
 ## 저장소와 배포 상태
 
@@ -106,6 +116,24 @@
 | 2026-07-25 | Codex | 사용자 승인 후 A-02 과거 세션 1건 완료 처리 및 타석 반납 | 활성 세션 0건, 시흥점 3개 타석 모두 available 확인 |
 
 ## 완료 보고 형식
+
+### 2026-09-12 / Codex: 골프 상태 감지 계획서
+
+- 목적: 실제 게임 프로세스·메뉴·홀·라운드 종료의 관찰 전용 감지 방안 검토.
+- 변경 파일: `docs/agent-game-state-monitoring-plan.md`, 본 원장. 기존 다른 작업자의 변경 보존.
+- 검증: Agent와 API/DB 정의 읽기, 첨부 설치폴더 단서 대조, 공식 기술문서 확인, 문서 diff 공백 검사. 실행 코드 변경이 없어 빌드/기능 테스트는 미실행.
+- commit/push/deploy: 미실행. 운영 DB·기기 조작 없음.
+- 남은 문제: 제품/버전과 실제 게임 실행파일, Logs의 상태 이벤트 제공 여부, 접근성·캡처 지원은 현장 확인 필요. 계획서의 감지 가능성은 아직 실증되지 않음.
+
+### 2026-09-12 / Codex: 골프 상태 감지 MVP 구현
+
+- 목적: 게임 실행 여부와 VISTA 이용 세션을 분리하고, 불확실한 게임 상태를 추측 없이 관리자 대시보드에 표시.
+- 변경 파일: `windows-agent/electron-main.js`, `windows-agent/bays.config.json`, `windows-agent/agent.config.example.json`, `windows-agent/package.json`, `windows-agent/package-lock.json`, `windows-agent/README.md`, `src/lib/game-telemetry.ts`, `src/lib/agent-server.ts`, `src/app/api/agent/heartbeat/route.ts`, `src/lib/dashboard-data.ts`, `src/lib/supabase/bays-server.ts`, `src/app/admin/dashboard/dashboard-client.tsx`, `supabase/schema.sql`, `supabase/migrations/202609120001_agent_game_telemetry.sql`, 계획서, 본 원장.
+- 동작: Agent 0.5.0은 감지가 명시적으로 활성화되고 정확한 실행파일명이 설정된 경우에만 프로세스 존재를 삼상값으로 관측한다. 메뉴·플레이·홀·라운드 종료는 근거가 없어 unknown으로 유지한다. 선택 telemetry 저장 실패는 기존 heartbeat·세션·장비 제어를 막지 않는다.
+- 화면: 메인 대시보드 타석 카드에 `게임 감지 미지원`, `골프 프로그램 미실행`, `골프 프로그램 실행 · 플레이 확인 불가`, `게임 상태 확인 불가` 등의 보수적인 상태 행을 추가. 기존 DB에 migration이 없어도 이전 쿼리로 폴백한다.
+- 검증: `npm run typecheck`, 대상 ESLint, `npm --prefix windows-agent run check`, `npm run build`, `npm run verify:quick` 통과. 로컬 대시보드에서 3열 카드와 상태 행을 시각 확인. 운영 DB·현장 PC·기기 조작 없음.
+- commit/push/deploy: 미실행. `202609120001_agent_game_telemetry.sql` 운영 적용과 배포는 사용자 승인 대기.
+- 남은 문제: 현장 게임 제품/버전과 실제 프로세스명 확인, `Logs`의 메뉴·홀·종료 이벤트 실증, 그 결과에 따른 2단계 감지기 선택. 정확한 프로세스 확인 전 `gameMonitoringEnabled`는 false 유지.
 
 작업자는 완료 시 아래 항목을 이 문서에 추가한다.
 
@@ -306,3 +334,119 @@ commit/push/deploy:
 - Verification: `npm run typecheck`, targeted ESLint, PowerShell parser checks for both scripts, `git diff --check`, and the full `npm run build` (46 routes) passed. No production device command was performed during local verification.
 - Safe recovery order: deploy server safeguards first; then update/reinstall and start the HA-laptop controller; confirm stale commands become cancelled; run `이용 종료 정리` for the expired session; finally perform one fresh bay-ON admission test.
 - Deployment verification: GitHub reported the Vercel check as `success`; the production Store Controller endpoint returned HTTP 401 for an intentionally invalid bearer token, confirming the route is online and protected. The local machine does not store the production controller token, so stale-command cancellation will run automatically on the HA laptop's first authenticated poll.
+
+## Current Work (2026-09-01, Codex - Operations status clarity)
+
+- Status: implementation and local verification completed; commit and deployment not performed.
+- Purpose: remove the misleading contradiction where the dashboard showed a live PC while `/admin/automation` showed `장비 OFF` from an older command.
+- Resolution: PC state is now shown separately from equipment automation. A recent Agent heartbeat is labeled `PC 켜짐`; a missing heartbeat is conservatively labeled `PC 확인 안 됨`. Equipment cards say `마지막 장비 명령 ON/OFF` and explicitly explain that this is controller command history, not physical read-back.
+- PC control: the card switch now follows the Agent heartbeat instead of the last HA command. Switching an online PC off queues a bay-specific `shutdown_pc` command for the Agent, which performs a guarded Windows shutdown after ten seconds. Switching an unconfirmed/offline PC on uses the existing projector-first `bay_on` path. Projector and other bay equipment keep separate ON/OFF command buttons.
+- Safety: per-bay shutdown is refused when the Agent is offline. An active/extended/overdue customer session requires a second force confirmation before the shutdown command is queued. Duplicate shutdown requests within five minutes reuse the existing command.
+- Monitoring UI: added a 15-second auto-refreshing health banner and compact summaries for controller availability, pending/stale commands, connected PC Agents, and active/expired sessions. An active session without an Agent heartbeat, a failed equipment command, a stalled/disabled controller, or an expired session contributes to the visible issue count.
+- Dashboard wording: the equipment table is now titled `무인 장비 마지막 명령`, and stale Agent state no longer claims that a PC is definitely off.
+- Files: `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `src/app/admin/dashboard/dashboard-client.tsx`, `src/lib/store-controller.ts`, `src/lib/supabase/automation-status.ts`, `docs/SHARED-HANDOFF.md`.
+- Verification: local `/admin/automation` rendered against the configured data with no browser console errors. A-02 visibly showed `PC 켜짐` alongside `마지막 장비 명령 OFF`; its PC switch had `aria-checked=true` and was enabled for normal shutdown. TypeScript, targeted ESLint, and diff checks passed.
+- Safety: no production database write, schema change, deployment, or physical device command was performed.
+
+## Agent Game Log Diagnostic Probe (2026-09-12, Codex)
+
+- Status: implementation, tests, and local packaging completed; one-bay field diagnosis is pending.
+- Purpose: determine whether the installed golf program exposes reliable hole-number or round-end evidence in local text logs before promoting any value to an operational dashboard status.
+- Agent behavior: version 0.5.1 watches the configured `Logs` directory every 10 seconds. Its first scan establishes a baseline and ignores old content. Later scans inspect at most 32 KB of changed text and record only candidate categories (`hole_candidate`, `round_start_candidate`, `round_end_candidate`, `menu_candidate`) plus candidate hole numbers.
+- Privacy and isolation: raw log text, file names, full paths, screenshots, and customer data are not recorded or uploaded. Results remain only in `%APPDATA%\VISTA Bay Agent\logs\game-monitor-diagnostics.log`. Probe failures cannot block reservation, session timing, overlays, heartbeats, or equipment automation.
+- Truth policy: these candidates do not set `currentHole`, `gameState`, or `roundStatus` yet. A field sequence must repeatedly match the visible game screen before a parser can be promoted. Unknown or conflicting evidence remains `확인 불가`.
+- Files: `windows-agent/game-log-probe.js`, `windows-agent/game-log-probe.test.js`, `windows-agent/electron-main.js`, Agent config/package/README files, `docs/agent-game-state-monitoring-plan.md`, and this handoff.
+- Verification: Agent syntax/check suite passed with two probe tests; targeted ESLint, project typecheck, `git diff --check`, packaged version inspection, and packaged module inspection passed.
+- Package: `windows-agent/dist/VISTA-Bay-Agent-0.5.1-game-diagnostics.zip` contains the verified 0.5.1 `win-unpacked` application. The single portable-EXE target did not replace the older EXE because of the existing Windows packaging/signing limitation; do not distribute the stale `dist/VISTA-Bay-Agent.exe` as 0.5.1.
+- Field procedure: install 0.5.1 on one test bay, start Agent before the golf program, then pause at menu, hole 1, another hole, and round completion for at least 10 seconds each. Retrieve only `game-monitor-diagnostics.log` for analysis.
+- Commit/push/deploy/database: not performed. No production data or physical device commands were used.
+
+## ScreenGolf State Monitor 0.6.0 (2026-09-15, Codex)
+
+- Evidence quality: the input handoff was produced by Codex running directly on the physical A-02 ScreenGolf PC while the operator exercised lobby, course entry, holes 2-18, the last hole, lobby return, and process exit. Treat the confirmed executable paths and log patterns as field evidence, not a filename guess.
+- Resolution: bundled public defaults and ignored local secrets are now merged. This prevents an older local config from silently disabling new monitoring defaults. The verified process is `ScreenGolf.exe` and the readable state log is `ScreenGolf\Saved\Logs\ScreenGolf.log`.
+- Live state machine: process absence reports program not running; `BP_LobbyModebase_C`/`UIMap` reports menu; `SGGameModeBase_C`/course Browse reports round in progress. Returning from a round to the lobby remains unclassified because the readable log does not yet distinguish normal completion from early exit.
+- Hole/end policy: locked `Binaries\Win64\Logs\main_*.log` is diagnostic-only. When it becomes readable after play, `NNhole` and `IsEndedHole ... State: 1` candidates are recorded locally but never presented as a live current hole or confirmed completion.
+- Reliability: added a single-instance lock, sanitized state-transition diagnostics, throttled heartbeat/telemetry rejection logging, and a repeatable Windows directory build that avoids the existing signing symlink failure.
+- Files: `windows-agent/agent-config.js`, `windows-agent/screen-golf-monitor.js` and tests, `windows-agent/game-log-probe.js` and tests, `windows-agent/electron-main.js`, configs/package/README, `src/lib/game-telemetry.ts`, `docs/agent-game-state-monitoring-plan.md`, `docs/park-golf-pc-round-end-diagnostic-prompt.md`, and this handoff.
+- Verification: Agent check suite passed 5 tests; targeted ESLint, project typecheck, and `git diff --check` passed. `npm run dist` completed successfully with the new Windows directory target. Packaged asar version/module inspection passed.
+- Package: `windows-agent/dist/VISTA-Bay-Agent-0.6.0-screen-golf-monitor.zip`.
+- Remaining field investigation: use `docs/park-golf-pc-round-end-diagnostic-prompt.md` on A-02 to compare normal final-hole completion with an early lobby exit. Do not promote a completion regex without a distinguishing live signal. Real-time hole display remains unavailable unless the vendor exposes an unlocked log/API/state file or a separately validated local OCR adapter is added.
+- Commit/push/deploy/database: the earlier observation-only telemetry foundation is already in `origin/main` as commit `933cd3a`; this 0.6.0 field-evidence revision is not committed or deployed. Production DB migration application and dashboard receipt still need explicit verification/approval before field rollout.
+
+## Release + Field Fixes (2026-09-12 ~ 09-15, Claude Code)
+
+Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 이후 커밋·배포했다.
+아래는 그 이후 진행분 전체다. 커밋 순서대로 적는다.
+
+### 배포한 것
+
+| commit | 내용 |
+| --- | --- |
+| `933cd3a` | Agent 게임 상태 감지(관찰 전용) 일체 + `game_telemetry` 마이그레이션 + 대시보드 표시 |
+| `1f05bbb` | 대시보드 게임 상태 줄 확대(12px→16px) |
+| `8584c26` | `install-startup.ps1` 이 포터블 exe 도 지원 |
+| `06c3cba` | 회원 예약 화면 카카오 로그인·시간대 선택 + `/api/member/book`, `/api/member/my-reservations` |
+| `3079aa1` | 카카오 scope 수정 시도 되돌림(아래 참조) |
+| `fdcebeb` | 예약 10분 전 타석 장비 자동 준비 |
+| `94b22cf` | Agent 게임 상태 감지 수정(A-02 진단서 반영) |
+| `0eca1ac` | Agent 0.7.0 |
+
+- 운영 DB: `game_telemetry` / `game_telemetry_received_at` 는 사용자가 적용 완료했다(조회로 확인).
+  `202608210001_store_duration_options.sql`, `202608210002_walkin_request_idempotency.sql` 는 적용 여부 미확인.
+
+### Codex 가 알아야 할 판단 두 가지
+
+1. **카카오 KOE205 는 코드로 못 고친다.** 클라이언트에서 `signInWithOAuth({ options: { scopes } })`
+   를 줘도 Supabase 는 기본 scope 를 **대체하지 않고 뒤에 덧붙인다.** 배포본에서 실제로 나간 값은
+   `account_email profile_image profile_nickname profile_nickname` 이었다(브라우저에서 인가 URL 직접 확인).
+   `account_email` 이 남아 KOE205 가 유지되므로, 해결은 카카오 개발자 콘솔에서 닉네임·프로필 사진·
+   카카오계정(이메일) 동의항목을 사용으로 설정하는 쪽이다. 같은 수정을 다시 시도하지 말 것.
+
+2. **예약 사전 준비의 실행 주체는 매장 제어기다.** 기존 `reservation-prepare` 는 Vercel 에서
+   Home Assistant 를 직접 호출했다. 클라우드에서 매장 사설망에 닿을 수 없어 실행되면 항상 실패하는
+   코드였고, 존재하지 않는 `automation_logs` 에 기록하려 했다. 새 `src/lib/reservation-prepare.ts` 는
+   제어기 명령을 큐에 넣고, 호출 시점은 제어기가 `/api/store-controller/commands` 를 조회할 때다.
+   `vercel.json` 이 비어 있어 cron 을 쓸 수 없으므로 상시 켜진 제어기를 스케줄러로 삼았다.
+   이미 켜져 있는 타석에는 명령을 넣지 않는다(램프 수명). 중복 방지는
+   `reservations.automation_prepare_status` 선점으로 한다.
+
+### Agent 진단서(2026-09-15 A-02) 반영 결과
+
+고친 것: 연습장 오집계(맵 이름으로 판별, `Practice_`/`Tutorial_`/`Test_` 제외. `SGGameModeBase_C` 는
+연습장과 공용이라 단독으로 라운드를 만들지 않음), 중복 `lobby_entered` 가 종료 상태를 덮던 문제
+(`completed` 확정 후 다음 `round_entered` 까지 유지), `exit_requested` 상태 전이(라운드 중 종료는
+`aborted`), 시작 시 과거 로그 오인(첫 조회는 파일 끝을 기준점으로), `tick()` 의 telemetry 미대기.
+
+이미 되어 있던 것: heartbeat 의 비정상 HTTP 응답 기록은 `recordHeartbeatResult` 에 이미 있었다.
+진단서 P0-5 는 현재 코드에 해당하지 않는다.
+
+하지 않은 것: `currentHole` 은 실행 중 잠기는 native 로그에만 있어 게임 측 상태 출력 없이는 만들 수
+없다. 라운드 수 집계(`roundInstanceId`, `round_ended` 이벤트, 서버 테이블, UNIQUE 제약)는 새 기능이라
+이번 범위에서 제외했다. 진단서 P2-1(포터블 exe 안에 타석 토큰 포함)도 손대지 않았다.
+
+### 함께 고친 운영 버그
+
+- `/api/member/book` 이 허용 이용시간을 `[30, 70, 110, 150]` 으로 코드에 박아두고 있었다. 서비스 시간을
+  90분 15분·120분 20분으로 바꾼 뒤 화면은 105·140 분을 보내므로 **90분과 120분 예약이 항상 거절**되는
+  상태였다. 관리자 요금설정에서 허용 길이를 가져오도록 바꿨다.
+- 대시보드 "30분 연장" 버튼이 화면 상태만 바꾸고 DB 를 건드리지 않아, 15초 새로고침 때 되돌아갔다.
+  연장용 서버 API 자체가 없었다. `/api/admin/session/extend` 를 만들어 실제로 반영되게 했다(`5823ec0`).
+
+### 남은 문제 (미해결, 확인 필요)
+
+- `vercel.json` 이 `{}` 다. `/api/cron/close-expired-sessions` 가 **아무도 호출하지 않는다.**
+  시간 종료 세션 자동 정리가 동작하지 않는 상태다. 예약 사전 준비와 같은 방식으로 제어기 조회에
+  붙일지, Vercel cron 을 등록할지 정해야 한다.
+- `automation_logs` / `automation_devices` / `automation_scenes` 는 여전히 운영 DB 에 없다.
+  `src/lib/automation/sessions.ts` 등의 insert 는 계속 조용히 실패한다.
+- 타석 PC 시작프로그램 등록이 되어 있지 않다. 매장 오픈으로 재부팅되면 Agent 가 뜨지 않아
+  남은 시간 표시와 게임 감지가 모두 멈춘다. 2026-09-15 기준 A-01 은 46시간, A-03 은 60시간 신호 없음.
+- 회원 화면 정리 3건(`docs/codex-spec-member-ui-phase1.md`)은 스펙만 있고 미구현이다.
+  관리자 링크 삭제, 예약자 정보 위치 이동, 비로그인 시 예약 현황 숨김 — 수용 기준 전부 미충족 상태.
+
+### 작업트리에 남겨둔 것 (커밋하지 않음)
+
+무인제어 정리 작업으로 보이는 변경을 그대로 뒀다. 내 작업과 섞지 않으려고 건드리지 않았다.
+`src/lib/store-controller.ts`, `src/lib/supabase/automation-status.ts`,
+`src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`.
