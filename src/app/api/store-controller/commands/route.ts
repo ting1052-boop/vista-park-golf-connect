@@ -2,6 +2,9 @@ import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { StoreControllerCommandPayload, StoreControllerCommandStatus } from "@/lib/store-controller";
+import { prepareDueReservations } from "@/lib/reservation-prepare";
+
+const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
 type CommandRow = {
   id: string;
@@ -57,6 +60,17 @@ export async function GET(request: NextRequest) {
   const staleBeforeIso = new Date(now.getTime() - COMMAND_MAX_AGE_MS).toISOString();
   const controllerId = getControllerId(request);
   const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
+
+  // 곧 시작하는 예약의 타석을 미리 켠다. 매장 제어기는 상시 켜져 있고 몇 초마다
+  // 이 엔드포인트를 조회하므로, 별도 스케줄러 없이 여기서 시각을 확인한다.
+  // 준비에 실패해도 제어기가 명령을 받아가는 것은 막지 않는다.
+  try {
+    await prepareDueReservations(supabase, CURRENT_STORE_ID, now);
+  } catch (error) {
+    console.warn("예약 사전 준비 확인 실패", {
+      error: error instanceof Error ? error.message : "unknown"
+    });
+  }
 
   // 제어기가 장시간 꺼졌다가 다시 켜져도 과거 ON/OFF 명령을 실행하지 않는다.
   // 운영 장비 명령은 생성 후 15분이 지나면 안전하게 폐기한다.
