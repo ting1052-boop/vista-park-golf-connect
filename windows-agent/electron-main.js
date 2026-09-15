@@ -42,6 +42,8 @@ let gameTelemetryRefreshPromise = null;
 let latestGameTelemetry = null;
 let gameLogProbeTimer = null;
 let screenGolfMonitor = null;
+let lastHeartbeatIssueKey = null;
+let lastHeartbeatIssueLoggedAt = 0;
 
 app.on("second-instance", () => {
   const window = setupWindow && !setupWindow.isDestroyed() ? setupWindow : mainWindow;
@@ -619,13 +621,45 @@ async function postHeartbeat(payload) {
     body: JSON.stringify(payload)
   });
 
-  return { ok: response.ok, status: response.status };
+  const responseBody = await response.json().catch(() => null);
+  return {
+    ok: response.ok,
+    status: response.status,
+    gameTelemetryAccepted:
+      responseBody && typeof responseBody.gameTelemetryAccepted === "boolean"
+        ? responseBody.gameTelemetryAccepted
+        : null
+  };
+}
+
+function recordHeartbeatResult(result) {
+  if (result.skipped) return;
+  const issueKey = !result.ok
+    ? `http_${result.status ?? "unknown"}`
+    : result.gameTelemetryAccepted === false
+      ? "telemetry_rejected"
+      : null;
+  const now = Date.now();
+
+  if (issueKey) {
+    if (issueKey !== lastHeartbeatIssueKey || now - lastHeartbeatIssueLoggedAt >= 300_000) {
+      log("Heartbeat warning", { reason: issueKey });
+      lastHeartbeatIssueLoggedAt = now;
+    }
+    lastHeartbeatIssueKey = issueKey;
+    return;
+  }
+
+  if (lastHeartbeatIssueKey) log("Heartbeat recovered");
+  lastHeartbeatIssueKey = null;
 }
 
 async function tick() {
   let session = await loadSession();
   let remainingSeconds = getRemainingSeconds(session);
-  void refreshGameTelemetry();
+  // 결과를 기다린다. 기다리지 않으면 이번 heartbeat 에 직전 주기의 게임 상태가
+  // 실려 나가, 화면 전환이 한 주기(기본 15초) 늦게 반영된다.
+  await refreshGameTelemetry();
   const gameTelemetry =
     latestGameTelemetry ??
     createGameTelemetry({
@@ -713,7 +747,7 @@ async function tick() {
   }
 
   try {
-    await postHeartbeat({
+    const heartbeatResult = await postHeartbeat({
       agentId: config.agentId,
       storeId: config.storeId,
       bayId: config.bayId,
@@ -728,6 +762,7 @@ async function tick() {
       screenLocked: mode === "lock",
       lastSeenAt: nowIso()
     });
+    recordHeartbeatResult(heartbeatResult);
   } catch (error) {
     log("Heartbeat failed", { error: error.message });
   }
