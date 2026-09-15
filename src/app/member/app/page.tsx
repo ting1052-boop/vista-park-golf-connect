@@ -8,8 +8,6 @@ import {
   ChevronRight,
   Clock,
   Loader2,
-  MapPin,
-  MonitorCog,
   Phone,
   ShieldAlert,
   Smartphone,
@@ -649,12 +647,6 @@ export default function MemberAppPage() {
           </div>
         </header>
 
-        <PwaInstallCard />
-
-        <div className="mt-5">
-          <SocialLoginPanel />
-        </div>
-
         <section className="mt-5">
           <div className="flex items-center gap-2">
             <Store className="text-vista-leaf" size={21} aria-hidden="true" />
@@ -702,41 +694,7 @@ export default function MemberAppPage() {
         <section className="mt-5 rounded-md border border-[#dfe8dc] p-4">
           <div className="flex items-center gap-2">
             <CalendarClock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">2. 예약자 정보</h2>
-          </div>
-
-          <div className="mt-4 grid gap-3">
-            <label className="grid gap-1 text-sm font-bold text-[#4f5b50]">
-              예약자 이름
-              <div className="flex items-center gap-2 rounded-md border border-[#cad8c6] bg-[#fbfcfa] px-3 py-3">
-                <UserRound size={18} className="text-[#697468]" aria-hidden="true" />
-                <input
-                  value={customerName}
-                  onChange={(event) => setCustomerName(event.target.value)}
-                  className="w-full bg-transparent font-semibold outline-none"
-                  placeholder="예: 홍길동"
-                />
-              </div>
-            </label>
-
-            <label className="grid gap-1 text-sm font-bold text-[#4f5b50]">
-              전화번호 뒤 4자리
-              <div className="flex items-center gap-2 rounded-md border border-[#cad8c6] bg-[#fbfcfa] px-3 py-3">
-                <Phone size={18} className="text-[#697468]" aria-hidden="true" />
-                <input
-                  value={phoneLast4}
-                  onChange={(event) => setPhoneLast4(event.target.value.replace(/\D/g, "").slice(0, 4))}
-                  className="w-full bg-transparent font-semibold outline-none"
-                  inputMode="numeric"
-                  placeholder="예: 1234"
-                />
-              </div>
-            </label>
-          </div>
-
-          <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
-            <CalendarClock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">3. 날짜와 시간</h2>
+            <h2 className="text-lg font-extrabold">2. 날짜와 시간</h2>
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -820,7 +778,7 @@ export default function MemberAppPage() {
 
           <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
             <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">4. 이용시간</h2>
+            <h2 className="text-lg font-extrabold">3. 이용시간</h2>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -892,6 +850,40 @@ export default function MemberAppPage() {
             </p>
           )}
 
+          <div className="mt-5 flex items-center gap-2 border-t border-[#e5ece1] pt-4">
+            <UserRound className="text-vista-leaf" size={21} aria-hidden="true" />
+            <h2 className="text-lg font-extrabold">4. 예약자 정보</h2>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            <label className="grid gap-1 text-sm font-bold text-[#4f5b50]">
+              예약자 이름
+              <div className="flex items-center gap-2 rounded-md border border-[#cad8c6] bg-[#fbfcfa] px-3 py-3">
+                <UserRound size={18} className="text-[#697468]" aria-hidden="true" />
+                <input
+                  value={customerName}
+                  onChange={(event) => setCustomerName(event.target.value)}
+                  className="w-full bg-transparent font-semibold outline-none"
+                  placeholder="예: 홍길동"
+                />
+              </div>
+            </label>
+
+            <label className="grid gap-1 text-sm font-bold text-[#4f5b50]">
+              전화번호 뒤 4자리
+              <div className="flex items-center gap-2 rounded-md border border-[#cad8c6] bg-[#fbfcfa] px-3 py-3">
+                <Phone size={18} className="text-[#697468]" aria-hidden="true" />
+                <input
+                  value={phoneLast4}
+                  onChange={(event) => setPhoneLast4(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                  className="w-full bg-transparent font-semibold outline-none"
+                  inputMode="numeric"
+                  placeholder="예: 1234"
+                />
+              </div>
+            </label>
+          </div>
+
           {isReviewing ? (
             <section className="mt-5 rounded-md border border-vista-mint bg-vista-fairway p-4">
               <div className="flex items-center gap-2">
@@ -932,47 +924,43 @@ export default function MemberAppPage() {
 
         </section>
 
-        <section className="mt-5">
-          <div className="flex items-center gap-2">
-            <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
-            <h2 className="text-lg font-extrabold">{memberUserId ? "내 예약" : "예약 현황"}</h2>
-          </div>
-          <p className="mt-1 text-xs font-semibold text-[#697468]">
-            {memberUserId
-              ? "카카오 계정에 연결된 최근 예약만 표시합니다."
-              : "개인정보 보호를 위해 예약자 정보는 표시하지 않습니다. 카카오 로그인 시 내 예약만 확인할 수 있습니다."}
-          </p>
-          <div className="mt-3 grid gap-3">
-            {reservations.length > 0 ? (
-              reservations.map((reservation) => (
-                <article key={reservation.id} className="rounded-md border border-[#e5ece1] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-extrabold">
-                        {new Intl.DateTimeFormat("ko-KR", {
-                          month: "numeric",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        }).format(new Date(reservation.starts_at))}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-[#697468]">
-                        타석 {getBayCode(reservation)}
-                      </p>
+        {memberUserId ? (
+          <section className="mt-5">
+            <div className="flex items-center gap-2">
+              <Clock className="text-vista-leaf" size={21} aria-hidden="true" />
+              <h2 className="text-lg font-extrabold">내 예약</h2>
+            </div>
+            <p className="mt-1 text-xs font-semibold text-[#697468]">카카오 계정에 연결된 최근 예약만 표시합니다.</p>
+            <div className="mt-3 grid gap-3">
+              {reservations.length > 0 ? (
+                reservations.map((reservation) => (
+                  <article key={reservation.id} className="rounded-md border border-[#e5ece1] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-extrabold">
+                          {new Intl.DateTimeFormat("ko-KR", {
+                            month: "numeric",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          }).format(new Date(reservation.starts_at))}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-[#697468]">타석 {getBayCode(reservation)}</p>
+                      </div>
+                      <span className="rounded-md bg-[#edf6ef] px-3 py-1 text-xs font-bold text-vista-leaf">
+                        {getStatusLabel(reservation.status, reservation.approval_required)}
+                      </span>
                     </div>
-                    <span className="rounded-md bg-[#edf6ef] px-3 py-1 text-xs font-bold text-vista-leaf">
-                      {getStatusLabel(reservation.status, reservation.approval_required)}
-                    </span>
-                  </div>
+                  </article>
+                ))
+              ) : (
+                <article className="rounded-md border border-[#e5ece1] p-4 text-sm font-bold text-[#697468]">
+                  아직 표시할 예약이 없습니다.
                 </article>
-              ))
-            ) : (
-              <article className="rounded-md border border-[#e5ece1] p-4 text-sm font-bold text-[#697468]">
-                아직 표시할 예약이 없습니다.
-              </article>
-            )}
-          </div>
-        </section>
+              )}
+            </div>
+          </section>
+        ) : null}
 
         <section className="mt-5 rounded-md border border-[#edd9c4] bg-[#fff9f0] p-4">
           <div className="flex items-start gap-3">
@@ -986,33 +974,17 @@ export default function MemberAppPage() {
           </div>
         </section>
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Link href="/member/scorecard" className="rounded-md border border-[#cad8c6] px-4 py-4 text-center text-sm font-extrabold">
-            예약 내역
-          </Link>
-          <Link href="/admin/reservations" className="rounded-md border border-[#cad8c6] px-4 py-4 text-center text-sm font-extrabold">
-            관리자 확인
-          </Link>
+        <PwaInstallCard />
+
+        <div className="mt-5">
+          <SocialLoginPanel />
         </div>
 
-        <footer className="mt-5 grid grid-cols-4 gap-2 border-t border-[#e5ece1] pt-4 text-center text-xs font-bold text-[#697468]">
-          <span>
-            <MapPin className="mx-auto mb-1" size={18} aria-hidden="true" />
-            매장
-          </span>
-          <span>
-            <CalendarClock className="mx-auto mb-1" size={18} aria-hidden="true" />
-            예약
-          </span>
-          <span>
-            <MonitorCog className="mx-auto mb-1" size={18} aria-hidden="true" />
-            타석
-          </span>
-          <span>
-            <CheckCircle2 className="mx-auto mb-1" size={18} aria-hidden="true" />
-            내역
-          </span>
-        </footer>
+        <div className="mt-5">
+          <Link href="/member/scorecard" className="block rounded-md border border-[#cad8c6] px-4 py-4 text-center text-sm font-extrabold">
+            예약 내역
+          </Link>
+        </div>
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#d9e3d5] bg-white/95 px-4 py-3 shadow-[0_-12px_30px_rgba(25,33,28,0.12)] backdrop-blur">
