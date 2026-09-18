@@ -30,6 +30,23 @@ export type LiveBay = {
   gameTelemetry?: GameTelemetry;
   gameTelemetryReceivedAt?: string;
   gameTelemetryStale?: boolean;
+  agentVersion?: string;
+  gameActivity?: GameActivitySummary;
+};
+
+export type GameRoundEventSummary = {
+  eventId: string;
+  occurredAt: string;
+  courseId?: string;
+  lastKnownHole?: number;
+  receivedAt: string;
+  delayed: boolean;
+};
+
+export type GameActivitySummary = {
+  supported: boolean;
+  todayReturnedToLobby?: number;
+  recentEvents: GameRoundEventSummary[];
 };
 
 export type ControlLog = {

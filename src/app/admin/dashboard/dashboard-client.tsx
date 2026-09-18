@@ -1319,20 +1319,43 @@ function BayCard({
         </div>
       </div>
 
-      <div
+      <details
         className={cn(
-          "mt-3 flex items-center gap-2.5 rounded-md border px-4 py-2.5 text-base font-bold",
+          "group mt-3 rounded-md border px-4 py-2.5 text-base font-bold",
           gameStatus.tone === "active"
             ? "border-sky-200 bg-sky-50 text-sky-800"
             : gameStatus.tone === "idle"
               ? "border-gray-200 bg-white/80 text-gray-600"
               : "border-amber-200 bg-amber-50 text-amber-800"
         )}
-        title={gameStatus.detail}
       >
-        <Activity size={20} aria-hidden="true" />
-        <span>{gameStatus.label}</span>
-      </div>
+        <summary className="flex cursor-pointer list-none items-center gap-2.5">
+          <Activity size={20} aria-hidden="true" />
+          <span className="min-w-0 flex-1">{gameStatus.label}</span>
+          <span className="text-xs font-extrabold opacity-75">
+            {bay.gameActivity?.supported ? `오늘 ${bay.gameActivity.todayReturnedToLobby ?? 0}회` : "이력 미지원"}
+          </span>
+        </summary>
+        <div className="mt-2 border-t border-current/15 pt-2 text-xs font-semibold leading-5 opacity-90">
+          <p>{gameStatus.detail}</p>
+          <p>Agent {bay.agentVersion ?? "버전 확인 불가"}</p>
+          {bay.gameActivity?.supported ? (
+            bay.gameActivity.recentEvents.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {bay.gameActivity.recentEvents.slice(0, 3).map((event) => (
+                  <li key={event.eventId}>
+                    {new Date(event.occurredAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                    {event.courseId ? ` · ${event.courseId}` : ""}
+                    {event.lastKnownHole ? ` · 마지막 ${event.lastKnownHole}번 홀` : " · 마지막 홀 확인 불가"}
+                    {event.delayed ? " · 지연 수신" : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-1">오늘 확인된 일반 코스의 로비 복귀 기록이 없습니다.</p>
+          ) : <p className="mt-1">게임 이력 DB 적용 전이거나 조회할 수 없습니다.</p>}
+          <p className="mt-1 opacity-75">로비 복귀는 18홀 완주·예약·결제 건수가 아닙니다.</p>
+        </div>
+      </details>
 
       {bay.status === "in_use" ? (
         <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
@@ -1454,20 +1477,37 @@ function getGameStatusDisplay(bay: LiveBay) {
     };
   }
 
+  if (telemetry.gameState === "practice" || telemetry.gameMode === "practice") {
+    return { label: "연습장", detail: "연습장 이용은 일반 코스 복귀 횟수에 포함하지 않습니다.", tone: "active" as const };
+  }
+
+  if (telemetry.gameState === "exiting") {
+    return { label: "골프 프로그램 종료 중", detail: telemetry.roundStatus === "aborted" ? "라운드 중단이 감지되었습니다." : "프로그램 종료가 감지되었습니다.", tone: "unknown" as const };
+  }
+
   if (telemetry.gameState === "playing") {
+    const holeObservedMs = telemetry.holeObservedAt ? Date.parse(telemetry.holeObservedAt) : 0;
+    const holeFresh = telemetry.schemaVersion === 2 && telemetry.holeStatus === "confirmed" && holeObservedMs > 0 && Date.now() - holeObservedMs <= 35_000;
+    const holeLabel = holeFresh && telemetry.currentHole ? `${telemetry.currentHole}번 홀` : telemetry.holeStatus === "transitioning" ? "홀 확인 중" : "홀 확인 불가";
     return {
-      label: telemetry.currentHole ? `라운드 진행 · ${telemetry.currentHole}번 홀` : "라운드 진행 · 홀 확인 불가",
-      detail: `출처: ${telemetry.stateSource} · 신뢰도: ${telemetry.confidence}`,
+      label: `${telemetry.gameMode === "regular" ? "일반 코스" : "게임 화면"} · ${holeLabel}`,
+      detail: telemetry.holeObservedAt
+        ? `최근 홀 관측 ${new Date(telemetry.holeObservedAt).toLocaleString("ko-KR")} · 출처 ${telemetry.stateSource}`
+        : `홀 번호 근거 없음 · 출처 ${telemetry.stateSource}`,
       tone: "active" as const
     };
   }
 
   if (telemetry.gameState === "menu") {
-    return { label: "메뉴·대기 화면", detail: `출처: ${telemetry.stateSource}`, tone: "idle" as const };
+    return {
+      label: "메뉴·대기 화면",
+      detail: telemetry.reasonCode === "returned_to_lobby" ? "일반 코스에서 로비로 돌아온 기록입니다. 완주 여부는 확인하지 않습니다." : `출처: ${telemetry.stateSource}`,
+      tone: "idle" as const
+    };
   }
 
   if (telemetry.roundStatus === "completed" || telemetry.gameState === "results") {
-    return { label: "라운드 종료 확인", detail: `출처: ${telemetry.stateSource}`, tone: "idle" as const };
+    return { label: "이전 Agent 종료 신호", detail: "정상 18홀 완주로 집계하지 않는 이전 형식의 신호입니다.", tone: "idle" as const };
   }
 
   return {

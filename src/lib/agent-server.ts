@@ -83,6 +83,20 @@ export async function storeAgentGameTelemetry(
   agent: AgentDevice,
   telemetry: GameTelemetry
 ) {
+  const receivedAt = new Date().toISOString();
+  const { data: rpcStored, error: rpcError } = await supabase.rpc("store_agent_game_telemetry_if_newer", {
+    p_agent_device_id: agent.id,
+    p_telemetry: telemetry,
+    p_received_at: receivedAt
+  });
+  if (!rpcError) {
+    return { stored: rpcStored === true, reason: rpcStored === true ? null : ("older_sample" as const) };
+  }
+  // Keep compatibility until the additive migration is approved and applied.
+  if (rpcError.code !== "PGRST202" && !rpcError.message.includes("store_agent_game_telemetry_if_newer")) {
+    throw new Error(rpcError.message);
+  }
+
   const { data, error: readError } = await supabase
     .from("agent_devices")
     .select("game_telemetry")
@@ -100,7 +114,7 @@ export async function storeAgentGameTelemetry(
     .from("agent_devices")
     .update({
       game_telemetry: telemetry,
-      game_telemetry_received_at: new Date().toISOString()
+      game_telemetry_received_at: receivedAt
     })
     .eq("id", agent.id);
 

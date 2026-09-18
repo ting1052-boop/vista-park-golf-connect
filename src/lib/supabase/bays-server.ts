@@ -17,6 +17,16 @@ type AgentDeviceRow = {
   is_active: boolean | null;
   game_telemetry?: unknown;
   game_telemetry_received_at?: string | null;
+  agent_version?: string | null;
+};
+
+type RoundEventRow = {
+  event_id: string;
+  bay_id: string;
+  course_id: string | null;
+  occurred_at: string;
+  received_at: string;
+  last_known_hole: number | null;
 };
 
 type ActiveSessionRow = {
@@ -122,7 +132,10 @@ function clearStaleInUseBay(bay: LiveBay): LiveBay {
 
 export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   const admin = createSupabaseAdminClient();
-  const [bays, sessionResult, initialAgentResult] = await Promise.all([
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60_000);
+  const kstStartAsUtc = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate()) - 9 * 60 * 60_000;
+  const [bays, sessionResult, initialAgentResult, activityResult] = await Promise.all([
     getBays(storeId),
     admin
       .from("access_sessions")
@@ -135,8 +148,15 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       .order("started_at", { ascending: false }),
     admin
       .from("agent_devices")
-      .select("bay_id, last_seen_at, is_active, game_telemetry, game_telemetry_received_at")
+      .select("bay_id, last_seen_at, is_active, agent_version, game_telemetry, game_telemetry_received_at")
+      .eq("store_id", storeId),
+    admin
+      .from("agent_round_events")
+      .select("event_id, bay_id, course_id, occurred_at, received_at, last_known_hole")
       .eq("store_id", storeId)
+      .gte("occurred_at", new Date(kstStartAsUtc).toISOString())
+      .order("occurred_at", { ascending: false })
+      .limit(100)
   ]);
 
   if (sessionResult.error) {
@@ -157,12 +177,20 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     agentRows = (initialAgentResult.data ?? []) as AgentDeviceRow[];
   }
 
-  const now = new Date();
+  const activitySupported = !activityResult.error;
+  const activityByBayId = new Map<string, RoundEventRow[]>();
+  if (activitySupported) {
+    for (const event of (activityResult.data ?? []) as RoundEventRow[]) {
+      const current = activityByBayId.get(event.bay_id) ?? [];
+      current.push(event);
+      activityByBayId.set(event.bay_id, current);
+    }
+  }
 
   // 각 타석 PC 온라인 여부 (agent_devices.last_seen_at 기준). 같은 타석에 여러 기기면 하나라도 켜져 있으면 온라인.
   const pcByBayId = new Map<
     string,
-    { online: boolean; lastSeenIso?: string; gameTelemetry?: GameTelemetry; gameTelemetryReceivedAt?: string }
+    { online: boolean; lastSeenIso?: string; gameTelemetry?: GameTelemetry; gameTelemetryReceivedAt?: string; agentVersion?: string }
   >();
   for (const dev of agentRows) {
     if (!dev.bay_id) continue;
@@ -176,7 +204,8 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       gameTelemetry: isNewerAgent ? normalizeGameTelemetry(dev.game_telemetry) ?? undefined : prev?.gameTelemetry,
       gameTelemetryReceivedAt: isNewerAgent
         ? dev.game_telemetry_received_at ?? undefined
-        : prev?.gameTelemetryReceivedAt
+        : prev?.gameTelemetryReceivedAt,
+      agentVersion: isNewerAgent ? dev.agent_version ?? undefined : prev?.agentVersion
     });
   }
 
@@ -214,6 +243,7 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     const session = sessionsByBayId.get(bay.id);
     const base = session ? applySessionToBay(bay, session, now) : clearStaleInUseBay(bay);
     const pc = pcByBayId.get(bay.id);
+    const activity = activityByBayId.get(bay.id) ?? [];
     return {
       ...base,
       pcOnline: pc?.online ?? false,
@@ -222,7 +252,20 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       gameTelemetryReceivedAt: pc?.gameTelemetryReceivedAt,
       gameTelemetryStale: pc?.gameTelemetry
         ? now.getTime() - Date.parse(pc.gameTelemetry.observedAt) > GAME_TELEMETRY_STALE_MS
-        : undefined
+        : undefined,
+      agentVersion: pc?.agentVersion,
+      gameActivity: {
+        supported: activitySupported,
+        todayReturnedToLobby: activitySupported ? activity.length : undefined,
+        recentEvents: activity.slice(0, 10).map((event) => ({
+          eventId: event.event_id,
+          occurredAt: event.occurred_at,
+          courseId: event.course_id ?? undefined,
+          lastKnownHole: event.last_known_hole ?? undefined,
+          receivedAt: event.received_at,
+          delayed: Date.parse(event.received_at) - Date.parse(event.occurred_at) > 5 * 60_000
+        }))
+      }
     };
   });
 }
