@@ -1486,6 +1486,14 @@ function getGameStatusDisplay(bay: LiveBay) {
   }
 
   if (telemetry.gameState === "playing") {
+    if (telemetry.schemaVersion === 1) {
+      return {
+        label: "라운드 진행 · 홀 확인 불가",
+        detail: `이전 Agent가 라운드 진행을 감지했습니다. 홀 번호는 지원하지 않습니다. · 출처 ${telemetry.stateSource}`,
+        tone: "active" as const
+      };
+    }
+
     const holeObservedMs = telemetry.holeObservedAt ? Date.parse(telemetry.holeObservedAt) : 0;
     const holeFresh = telemetry.schemaVersion === 2 && telemetry.holeStatus === "confirmed" && holeObservedMs > 0 && Date.now() - holeObservedMs <= 35_000;
     const holeLabel = holeFresh && telemetry.currentHole ? `${telemetry.currentHole}번 홀` : telemetry.holeStatus === "transitioning" ? "홀 확인 중" : "홀 확인 불가";
