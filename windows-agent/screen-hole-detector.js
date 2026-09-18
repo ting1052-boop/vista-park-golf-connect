@@ -6,7 +6,14 @@ const { execFile } = require("node:child_process");
 
 function extractHoleCandidates(text, options = {}) {
   const source = String(text ?? "").normalize("NFKC");
-  const patterns = [/(?:CURRENT\s*)?(?:HOLE|홀)\s*[:#-]?\s*(\d{1,2})/giu, /\b(\d{1,2})\s*(?:HOLE|H)\b/giu, /(\d{1,2})\s*홀/gu];
+  // 숫자 바로 앞에 글자가 붙어 있으면 홀 번호가 아니다.
+  // 화면의 "플레이어1" 뒤에 Hole 이 이어지면 \b 가 "어"와 "1" 사이에서 성립해
+  // 플레이어 번호를 홀 1 로 읽어버린다(한글은 \w 가 아니다).
+  const patterns = [
+    /(?:CURRENT\s*)?(?:HOLE|홀)\s*[:#-]?\s*(\d{1,2})/giu,
+    /(?<![\p{L}\p{N}])(\d{1,2})\s*(?:HOLE|H)\b/giu,
+    /(?<![\p{L}\p{N}])(\d{1,2})\s*홀/gu
+  ];
   const values = [];
   for (const pattern of patterns) for (const match of source.matchAll(pattern)) values.push(Number(match[1]));
   if (values.length === 0 && options.allowDigitsOnly === true) {
@@ -148,6 +155,17 @@ function createScreenHoleDetector(options = {}) {
       const captured = await captureOcrText();
       if (!captured.ok) return resolver.addSample({ contextEpoch, frameId: `error-${Date.now()}-${++frameSequence}`, candidate: null, observedAt: new Date().toISOString(), reasonCode: captured.reasonCode });
       const candidates = extractHoleCandidates(captured.text, { allowDigitsOnly });
+      if (candidates.length !== 1) {
+        // 홀을 못 읽었을 때 어떤 글자가 잡혔는지 남긴다. 이게 없으면 영역(ROI)을
+        // 맞출 근거가 없어 좌표를 추측으로 바꾸게 된다. 게임 화면의 UI 문구이고
+        // 로컬 진단 파일에만 남기며 서버로 보내지 않는다.
+        onDiagnostic({
+          event: "hole_recognition_sample",
+          candidateCount: candidates.length,
+          recognizedText: String(captured.text ?? "").replace(/\s+/gu, " ").trim().slice(0, 120),
+          observedAt: new Date().toISOString()
+        });
+      }
       return resolver.addSample({ contextEpoch, frameId: captured.frameId, candidate: candidates.length === 1 ? candidates[0] : null, observedAt: captured.capturedAt, reasonCode: candidates.length > 1 ? "recognition_ambiguous" : candidates.length === 0 ? "recognition_rejected" : null });
     } catch (error) {
       const reasonCode = error.killed ? "recognition_timeout" : "recognition_failed";

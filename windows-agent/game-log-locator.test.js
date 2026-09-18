@@ -41,7 +41,48 @@ test("locator picks the install that was written most recently", async () => {
 
     const locator = createGameLogLocator({
       logFile: older,
+      readRunningPaths: async () => [],
       patterns: [path.join(root, "PARK_*-VISTA", "ScreenGolf", "Saved", "Logs", "ScreenGolf.log")]
+    });
+
+    assert.equal(await locator.resolve(), newer);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the install that is actually running wins over a newer log", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "vista-locator-running-"));
+  try {
+    const running = await makeInstall(root, "PARK_260713-VISTA", "running\n");
+    const other = await makeInstall(root, "PARK_260529-VISTA", "other\n");
+    // 실행 중이 아닌 설치본의 로그가 더 최근일 수 있다. 2026-09-18 현장에서
+    // 시작프로그램과 바탕화면 바로가기가 서로 다른 설치본을 가리키고 있었다.
+    await fs.utimes(running, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+
+    const locator = createGameLogLocator({
+      patterns: [path.join(root, "PARK_*-VISTA", "ScreenGolf", "Saved", "Logs", "ScreenGolf.log")],
+      processNames: ["ScreenGolf.exe"],
+      readRunningPaths: async () => [path.join(root, "PARK_260713-VISTA", "ScreenGolf", "Binaries", "Win64", "ScreenGolf.exe")]
+    });
+
+    assert.equal(await locator.resolve(), running, "실행 중인 설치본의 로그를 골라야 한다");
+    assert.notEqual(await locator.resolve(), other);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("without a running game it falls back to the most recent log", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "vista-locator-fallback-"));
+  try {
+    const older = await makeInstall(root, "PARK_260713-VISTA", "old\n");
+    const newer = await makeInstall(root, "PARK_260529-VISTA", "new\n");
+    await fs.utimes(older, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+
+    const locator = createGameLogLocator({
+      patterns: [path.join(root, "PARK_*-VISTA", "ScreenGolf", "Saved", "Logs", "ScreenGolf.log")],
+      readRunningPaths: async () => []
     });
 
     assert.equal(await locator.resolve(), newer);
@@ -61,6 +102,7 @@ test("monitor follows the game when it moves to another install", async () => {
       logFile: configured,
       locator: createGameLogLocator({
         logFile: configured,
+        readRunningPaths: async () => [],
         patterns: [path.join(root, "PARK_*-VISTA", "ScreenGolf", "Saved", "Logs", "ScreenGolf.log")]
       })
     });

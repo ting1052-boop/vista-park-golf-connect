@@ -1,5 +1,9 @@
 param([Parameter(Mandatory = $true)][string]$ImagePath)
 $ErrorActionPreference = 'Stop'
+# 읽는 쪽(Node)은 표준출력을 UTF-8 로 해석한다. 여기서 고정하지 않으면 한국어
+# 코드페이지로 나가 "플레이어1" 같은 글자가 진단 로그에 깨져 남는다(현장 확인).
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 [void][Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
 [void][Windows.Storage.FileAccessMode, Windows.Storage, ContentType = WindowsRuntime]
