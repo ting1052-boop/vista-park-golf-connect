@@ -17,6 +17,9 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·현장 설치 대기 | Agent 0.8.0 통합 변경, 신규 DB migration, GitHub push 및 Vercel 운영 배포·검증 완료. A-02 Agent 교체와 HUD ROI 보정만 현장 작업으로 남음 | Agent 0.8.0 소스·테스트, heartbeat/telemetry/event 저장, 관리자 대시보드, 신규 migration, 본 원장 |
+| Codex | 완료·운영 미적용 | A-02 현장 감지 기능을 Agent 0.8.0·서버 telemetry/event 저장·관리자 대시보드에 통합하고 로컬 검증 | `windows-agent/` 감지·outbox·패키징, `src/lib/game-telemetry.ts`, Agent heartbeat/저장 계층, 대시보드 데이터·화면, 신규 migration, 본 원장 |
+| Codex | 완료·계획서만 | A-02 현장 전달본 분석 및 Agent 최종 배포본·관리자 대시보드 통합 구현 위임 계획서 작성 | `docs/agent-dashboard-field-integration-plan-20260917.md`, 본 원장; 구현·빌드·배포 없음 |
 | Codex | 완료·배포 대기 | 미커밋 무인제어 상태 표시·타석별 ON/OFF·Agent 정상 종료 기능 마무리 및 기능 단위 커밋 | `src/lib/store-controller.ts`, `src/lib/supabase/automation-status.ts`, `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, 본 원장 |
 | Codex | 완료·배포 대기 | 회원 예약 화면 1차 정리: 관리자·비작동 링크 제거, 비로그인 예약 현황 숨김, 예약 입력 순서 재배치 | `src/app/member/app/page.tsx`, 본 원장 |
 | Codex | 완료·배포 대기 | 매장 제어기 폴링 시 만료 세션 자동 종료·타석 반납·장비 OFF 명령 연결 | `src/lib/session-cleanup.ts`, `src/app/api/store-controller/commands/route.ts`, 본 원장 |
@@ -481,3 +484,31 @@ Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 �
 - 운영 상태 요약과 15초 자동 새로고침, 제어기 지연·이용 중 Agent 단절·실패 명령 경고를 추가했다.
 - 검증: typecheck, 대상 ESLint, `git diff --check`, 프로덕션 빌드 통과. 로컬 관리자 로그인 세션이 없어 실제 페이지 렌더와 장비 명령 실행은 하지 않았다.
 - 운영 DB·스키마 변경, 장비 제어, 배포는 수행하지 않았다.
+
+## A-02 Field Agent Integration Plan (2026-09-17, Codex)
+
+- 사용자 제공 `C:\VISTA\agent전달문서최종`은 실제 A-02 타석 PC의 Codex 작업 결과다. 최신 현장 전달/검증/빌드 문서, 이전 진단서, 홀 감지 설계와 전달된 소스를 읽고 현재 저장소의 heartbeat·검증기·대시보드와 대조했다.
+- 결과물: `docs/agent-dashboard-field-integration-plan-20260917.md`. 하위 모델용 단계 A~G, 파일별 수정 범위, v1/v2 계약, 로컬 OCR 격리, 이벤트 outbox/멱등 저장, 대시보드 표시·권한, 설치 패키지/검증/롤백 및 시작 프롬프트를 작성했다.
+- 현장 문서의 실증 범위는 OCR 1→2홀, 같은 라운드의 로비 복귀 1건이다. 3~18홀 전체/서버 저장/운영 대시보드 E2E를 검증 완료로 간주하지 않는다. 로비 복귀 횟수는 18홀 완주·예약·매출 건수가 아니다.
+- 현장본과 저장소가 모두 0.7.0이지만 코드 계보가 다르다. 저장소 Claude 수정은 유지하고 현장 감지 기능만 선별 병합하도록 명시했다. 통합판 버전은 0.8.0 제안이며 아직 새 바이너리를 만들지 않았다.
+- 신규 계약을 현재 서버가 그대로 저장하지 못하는 점, 현장 outbox ACK 부재, OCR가 시간 제어를 대기시킬 수 있는 점, 현장 패키지 비밀설정 포함을 통합 전 처리 사항으로 기록했다. 실제 비밀값은 열람·복사·기록하지 않았다.
+- 사전 절차: preflight 최초 실행은 샌드박스 `spawnSync git EPERM`으로 실패했으나 승인된 실행으로 재시도해 통과했다. 원장 전체와 git status 확인 후 현재 작업을 등록했다. 타 작업자의 문서·Agent README 변경은 보존했다.
+- 문서 검증: 신규 계획서와 원장 diff 공백 검사 통과, JSON 예시 3개 파싱 통과, 기존 소스 참조 12개 존재 확인. 문서만 변경했으므로 앱 빌드/전체 테스트는 재실행하지 않았다.
+- 변경 범위는 계획서 신규 작성과 본 원장뿐이다. 구현/실행파일 실행/Agent 테스트 재실행/실기기 OCR 재검증/운영 DB 조회·변경/장비 제어/커밋/push/배포는 수행하지 않았다.
+- 다음 작업: 사용자의 구현 요청 시 계획서 A 단계부터 착수. 관리자 권한 기준과 A-02 실제 HUD ROI는 활성화 전 확인 필요. 운영 migration·배포·실기기 제어는 별도 승인 필요.
+
+## Agent 0.8.0 + Dashboard Field Integration (2026-09-17, Codex)
+
+- `docs/agent-dashboard-field-integration-plan-20260917.md`의 안전 경계를 유지하면서 현장 A-02 감지 코드를 기존 0.7.0 계보에 선별 통합했다. 예약, 이용시간, 장비 자동화의 성공 여부는 OCR이나 게임 감지에 의존하지 않는다.
+- Agent telemetry v2는 프로그램 실행, 메뉴, 일반 라운드, 연습장, 종료 중, 결과/중단 상태를 구분하고 `gameMode`, `courseId`, `roundId`, `gameInstanceId`, `contextEpoch`, 홀 출처·관측시각·layout 버전을 전송한다. 서버는 v1도 계속 허용한다.
+- 홀 감지는 정확한 게임 창과 사전 보정된 ROI가 있을 때만 작동한다. 6초 안의 최근 3프레임 중 2회 일치해야 확정하고, 5초가 지나면 현재 홀을 숨긴다. 전체 바탕화면 캡처를 서버에 보내지 않으며 임시 ROI 이미지는 매 관측 뒤 삭제한다. 기본값은 비활성화다.
+- `returned_to_lobby`는 로컬 디스크 outbox에 원자적으로 보관하고 서버 ACK를 받은 이벤트만 삭제한다. 이벤트는 Agent·라운드·유형 조합과 UUID로 멱등 저장한다. 로비 복귀는 18홀 완주, 예약 완료, 결제 완료를 뜻하지 않으며 대시보드에도 같은 안내를 표시한다.
+- 신규 migration `supabase/migrations/202609170001_agent_round_events.sql`은 `agent_round_events`와 최신 샘플만 저장하는 원자적 RPC를 추가한다. migration이 아직 없는 서버에서는 기존 telemetry 저장으로 제한적으로 폴백하고 이벤트 저장 실패가 heartbeat를 중단하지 않는다. 기준 `supabase/schema.sql`도 같은 구조로 맞췄다.
+- Agent heartbeat는 본문 크기 제한, 인증 Agent의 매장·타석과 access session 일치 검증, 이벤트 ACK/거절 응답을 추가했다. 대시보드는 Agent 버전, 감지 출처·신선도, 확인된 현재 홀, 연습장/중단/메뉴 상태, 오늘 로비 복귀 수와 최근 이벤트를 타석 상세에 표시한다. migration 미적용은 0건으로 오인하지 않고 미지원 상태로 처리한다.
+- 실제 비밀 설정은 `%APPDATA%`의 `bays.config.local.json`만 우선 사용한다. 포터블 배포 폴더의 실제 local config는 개발 실행 외에는 읽지 않으며 패키지에는 placeholder 예제만 들어간다. 오프라인 진단판은 별도 `test-profile`을 사용해 운영 outbox·서버·시간제어와 격리된다.
+- 배포 산출물: `windows-agent/release/VISTA-Bay-Agent-0.8.0-windows-x64.zip`과 `windows-agent/release/VISTA-Bay-Agent-0.8.0-offline-test.zip`. 두 ZIP 모두 실제 `bays.config.local.json` 항목 0개를 확인했다. SHA-256은 각각 `04F9F2124E4378CC7AB85BFBCC7A5A1958833B8E99A73932E9502D766C8B56F0`, `29C429471361D1347958CD579F36184E4E7E45DCB2EFB29CF323FF0A8E0F222F`다.
+- 검증: Agent 정적 검사와 15개 테스트 통과, 웹 typecheck·전체 lint·프로덕션 build·`verify:quick`(정적 4, HTTP 15)·`git diff --check` 통과. Electron 31.7.7 unpacked 빌드와 ZIP 생성, asar 파일 목록 및 ZIP 비밀 설정 부재 검사를 완료했다. 인증된 관리자 페이지의 실제 브라우저 시각 검증과 A-02 실기기 OCR 3~18홀 검증은 하지 않았다.
+- 2026-09-18 운영 반영: 사용자의 승인 아래 `202609170001_agent_round_events.sql`을 Supabase 운영 프로젝트에 적용했고, 기능을 `dbdbdb9`, Agent 배포물을 `15f4bb0`, 구버전 라운드 표시 호환 수정을 `a7a9361`로 나눠 `origin/main`에 push했다. Vercel에서 `a7a9361` 프로덕션 배포가 Ready임을 확인했다.
+- 최종 포터블 실행파일은 `windows-agent/dist/VISTA-Bay-Agent.exe`와 `windows-agent/release/VISTA-Bay-Agent-0.8.0.exe`이며 파일 버전은 0.8.0, SHA-256은 `F805C76B46F3E453220E9F0DA1D9359572DA0BC3B1D5D0756E42DAE687BBC3A3`이다. 기존 0.7.0은 `windows-agent/release/VISTA-Bay-Agent-0.7.0-backup.exe`로 보존했다.
+- 프로덕션 대시보드 실측: A-02는 최근 heartbeat로 `PC 켜짐`, `라운드 진행 · 홀 확인 불가`를 표시한다. 상세에는 실제 실행 중인 현장 Agent가 아직 0.6.0이고 출처가 `mixed`임이 보인다. 신규 이벤트 테이블 조회는 정상이며 오늘 로비 복귀는 0회다.
+- 남은 현장 작업: A-02의 실행파일을 0.8.0으로 교체하고 시작프로그램을 재등록한 뒤, 오프라인 진단 프로필로 HUD ROI를 보정한다. 이후 1→2홀, 로비 복귀, 중단, Agent 재시작 후 outbox 재전송을 실증해야 한다. 장비 제어는 이번 배포 검증에서 수행하지 않았다.
