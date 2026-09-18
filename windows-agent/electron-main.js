@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
+﻿/* eslint-disable @typescript-eslint/no-require-imports */
 
 const { app, BrowserWindow, desktopCapturer, ipcMain, screen } = require("electron");
 const fs = require("node:fs");
@@ -9,13 +9,14 @@ const { execFile } = require("node:child_process");
 const { mergeBaysConfig } = require("./agent-config");
 const { createGameLogProbe } = require("./game-log-probe");
 const { createScreenGolfMonitor } = require("./screen-golf-monitor");
+const { createGameLogLocator } = require("./game-log-locator");
 const { createScreenHoleDetector } = require("./screen-hole-detector");
 const { createRoundEventOutbox } = require("./round-event-outbox");
 
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
@@ -187,6 +188,11 @@ function loadConfig() {
       typeof merged.gameStateLogFile === "string"
         ? merged.gameStateLogFile
         : "C:\\PARK_260713-VISTA\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log",
+    // 게임 폴더 이름에 설치 날짜가 들어가 재설치 때마다 바뀐다. 고정 경로만 보면
+    // 조용히 어긋나므로, 후보를 패턴으로 찾아 가장 최근에 쓰인 로그를 따라간다.
+    gameStateLogPatterns: Array.isArray(merged.gameStateLogPatterns)
+      ? merged.gameStateLogPatterns
+      : ["C:\\PARK_*-VISTA\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log"],
     gameLogDiagnosticsEnabled: merged.gameLogDiagnosticsEnabled !== false,
     gameLogDirectories: Array.isArray(merged.gameLogDirectories)
       ? merged.gameLogDirectories
@@ -292,7 +298,7 @@ async function processAgentCommand(command) {
     setTimeout(() => {
       execFile(
         "shutdown.exe",
-        ["/s", "/f", "/t", "10", "/c", "VISTA 매장 종료: 10초 후 PC를 종료합니다."],
+        ["/s", "/f", "/t", "10", "/c", "VISTA 留ㅼ옣 醫낅즺: 10珥???PC瑜?醫낅즺?⑸땲??"],
         { windowsHide: true },
         (error) => {
           if (error) log("Store close PC shutdown command failed", { commandId: command.id, error: error.message });
@@ -796,7 +802,7 @@ async function tick() {
     session: session
       ? {
           accessSessionId: session.accessSessionId,
-          customerLabel: session.customerLabel ?? "이용 고객",
+          customerLabel: session.customerLabel ?? "?댁슜 怨좉컼",
           startsAt: session.startsAt ?? null,
           endsAt: session.endsAt,
           status: session.status,
@@ -854,16 +860,16 @@ async function requestExtension(requestedMinutes) {
   const priceAmount = Math.max(0, Math.round((safeRequestedMinutes / config.extensionMinutes) * config.extensionPrice));
 
   if (!session) {
-    extensionRequestState = { status: "failed", message: "진행 중인 이용 세션이 없습니다." };
+    extensionRequestState = { status: "failed", message: "吏꾪뻾 以묒씤 ?댁슜 ?몄뀡???놁뒿?덈떎." };
     return extensionRequestState;
   }
 
-  extensionRequestState = { status: "pending", message: "연장 요청을 보내는 중입니다." };
+  extensionRequestState = { status: "pending", message: "?곗옣 ?붿껌??蹂대궡??以묒엯?덈떎." };
 
   if (!hasAgentCredentials()) {
     extensionRequestState = {
       status: "local_demo",
-      message: `${safeRequestedMinutes}분 연장 요청이 기록되었습니다. 서버 API 연결 전 테스트 모드입니다.`
+      message: `${safeRequestedMinutes}遺??곗옣 ?붿껌??湲곕줉?섏뿀?듬땲?? ?쒕쾭 API ?곌껐 ???뚯뒪??紐⑤뱶?낅땲??`
     };
     return extensionRequestState;
   }
@@ -891,12 +897,12 @@ async function requestExtension(requestedMinutes) {
 
     extensionRequestState = {
       status: data.status ?? "requested",
-      message: data.message ?? "연장 요청이 접수되었습니다."
+      message: data.message ?? "?곗옣 ?붿껌???묒닔?섏뿀?듬땲??"
     };
   } catch (error) {
     extensionRequestState = {
       status: "failed",
-      message: `연장 요청 실패: ${error.message}`
+      message: `?곗옣 ?붿껌 ?ㅽ뙣: ${error.message}`
     };
   }
 
@@ -934,7 +940,7 @@ function createSetupWindow() {
     height: 560,
     frame: true,
     resizable: false,
-    title: "VISTA Bay Agent 설정",
+    title: "VISTA Bay Agent ?ㅼ젙",
     webPreferences: {
       preload: path.join(ROOT, "electron-preload.js"),
       contextIsolation: true,
@@ -955,7 +961,7 @@ ipcMain.handle("get-bays", () => {
 
 ipcMain.handle("select-bay", (_event, bayCode) => {
   const exists = baysConfig.bays.some((bay) => bay.bayCode === bayCode);
-  if (!exists) return { ok: false, message: "알 수 없는 타석입니다." };
+  if (!exists) return { ok: false, message: "?????녿뒗 ??앹엯?덈떎." };
 
   saveSelectedBay(bayCode);
   config = loadConfig();
@@ -974,6 +980,10 @@ async function startAgentLoop() {
   roundEventOutbox = createRoundEventOutbox({ filePath: ROUND_OUTBOX_PATH, bayCode: config.bayCode });
   screenGolfMonitor = createScreenGolfMonitor({
     logFile: config.gameStateLogFile,
+    locator: createGameLogLocator({
+      logFile: config.gameStateLogFile,
+      patterns: config.gameStateLogPatterns
+    }),
     onDiagnostic: writeGameDiagnostic,
     onRoundEnded: (event) => {
       try {

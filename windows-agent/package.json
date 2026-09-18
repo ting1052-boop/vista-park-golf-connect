@@ -1,14 +1,14 @@
 {
     "name":  "vista-windows-agent",
     "private":  true,
-    "version":  "0.8.0",
+    "version":  "0.9.0",
     "description":  "Windows bay agent for VISTA Park Golf Connect",
     "main":  "electron-main.js",
     "scripts":  {
                     "start":  "electron .",
                     "start:overlay":  "electron .",
                     "start:legacy":  "node vista-agent.js",
-                    "check":  "node --check vista-agent.js \u0026\u0026 node --check electron-main.js \u0026\u0026 node --check electron-preload.js \u0026\u0026 node --check renderer/renderer.js \u0026\u0026 node game-log-probe.test.js \u0026\u0026 node screen-golf-monitor.test.js \u0026\u0026 node screen-hole-detector.test.js \u0026\u0026 node round-event-outbox.test.js",
+                    "check":  "node --check vista-agent.js \u0026\u0026 node --check electron-main.js \u0026\u0026 node --check electron-preload.js \u0026\u0026 node --check renderer/renderer.js \u0026\u0026 node game-log-probe.test.js \u0026\u0026 node screen-golf-monitor.test.js \u0026\u0026 node screen-hole-detector.test.js \u0026\u0026 node round-event-outbox.test.js \u0026\u0026 node game-log-locator.test.js",
                     "dist":  "electron-builder --win dir --config.win.signAndEditExecutable=false",
                     "dist:portable":  "electron-builder --win portable --config.win.signAndEditExecutable=false",
                     "dist:installer":  "electron-builder --win nsis --config.win.signAndEditExecutable=false"
@@ -27,6 +27,7 @@
                                 "electron-main.js",
                                 "agent-config.js",
                                 "game-log-probe.js",
+                                "game-log-locator.js",
                                 "screen-golf-monitor.js",
                                 "screen-hole-detector.js",
                                 "round-event-outbox.js",

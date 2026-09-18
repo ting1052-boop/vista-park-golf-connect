@@ -42,7 +42,11 @@ async function readBytes(filePath, start, length) {
 }
 
 function createScreenGolfMonitor(options = {}) {
-  const logFile = String(options.logFile ?? "").trim();
+  // 게임을 다른 폴더로 재설치해도 따라가도록, 고정 경로 대신 후보 중에서
+  // 가장 최근에 쓰인 로그를 고른다. locator 를 주지 않으면 기존처럼 한 경로만 본다.
+  const locator = options.locator ?? null;
+  const staticLogFile = String(options.logFile ?? "").trim();
+  let logFile = staticLogFile;
   const maxReadBytes = Math.max(16_384, Math.min(1_048_576, Number(options.maxReadBytes ?? 262_144)));
   const onDiagnostic = typeof options.onDiagnostic === "function" ? options.onDiagnostic : () => {};
   const onRoundEnded = typeof options.onRoundEnded === "function" ? options.onRoundEnded : () => {};
@@ -168,6 +172,26 @@ function createScreenGolfMonitor(options = {}) {
       gameInstanceId = randomUUID();
       contextEpoch += 1;
     }
+    if (locator) {
+      const resolved = await locator.resolve();
+      if (resolved && resolved !== logFile) {
+        // 다른 설치본으로 옮겨갔다. 새 파일을 처음부터 따라가되 과거 내용은 읽지 않는다.
+        onDiagnostic({
+          event: "screen_golf_log_switched",
+          previous: logFile || null,
+          current: resolved,
+          observedAt: new Date().toISOString()
+        });
+        logFile = resolved;
+        initialized = false;
+        offset = 0;
+        carry = "";
+        state = null;
+      } else if (resolved) {
+        logFile = resolved;
+      }
+    }
+
     if (!logFile) return null;
 
     try {
