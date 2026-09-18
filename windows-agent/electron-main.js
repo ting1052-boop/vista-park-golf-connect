@@ -16,7 +16,7 @@ const { createRoundEventOutbox } = require("./round-event-outbox");
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.9.3";
+const VERSION = "0.9.4";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));

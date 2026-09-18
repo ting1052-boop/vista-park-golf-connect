@@ -6,6 +6,50 @@ const COURSE_BROWSE = /Browse:\s*\/Game\/Golf\/Course\/([^/?\s]+)(?:\/[^?\s]+)?/
 const LOBBY_BROWSE = /Browse:\s*.*\/UIMap(?:\?|\s|$)/iu;
 const EXCLUDED_MAP_PATTERN = /^(?:Practice_|Tutorial_|Test_)/iu;
 
+// 로그 줄 앞머리: [2026.09.18-04.32.26:917][ 70]LogNet: ...
+const LOG_TIMESTAMP = /^\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):(\d{3})\]/u;
+
+// 시작할 때 되살릴 과거 구간. 이보다 오래된 전환은 현재 상태로 보지 않는다.
+const BACKFILL_WINDOW_MS = 10 * 60_000;
+
+function parseLogTimestamp(line) {
+  const match = LOG_TIMESTAMP.exec(line);
+  if (!match) return null;
+  const [, y, mo, d, h, mi, s, ms] = match;
+  return Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s), Number(ms));
+}
+
+/**
+ * 시작 직후 한 번만 쓰는 되살리기용 필터.
+ *
+ * 매장 오픈 때 PC 가 켜지면 게임과 Agent 가 거의 동시에 뜬다. 게임이 먼저
+ * 로그를 쓰면 Agent 는 그 줄을 지나쳐, 손님이 화면을 바꾸기 전까지 상태를
+ * 모른다. 그래서 마지막 구간만 다시 읽되, 이전 실행의 오래된 기록이 현재
+ * 상태로 둔갑하지 않도록 로그 안 시각 기준으로 최근 것만 남긴다.
+ *
+ * 시각 비교는 로그에 적힌 값끼리만 한다. 이 로그가 UTC 로 적히는지 현지시각으로
+ * 적히는지에 기대지 않기 위해서다.
+ */
+function selectRecentLines(text, windowMs = BACKFILL_WINDOW_MS) {
+  const lines = String(text).split(/\r?\n/);
+  const stamps = lines.map(parseLogTimestamp);
+  const known = stamps.filter((value) => value !== null);
+  if (known.length === 0) return "";
+
+  const newest = Math.max(...known);
+  const cutoff = newest - windowMs;
+  const kept = [];
+  let current = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (stamps[i] !== null) current = stamps[i];
+    // 시각이 없는 줄은 바로 앞 줄의 시각을 따른다.
+    if (current !== null && current >= cutoff) kept.push(lines[i]);
+  }
+
+  return kept.join("\n");
+}
+
 function classifyCourse(courseId) {
   if (!courseId) return "unknown";
   if (/^Practice_/iu.test(courseId)) return "practice";
@@ -198,8 +242,13 @@ function createScreenGolfMonitor(options = {}) {
       const stat = await fs.stat(logFile);
       if (!stat.isFile()) return null;
       let start = offset;
+      let backfilling = false;
       if (!initialized || stat.size < offset) {
-        start = stat.size;
+        // 마지막 구간을 다시 읽어 최근 전환만 되살린다. 그냥 파일 끝에서
+        // 시작하면 게임이 먼저 뜬 날 아침마다 상태를 모른 채 대기하게 된다.
+        // 단, 한동안 쓰이지 않은 로그는 지금 화면을 설명하지 못하므로 건너뛴다.
+        backfilling = Date.now() - stat.mtimeMs <= BACKFILL_WINDOW_MS;
+        start = backfilling ? Math.max(0, stat.size - maxReadBytes) : stat.size;
         carry = "";
         state = null;
       }
@@ -218,7 +267,8 @@ function createScreenGolfMonitor(options = {}) {
         const lastNewline = Math.max(combined.lastIndexOf("\n"), combined.lastIndexOf("\r"));
         const complete = lastNewline >= 0 ? combined.slice(0, lastNewline + 1) : "";
         carry = lastNewline >= 0 ? combined.slice(lastNewline + 1).slice(-4_096) : combined.slice(-4_096);
-        const events = parseScreenGolfEvents(complete);
+        const usable = backfilling ? selectRecentLines(complete) : complete;
+        const events = parseScreenGolfEvents(usable);
         const observedAt = new Date().toISOString();
         applyEvents(events, observedAt);
         if (events.length > 0 || truncated) {
@@ -241,4 +291,4 @@ function createScreenGolfMonitor(options = {}) {
   return { observe, reset: resetRuntime, applyHoleObservation, getState: () => state };
 }
 
-module.exports = { classifyCourse, createScreenGolfMonitor, parseScreenGolfEvents };
+module.exports = { classifyCourse, createScreenGolfMonitor, parseScreenGolfEvents, selectRecentLines };

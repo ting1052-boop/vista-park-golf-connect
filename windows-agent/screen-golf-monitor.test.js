@@ -120,7 +120,64 @@ test("exit during a round is recorded as aborted", async () => {
 
 test("a fresh start ignores events already in the log", async () => {
   await withLog("Browse: /Game/Golf/Course/Yecheon_CD/Yecheon_CD?Name=P\n", async (monitor) => {
-    // 첫 조회 이후 새 줄이 없으므로 과거 라운드가 현재 상태가 되면 안 된다.
+    // 시각이 없는 줄은 되살리기 대상이 아니므로 과거 라운드가 현재 상태가 되면 안 된다.
     assert.equal(await monitor.observe(true), null);
   });
+});
+
+function logLine(minutesAgo, body) {
+  const at = new Date(Date.now() - minutesAgo * 60_000);
+  const p = (n, w = 2) => String(n).padStart(w, "0");
+  const stamp =
+    `${at.getUTCFullYear()}.${p(at.getUTCMonth() + 1)}.${p(at.getUTCDate())}-` +
+    `${p(at.getUTCHours())}.${p(at.getUTCMinutes())}.${p(at.getUTCSeconds())}:${p(at.getUTCMilliseconds(), 3)}`;
+  return `[${stamp}][  0]${body}\n`;
+}
+
+test("startup restores a round that began just before the agent launched", async () => {
+  // 매장 오픈 때 게임이 먼저 뜨고 Agent 가 뒤따라 뜨는 상황.
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "vista-backfill-"));
+  const logFile = path.join(directory, "ScreenGolf.log");
+  try {
+    await fs.writeFile(
+      logFile,
+      logLine(240, "LogNet: Browse: /Game/Golf/Course/Yecheon_AB/Yecheon_AB?Name=P") +
+        logLine(238, "LogLoad: Game class is 'BP_LobbyModebase_C'") +
+        logLine(2, "LogNet: Browse: /Game/Golf/Course/Yecheon_CD/Yecheon_CD?Name=P") +
+        logLine(2, "LogLoad: Game class is 'SGGameModeBase_C'"),
+      "utf8"
+    );
+
+    const monitor = createScreenGolfMonitor({ logFile });
+    const state = await monitor.observe(true);
+
+    assert.ok(state, "직전 코스 진입을 되살려야 한다");
+    assert.equal(state.gameState, "playing");
+    assert.equal(state.courseId, "Yecheon_CD", "4시간 전 코스가 아니라 2분 전 코스여야 한다");
+    assert.equal(state.roundStatus, "in_progress");
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("startup does not restore state from an old session", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "vista-backfill-old-"));
+  const logFile = path.join(directory, "ScreenGolf.log");
+  try {
+    // 어제 라운드 기록만 남은 로그. 지금 상태로 삼으면 안 된다.
+    await fs.writeFile(
+      logFile,
+      logLine(1440, "LogNet: Browse: /Game/Golf/Course/Yecheon_CD/Yecheon_CD?Name=P") +
+        logLine(1439, "LogLoad: Game class is 'SGGameModeBase_C'"),
+      "utf8"
+    );
+
+    const yesterday = new Date(Date.now() - 1440 * 60_000);
+    await fs.utimes(logFile, yesterday, yesterday);
+
+    const monitor = createScreenGolfMonitor({ logFile });
+    assert.equal(await monitor.observe(true), null);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
