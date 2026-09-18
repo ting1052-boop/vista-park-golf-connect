@@ -1,0 +1,8 @@
+{
+  "shared": {},
+  "bays": [
+    { "bayCode": "A-01", "agentToken": "REPLACE_WITH_BAY_01_AGENT_TOKEN" },
+    { "bayCode": "A-02", "agentToken": "REPLACE_WITH_BAY_02_AGENT_TOKEN" },
+    { "bayCode": "A-03", "agentToken": "REPLACE_WITH_BAY_03_AGENT_TOKEN" }
+  ]
+}

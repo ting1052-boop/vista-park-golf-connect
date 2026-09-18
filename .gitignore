@@ -6,6 +6,7 @@ dev-server*.log
 # 빌드 산출물 (Electron Agent exe/zip 등). 커밋하지 않음.
 dist/
 windows-agent/logs/
+windows-agent/release/
 windows-agent/agent.config.json
 windows-agent/agent-session.json
 windows-agent/bays.config.local.json

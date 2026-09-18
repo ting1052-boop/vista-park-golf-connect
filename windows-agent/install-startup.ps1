@@ -7,14 +7,17 @@ $ErrorActionPreference = "Stop"
 $agentDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $portableExe = Join-Path $agentDir "VISTA-Bay-Agent.exe"
+$unpackedExe = Join-Path $agentDir "VISTA Bay Agent.exe"
 $sourceCmd = Join-Path $agentDir "start-overlay.cmd"
 
 if (Test-Path $portableExe) {
   $target = $portableExe
+} elseif (Test-Path $unpackedExe) {
+  $target = $unpackedExe
 } elseif (Test-Path $sourceCmd) {
   $target = $sourceCmd
 } else {
-  throw "VISTA-Bay-Agent.exe 또는 start-overlay.cmd 를 이 폴더에서 찾을 수 없습니다: $agentDir"
+  throw "VISTA Agent 실행파일 또는 start-overlay.cmd 를 이 폴더에서 찾을 수 없습니다: $agentDir"
 }
 
 $startup = [Environment]::GetFolderPath("Startup")

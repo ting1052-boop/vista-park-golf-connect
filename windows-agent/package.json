@@ -1,16 +1,16 @@
 {
   "name": "vista-windows-agent",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Windows bay agent for VISTA Park Golf Connect",
   "main": "electron-main.js",
   "scripts": {
     "start": "electron .",
     "start:overlay": "electron .",
     "start:legacy": "node vista-agent.js",
-    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js && node game-log-probe.test.js && node screen-golf-monitor.test.js",
+    "check": "node --check vista-agent.js && node --check electron-main.js && node --check electron-preload.js && node --check renderer/renderer.js && node game-log-probe.test.js && node screen-golf-monitor.test.js && node screen-hole-detector.test.js && node round-event-outbox.test.js",
     "dist": "electron-builder --win dir --config.win.signAndEditExecutable=false",
-    "dist:portable": "electron-builder --win portable"
+    "dist:portable": "electron-builder --win portable --config.win.signAndEditExecutable=false"
   },
   "engines": {
     "node": ">=18"
@@ -27,11 +27,15 @@
       "agent-config.js",
       "game-log-probe.js",
       "screen-golf-monitor.js",
+      "screen-hole-detector.js",
+      "round-event-outbox.js",
+      "hole-ocr.ps1",
+      "monitor.config.example.json",
       "electron-preload.js",
       "renderer/**",
       "screens/**",
       "bays.config.json",
-      "bays.config.local.json"
+      "bays.config.local.example.json"
     ],
     "directories": {
       "output": "dist"

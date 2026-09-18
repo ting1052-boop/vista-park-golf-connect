@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 
-const { app, BrowserWindow, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, desktopCapturer, ipcMain, screen } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
@@ -9,11 +9,17 @@ const { execFile } = require("node:child_process");
 const { mergeBaysConfig } = require("./agent-config");
 const { createGameLogProbe } = require("./game-log-probe");
 const { createScreenGolfMonitor } = require("./screen-golf-monitor");
+const { createScreenHoleDetector } = require("./screen-hole-detector");
+const { createRoundEventOutbox } = require("./round-event-outbox");
 
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
+
+if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
+  app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
+}
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -23,6 +29,7 @@ if (!hasSingleInstanceLock) app.quit();
 let USER_DATA = ROOT;
 let USER_CONFIG_PATH = path.join(ROOT, "agent.config.json");
 let LOG_DIR = path.join(ROOT, "logs");
+let ROUND_OUTBOX_PATH = path.join(ROOT, "round-event-outbox.json");
 
 let mainWindow = null;
 let setupWindow = null;
@@ -41,7 +48,10 @@ let gameSampleSequence = 0;
 let gameTelemetryRefreshPromise = null;
 let latestGameTelemetry = null;
 let gameLogProbeTimer = null;
+let gameTelemetryTimer = null;
 let screenGolfMonitor = null;
+let screenHoleDetector = null;
+let roundEventOutbox = null;
 let lastHeartbeatIssueKey = null;
 let lastHeartbeatIssueLoggedAt = 0;
 
@@ -55,6 +65,11 @@ app.on("second-instance", () => {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function hasAgentCredentials() {
+  const token = String(config?.agentToken ?? "").trim();
+  return Boolean(config?.apiBaseUrl && token && !/^(?:change-me|replace_with_)/iu.test(token));
 }
 
 function ensureLogDir() {
@@ -112,8 +127,27 @@ function readJson(filePath) {
 
 function loadBaysConfig() {
   const base = readJson(BAYS_CONFIG_PATH);
-  if (!fs.existsSync(LOCAL_BAYS_CONFIG_PATH)) return mergeBaysConfig(base);
-  return mergeBaysConfig(base, readJson(LOCAL_BAYS_CONFIG_PATH));
+  const userLocalPath = path.join(USER_DATA, "bays.config.local.json");
+  if (fs.existsSync(userLocalPath)) return mergeBaysConfig(base, readJson(userLocalPath));
+  if (!app.isPackaged && fs.existsSync(LOCAL_BAYS_CONFIG_PATH)) return mergeBaysConfig(base, readJson(LOCAL_BAYS_CONFIG_PATH));
+  return mergeBaysConfig(base);
+}
+
+function loadMonitorOverrides() {
+  const monitorPath = path.join(USER_DATA, "monitor.config.json");
+  if (!fs.existsSync(monitorPath)) return {};
+  try {
+    const raw = readJson(monitorPath);
+    const allowed = [
+      "gameTelemetryIntervalSeconds", "gameHoleDetectionEnabled", "gameCaptureSourceName",
+      "gameHoleRoi", "gameHoleAllowDigitsOnlyInRoi", "gameHoleConfirmationCount",
+      "gameHoleSampleWindow", "gameHoleSampleWindowSeconds", "gameHoleStaleSeconds", "gameHoleLayoutVersion"
+    ];
+    return Object.fromEntries(allowed.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]]));
+  } catch (error) {
+    log("Failed to read monitor.config.json", { error: error.message });
+    return {};
+  }
 }
 
 // The selected bay is stored as { bayCode } in userData. We merge shared
@@ -133,7 +167,7 @@ function loadConfig() {
   const bay = baysConfig.bays.find((entry) => entry.bayCode === selectedBayCode);
   if (!bay) return null;
 
-  const merged = { ...baysConfig.shared, ...bay };
+  const merged = { ...baysConfig.shared, ...bay, ...loadMonitorOverrides() };
 
   return {
     ...merged,
@@ -146,6 +180,7 @@ function loadConfig() {
     criticalBeforeMinutes: Number(merged.criticalBeforeMinutes || 3),
     extensionMinutes: Number(merged.extensionMinutes || 30),
     extensionPrice: Number(merged.extensionPrice || 6000),
+    offlineMode: process.env.VISTA_AGENT_OFFLINE === "1",
     gameMonitoringEnabled: merged.gameMonitoringEnabled === true,
     gameProcessNames: Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
     gameStateLogFile:
@@ -157,6 +192,16 @@ function loadConfig() {
       ? merged.gameLogDirectories
       : ["C:\\PARK_260713-VISTA\\Launch\\Logs"],
     gameLogProbeIntervalSeconds: Math.max(5, Number(merged.gameLogProbeIntervalSeconds || 10)),
+    gameTelemetryIntervalSeconds: Math.max(1, Number(merged.gameTelemetryIntervalSeconds || 2)),
+    gameHoleDetectionEnabled: merged.gameHoleDetectionEnabled === true,
+    gameCaptureSourceName: String(merged.gameCaptureSourceName || ""),
+    gameHoleRoi: merged.gameHoleRoi && typeof merged.gameHoleRoi === "object" ? merged.gameHoleRoi : null,
+    gameHoleAllowDigitsOnlyInRoi: merged.gameHoleAllowDigitsOnlyInRoi === true,
+    gameHoleConfirmationCount: Math.max(2, Number(merged.gameHoleConfirmationCount || 2)),
+    gameHoleSampleWindow: Math.max(2, Number(merged.gameHoleSampleWindow || 3)),
+    gameHoleSampleWindowSeconds: Math.max(2, Number(merged.gameHoleSampleWindowSeconds || 6)),
+    gameHoleStaleSeconds: Math.max(2, Number(merged.gameHoleStaleSeconds || 5)),
+    gameHoleLayoutVersion: String(merged.gameHoleLayoutVersion || "unconfigured"),
     allowCloseWithEsc: merged.allowCloseWithEsc !== false
   };
 }
@@ -192,7 +237,8 @@ function loadLocalSession() {
 }
 
 async function loadServerSession() {
-  if (!config.apiBaseUrl || !config.agentToken || config.agentToken.startsWith("change-me")) {
+  if (config.offlineMode) return null;
+  if (!hasAgentCredentials()) {
     return null;
   }
 
@@ -290,6 +336,8 @@ function clearEndNotice() {
 }
 
 async function completeExpiredSession(accessSessionId) {
+  if (config.offlineMode) return;
+  if (!hasAgentCredentials()) throw new Error("agent_credentials_missing");
   const baseUrl = String(config.apiBaseUrl).replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/api/agent/session/end`, {
     method: "POST",
@@ -309,6 +357,7 @@ async function completeExpiredSession(accessSessionId) {
 
 async function shutdownIfStillIdle(accessSessionId) {
   shutdownTimer = null;
+  if (config.offlineMode) return;
 
   try {
     const currentSession = await loadServerSession();
@@ -394,11 +443,13 @@ function createGameTelemetry({
   stateSource,
   confidence,
   reasonCode,
-  detectorVersion = `process-v1-agent-${VERSION}`
+  detectorVersion = `process-v2-agent-${VERSION}`,
+  observedAt = nowIso(),
+  ...details
 }) {
   gameSampleSequence += 1;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sampleSequence: gameSampleSequence,
     monitorInstanceId: gameMonitorInstanceId,
     gameRunning,
@@ -407,9 +458,20 @@ function createGameTelemetry({
     roundStatus,
     stateSource,
     confidence,
-    observedAt: nowIso(),
+    observedAt,
     reasonCode,
-    detectorVersion
+    detectorVersion,
+    gameMode: details.gameMode ?? (gameRunning === false ? "none" : "unknown"),
+    courseId: details.courseId ?? null,
+    roundId: details.roundId ?? null,
+    gameInstanceId: details.gameInstanceId ?? null,
+    contextEpoch: Number.isSafeInteger(details.contextEpoch) ? details.contextEpoch : 0,
+    holeStatus: details.holeStatus ?? "unknown",
+    holeSource: details.holeSource ?? null,
+    holeObservedAt: details.holeObservedAt ?? null,
+    lastKnownHole: details.lastKnownHole ?? null,
+    lastKnownHoleAt: details.lastKnownHoleAt ?? null,
+    layoutVersion: config?.gameHoleLayoutVersion ?? "unconfigured"
   };
 }
 
@@ -456,12 +518,21 @@ async function collectGameTelemetry() {
     .filter(Boolean);
   const gameRunning = runningNames.some((name) => configuredNames.has(name));
 
-  const observedState = screenGolfMonitor ? await screenGolfMonitor.observe(gameRunning) : null;
+  let observedState = screenGolfMonitor ? await screenGolfMonitor.observe(gameRunning) : null;
+  if (observedState && screenHoleDetector) {
+    const observedEpoch = observedState.contextEpoch;
+    const observedGameInstanceId = observedState.gameInstanceId;
+    const holeObservation = await screenHoleDetector.observe(observedState);
+    const currentContext = screenGolfMonitor.getState();
+    if (currentContext?.contextEpoch === observedEpoch && currentContext?.gameInstanceId === observedGameInstanceId) {
+      observedState = screenGolfMonitor.applyHoleObservation(holeObservation) ?? observedState;
+    }
+  }
   if (observedState) {
     return createGameTelemetry({
       gameRunning,
       ...observedState,
-      detectorVersion: `screen-golf-log-v1-agent-${VERSION}`
+      detectorVersion: `screen-golf-v2-agent-${VERSION}`
     });
   }
 
@@ -605,7 +676,8 @@ function ensureWindow(mode) {
 }
 
 async function postHeartbeat(payload) {
-  if (!config.apiBaseUrl || !config.agentToken || config.agentToken.startsWith("change-me")) {
+  if (config.offlineMode) return { ok: false, skipped: true };
+  if (!hasAgentCredentials()) {
     return { ok: false, skipped: true };
   }
 
@@ -628,7 +700,12 @@ async function postHeartbeat(payload) {
     gameTelemetryAccepted:
       responseBody && typeof responseBody.gameTelemetryAccepted === "boolean"
         ? responseBody.gameTelemetryAccepted
-        : null
+        : null,
+    acceptedGameTelemetrySchemaVersions: Array.isArray(responseBody?.acceptedGameTelemetrySchemaVersions)
+      ? responseBody.acceptedGameTelemetrySchemaVersions
+      : [],
+    roundEventAckIds: Array.isArray(responseBody?.roundEventAckIds) ? responseBody.roundEventAckIds : [],
+    roundEventRejected: Array.isArray(responseBody?.roundEventRejected) ? responseBody.roundEventRejected : []
   };
 }
 
@@ -657,9 +734,8 @@ function recordHeartbeatResult(result) {
 async function tick() {
   let session = await loadSession();
   let remainingSeconds = getRemainingSeconds(session);
-  // 결과를 기다린다. 기다리지 않으면 이번 heartbeat 에 직전 주기의 게임 상태가
-  // 실려 나가, 화면 전환이 한 주기(기본 15초) 늦게 반영된다.
-  await refreshGameTelemetry();
+  // OCR runs on its own loop. Session warnings and shutdown must never wait for it.
+  if (!latestGameTelemetry) void refreshGameTelemetry();
   const gameTelemetry =
     latestGameTelemetry ??
     createGameTelemetry({
@@ -759,9 +835,13 @@ async function tick() {
       remainingSeconds,
       gameAppRunning,
       ...(config.gameMonitoringEnabled ? { gameTelemetry } : {}),
+      ...(roundEventOutbox ? { roundEvents: roundEventOutbox.list(20) } : {}),
       screenLocked: mode === "lock",
       lastSeenAt: nowIso()
     });
+    if (heartbeatResult.ok && roundEventOutbox) {
+      roundEventOutbox.applyServerResult(heartbeatResult.roundEventAckIds, heartbeatResult.roundEventRejected);
+    }
     recordHeartbeatResult(heartbeatResult);
   } catch (error) {
     log("Heartbeat failed", { error: error.message });
@@ -780,7 +860,7 @@ async function requestExtension(requestedMinutes) {
 
   extensionRequestState = { status: "pending", message: "연장 요청을 보내는 중입니다." };
 
-  if (!config.apiBaseUrl || !config.agentToken || config.agentToken.startsWith("change-me")) {
+  if (!hasAgentCredentials()) {
     extensionRequestState = {
       status: "local_demo",
       message: `${safeRequestedMinutes}분 연장 요청이 기록되었습니다. 서버 API 연결 전 테스트 모드입니다.`
@@ -891,13 +971,42 @@ ipcMain.handle("select-bay", (_event, bayCode) => {
 });
 
 async function startAgentLoop() {
+  roundEventOutbox = createRoundEventOutbox({ filePath: ROUND_OUTBOX_PATH, bayCode: config.bayCode });
   screenGolfMonitor = createScreenGolfMonitor({
     logFile: config.gameStateLogFile,
-    onDiagnostic: writeGameDiagnostic
+    onDiagnostic: writeGameDiagnostic,
+    onRoundEnded: (event) => {
+      try {
+        roundEventOutbox.enqueue({ ...event, agentVersion: VERSION });
+        log("Regular game returned to lobby", { eventId: event.eventId, roundId: event.roundId });
+      } catch (error) {
+        log("Round event could not be persisted", { error: error.message });
+      }
+    }
   });
+  screenHoleDetector = config.gameHoleDetectionEnabled
+    ? createScreenHoleDetector({
+        desktopCapturer,
+        userDataPath: USER_DATA,
+        helperSourcePath: path.join(ROOT, "hole-ocr.ps1"),
+        exactSourceName: config.gameCaptureSourceName,
+        roi: config.gameHoleRoi,
+        allowDigitsOnly: config.gameHoleAllowDigitsOnlyInRoi,
+        confirmationCount: config.gameHoleConfirmationCount,
+        sampleWindow: config.gameHoleSampleWindow,
+        sampleWindowMs: config.gameHoleSampleWindowSeconds * 1000,
+        staleAfterMs: config.gameHoleStaleSeconds * 1000,
+        layoutVersion: config.gameHoleLayoutVersion,
+        onDiagnostic: writeGameDiagnostic
+      })
+    : null;
   await startGameLogDiagnostics();
-  await refreshGameTelemetry();
   await tick();
+  void refreshGameTelemetry();
+  if (gameTelemetryTimer) clearInterval(gameTelemetryTimer);
+  gameTelemetryTimer = setInterval(() => {
+    void refreshGameTelemetry();
+  }, config.gameTelemetryIntervalSeconds * 1000);
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
     void tick();
@@ -908,6 +1017,7 @@ app.whenReady().then(async () => {
   USER_DATA = app.getPath("userData");
   USER_CONFIG_PATH = path.join(USER_DATA, "agent.config.json");
   LOG_DIR = path.join(USER_DATA, "logs");
+  ROUND_OUTBOX_PATH = path.join(USER_DATA, "round-event-outbox-v1.json");
 
   baysConfig = loadBaysConfig();
   config = loadConfig();
@@ -939,4 +1049,5 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   if (pollTimer) clearInterval(pollTimer);
   if (gameLogProbeTimer) clearInterval(gameLogProbeTimer);
+  if (gameTelemetryTimer) clearInterval(gameTelemetryTimer);
 });

@@ -51,9 +51,15 @@ npm install
 npm run dist
 ```
 
-결과물: `windows-agent\dist\VISTA-Bay-Agent.exe`
+기본 빌드는 Windows 권한 문제를 피하기 위해 `dist\win-unpacked` 실행 폴더를
+만듭니다. 이 폴더 전체를 ZIP으로 묶어 배포하며, 안의 `VISTA Bay Agent.exe`만
+따로 꺼내면 실행되지 않습니다. 단일 EXE가 꼭 필요할 때만 관리자 권한과 서명
+도구 환경을 준비한 뒤 `npm run dist:portable`을 사용합니다.
 
-빌드 전에 매장 공통값을 확인할 파일은 **`bays.config.json` 하나뿐**입니다.
+결과물: `windows-agent\dist\win-unpacked\` 폴더 전체
+
+공개 기본값은 `bays.config.json`, 실제 Agent 토큰은 Git에서 제외된
+`bays.config.local.json`에 둡니다. Agent 0.6.0부터 두 파일을 병합해서 읽습니다.
 - `shared`: 서버 주소, 시크릿/토큰, 정책(경고 시점·연장 시간·요금), 게임
   프로세스명 등 모든 타석 공통값
 - `bays`: 타석 목록(1/2/3번)과 각 타석용 `agentToken`
@@ -192,3 +198,31 @@ Agent API는 각 타석별 `agentToken`으로 인증하므로, 타석 PC에는 S
 - PC 전원 ON은 WOL 또는 스마트플러그로 처리합니다.
 - PC OFF는 강제 전원 차단보다 Agent를 통한 정상 종료/잠금을 우선합니다.
 - 이용 종료 직후에는 PC를 끄기보다 화면을 잠그고 다음 예약에 대비하는 흐름이 안전합니다.
+
+## 0.8.0 게임 상태 감지 및 설치 설정
+
+0.8.0은 기존 시간 제어와 별도로 골프 프로그램의 메뉴·일반 코스·연습장을
+관찰합니다. 보정이 끝난 타석에서는 게임 창의 홀 표시 영역만 로컬 OCR로 읽어
+관리자 대시보드에 `최근 홀 관측`으로 보냅니다. 화면 원본과 OCR 원문은 서버로
+보내지 않으며, OCR 실패는 예약·경고·연장·종료 기능을 막지 않습니다.
+
+공통 배포 ZIP에는 실제 Agent 토큰을 넣지 않습니다. 각 타석 PC의 아래 사용자
+폴더에 `bays.config.local.json`을 만들고 해당 타석 토큰만 넣습니다.
+
+```text
+%APPDATA%\vista-windows-agent\bays.config.local.json
+```
+
+형식은 `bays.config.local.example.json`을 참고합니다. 이 파일은 Git·공개 드라이브·
+화면 캡처에 포함하지 않습니다. 기존 실행파일 안에 토큰이 포함돼 있던 PC는 새
+실행파일 교체 전에 기존 설정을 안전한 로컬 파일로 옮겨야 합니다.
+
+홀 감지는 기본적으로 꺼져 있습니다. A-02 현장에서 실제 게임 창과 홀 영역을
+확인한 뒤 같은 폴더에 `monitor.config.json`을 만들고, 검증된 ROI와 고유
+`gameHoleLayoutVersion`을 기록한 경우에만 켭니다. 예시 ROI 숫자를 운영에 그대로
+사용하면 안 됩니다. 실제 게임 창 이름은 `NewGameViewportClientWindow`로 확인됐지만,
+창이 없거나 둘 이상이면 번호를 추측하지 않고 `확인 불가`로 둡니다.
+
+대시보드의 `오늘 로비 복귀`는 일반 코스에서 메뉴로 돌아온 횟수입니다. 18홀 완주,
+예약, 결제 건수를 의미하지 않습니다. 전송되지 않은 기록은 로컬 outbox에 남고
+서버의 확인 응답을 받은 뒤에만 제거됩니다.

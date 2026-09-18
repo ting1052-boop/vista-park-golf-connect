@@ -1,0 +1,11 @@
+{
+  "gameHoleDetectionEnabled": false,
+  "gameCaptureSourceName": "NewGameViewportClientWindow",
+  "gameHoleRoi": null,
+  "gameHoleAllowDigitsOnlyInRoi": false,
+  "gameHoleConfirmationCount": 2,
+  "gameHoleSampleWindow": 3,
+  "gameHoleSampleWindowSeconds": 6,
+  "gameHoleStaleSeconds": 5,
+  "gameHoleLayoutVersion": "unconfigured"
+}
