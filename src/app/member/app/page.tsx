@@ -650,6 +650,10 @@ export default function MemberAppPage() {
           </div>
         </header>
 
+        <div className="mt-4">
+          <SocialLoginPanel />
+        </div>
+
         <section className="mt-5">
           <div className="flex items-center gap-2">
             <Store className="text-vista-leaf" size={21} aria-hidden="true" />
@@ -972,10 +976,6 @@ export default function MemberAppPage() {
         </section>
 
         <PwaInstallCard />
-
-        <div className="mt-5">
-          <SocialLoginPanel />
-        </div>
 
         <div className="mt-5">
           <Link href="/member/scorecard" className="block rounded-md border border-[#cad8c6] px-4 py-4 text-center text-sm font-extrabold">
