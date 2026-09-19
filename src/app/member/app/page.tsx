@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   CalendarClock,
@@ -220,6 +220,7 @@ export default function MemberAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const reviewRef = useRef<HTMLElement | null>(null);
   const [memberUserId, setMemberUserId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const dateOptions = useMemo(() => getDateOptions(now), [now]);
@@ -521,6 +522,8 @@ export default function MemberAppPage() {
     if (!isReviewing) {
       if (validateReservationInput()) {
         setIsReviewing(true);
+        // 확인 단계가 화면 밖에서 열리면 버튼을 눌러도 아무 일도 없는 것처럼 보인다.
+        requestAnimationFrame(() => reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
       }
 
       return;
@@ -799,14 +802,14 @@ export default function MemberAppPage() {
             ))}
           </div>
 
-          <div className="mt-3 rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
-            <div className="flex items-center justify-between gap-3">
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
+            <div>
               <p className="text-sm font-extrabold">예상 이용요금</p>
-              <strong className="text-lg text-vista-leaf">{formatCurrency(estimatedPrice)}</strong>
+              {bonusMinutes > 0 ? (
+                <p className="mt-0.5 text-xs font-bold text-[#697468]">총 {reservedMinutes}분 이용</p>
+              ) : null}
             </div>
-            <p className="mt-1 text-xs font-semibold leading-5 text-[#697468]">
-              온라인 결제는 1차 MVP 범위에서 제외되어 있으며, 실제 결제 방식은 매장 정책에 따릅니다.
-            </p>
+            <strong className="text-lg text-vista-leaf">{formatCurrency(estimatedPrice)}</strong>
           </div>
 
           <p className="mt-3 rounded-md bg-[#edf6ef] px-3 py-2 text-xs font-bold leading-5 text-vista-leaf">
@@ -817,12 +820,6 @@ export default function MemberAppPage() {
               .join(", ")}
             )
           </p>
-
-          {durationMinutes >= 90 || bonusMinutes > 0 ? (
-            <p className="mt-3 rounded-md bg-[#eef5ff] px-3 py-2 text-xs font-bold leading-5 text-[#28516f]">
-              선택한 시작 시간부터 총 {reservedMinutes}분 구간이 한 번에 예약됩니다.
-            </p>
-          ) : null}
 
           <label className="mt-3 grid gap-1 text-sm font-bold text-[#4f5b50]">
             타석 선택
@@ -885,7 +882,7 @@ export default function MemberAppPage() {
           </div>
 
           {isReviewing ? (
-            <section className="mt-5 rounded-md border border-vista-mint bg-vista-fairway p-4">
+            <section ref={reviewRef} className="mt-5 rounded-md border border-vista-mint bg-vista-fairway p-4">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="text-vista-leaf" size={21} aria-hidden="true" />
                 <h2 className="text-lg font-extrabold">5. 예약 확인</h2>
@@ -1002,7 +999,7 @@ export default function MemberAppPage() {
             className="flex min-h-[52px] min-w-[156px] items-center justify-center gap-2 rounded-md bg-vista-leaf px-4 py-3 text-base font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoading ? <Loader2 className="animate-spin" size={20} aria-hidden="true" /> : null}
-            {isReviewing ? "예약 확정" : "예약 내용 확인"}
+            {isReviewing ? "이대로 예약 확정" : "예약하기"}
             <ChevronRight size={20} aria-hidden="true" />
           </button>
         </div>
