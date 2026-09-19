@@ -29,6 +29,10 @@ type AdminCrudPageProps = {
   resource: CrudResource;
   fields: CrudField[];
   initialRows: CrudRow[];
+  /** 다른 표에서 끌어와 읽기 전용으로 덧붙이는 열. 편집 대상이 아니다. */
+  extraColumns?: Array<{ key: string; label: string }>;
+  /** 행 id -> { 열 key: 표시값 } */
+  extraValues?: Record<string, Record<string, string>>;
 };
 
 type StoreRecord = {
@@ -300,7 +304,9 @@ export function AdminCrudPage({
   tableName,
   resource,
   fields,
-  initialRows
+  initialRows,
+  extraColumns = [],
+  extraValues = {}
 }: AdminCrudPageProps) {
   const emptyRow = useMemo(() => createEmptyRow(fields), [fields]);
   const [rows, setRows] = useState(initialRows);
@@ -810,6 +816,11 @@ export function AdminCrudPage({
                         {field.label}
                       </th>
                     ))}
+                    {extraColumns.map((column) => (
+                      <th key={column.key} className="px-5 py-3 font-extrabold">
+                        {column.label}
+                      </th>
+                    ))}
                     <th className="px-5 py-3 font-extrabold">작업</th>
                   </tr>
                 </thead>
@@ -826,6 +837,11 @@ export function AdminCrudPage({
                                   setEditDraft((current) => ({ ...current, [field.key]: value }))
                                 )
                               : row[field.key] || "-"}
+                          </td>
+                        ))}
+                        {extraColumns.map((column) => (
+                          <td key={column.key} className="px-5 py-4 font-semibold">
+                            {extraValues[row.id]?.[column.key] || "-"}
                           </td>
                         ))}
                         <td className="px-5 py-4">

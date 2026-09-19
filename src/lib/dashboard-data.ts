@@ -78,6 +78,7 @@ export const adminNavItems = [
   { label: "예약관리", href: "/admin/reservations", active: false },
   { label: "미수금", href: "/admin/unpaid", active: false },
   { label: "무인제어", href: "/admin/automation", active: false },
+  { label: "원격접속", href: "/admin/remote-access", active: false },
   { label: "요금설정", href: "/admin/pricing", active: false },
   { label: "매장관리", href: "/admin/stores", active: false },
   { label: "타석관리", href: "/admin/bays", active: false },
