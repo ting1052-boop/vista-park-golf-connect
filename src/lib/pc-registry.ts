@@ -18,7 +18,8 @@ export type RegistryRow = {
   updated_at: string;
 };
 
-export type RegisterAuth = { kind: "global" } | { kind: "device"; deviceId: string };
+// global: 세팅 도구가 전역 토큰으로. device: 자기 장비만. admin: 관리자 화면 수동 입력.
+export type RegisterAuth = { kind: "global" } | { kind: "device"; deviceId: string } | { kind: "admin" };
 
 export type RegisterFailure = {
   status: number;
@@ -181,7 +182,9 @@ export async function registerBayPc(
 
   // 전역 토큰으로 들어온 등록에는 장비 토큰을 새로 발급한다. 현장에서 장비
   // 토큰을 잃어버렸을 때 운영자가 전역 토큰으로 다시 받아갈 수 있어야 한다.
+  // 관리자 수동 입력은 그 PC 가 앞으로 스스로 보고한다는 뜻이 아니므로 발급하지 않는다.
   const issuedToken = auth.kind === "global" ? randomBytes(32).toString("base64url") : null;
+  const changeSource = auth.kind === "admin" ? "admin" : "setup_tool";
   const tokenColumns = issuedToken
     ? { device_token_hash: hashToken(issuedToken), device_token_issued_at: nowIso }
     : {};
@@ -201,7 +204,7 @@ export async function registerBayPc(
       bayId: bay.id,
       previousAnydeskId: null,
       newAnydeskId: payload.anydeskId,
-      changeSource: "setup_tool"
+      changeSource
     });
   } else {
     const unchanged = (Object.keys(facts) as Array<keyof typeof facts>).every(
@@ -224,7 +227,7 @@ export async function registerBayPc(
         bayId: bay.id,
         previousAnydeskId: existing.anydesk_id,
         newAnydeskId: payload.anydeskId,
-        changeSource: "setup_tool"
+        changeSource
       });
     }
   }

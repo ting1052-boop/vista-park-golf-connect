@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Check, Copy, History, Loader2, MonitorSmartphone, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, Copy, History, Loader2, MonitorSmartphone, Plus, RefreshCw } from "lucide-react";
 
 type Device = {
   deviceId: string;
@@ -29,7 +29,38 @@ type HistoryEntry = {
   changeSource: string;
 };
 
-type ApiResponse = { ok?: boolean; message?: string; devices?: Device[]; history?: HistoryEntry[] };
+type StoreOption = {
+  id: string;
+  code: string;
+  name: string;
+  bays: Array<{ id: string; bayCode: string; name: string }>;
+};
+
+type ApiResponse = {
+  ok?: boolean;
+  message?: string;
+  devices?: Device[];
+  history?: HistoryEntry[];
+  stores?: StoreOption[];
+};
+
+type SaveResponse = {
+  ok?: boolean;
+  code?: string;
+  message?: string;
+  action?: string;
+  conflict?: { computerName: string; anydeskId: string; bayCode: string | null } | null;
+};
+
+const emptyDraft = {
+  storeId: "",
+  bayId: "",
+  pcType: "park",
+  computerName: "",
+  anydeskId: "",
+  windowsEdition: "",
+  activationStatus: "unknown"
+};
 
 const pcTypeLabel: Record<string, string> = { range: "골프연습장", park: "파크골프" };
 const activationLabel: Record<string, string> = {
@@ -55,10 +86,14 @@ function formatDateTime(value: string) {
 export function RemoteAccessClient() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [stores, setStores] = useState<StoreOption[]>([]);
   const [openHistoryFor, setOpenHistoryFor] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async (deviceId?: string) => {
     setLoading(true);
@@ -70,12 +105,67 @@ export function RemoteAccessClient() {
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "원격접속 목록을 불러오지 못했습니다.");
       setDevices(data.devices ?? []);
       setHistory(data.history ?? []);
+      setStores(data.stores ?? []);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "원격접속 목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const bayOptions = stores.find((store) => store.id === draft.storeId)?.bays ?? [];
+
+  const save = async (replace: boolean) => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/admin/remote-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: draft.storeId,
+          bayId: draft.bayId,
+          pcType: draft.pcType,
+          computerName: draft.computerName.trim(),
+          anydeskId: draft.anydeskId.trim(),
+          windowsEdition: draft.windowsEdition.trim() || undefined,
+          activationStatus: draft.activationStatus,
+          replace
+        })
+      });
+      const data = (await response.json()) as SaveResponse;
+
+      if (!response.ok || data.ok === false) {
+        // 이 타석에 이미 다른 PC 가 있으면 사람이 교체를 확인한 뒤에만 바꾼다.
+        if (data.code === "slot_occupied" && data.conflict && !replace) {
+          const ok = window.confirm(
+            `${data.conflict.bayCode ?? "이 타석"}에는 이미 ${data.conflict.computerName}` +
+              ` (AnyDesk ${data.conflict.anydeskId}) 이(가) 등록되어 있습니다.\n\n` +
+              "이 PC 로 교체하시겠습니까? 기존 등록은 삭제되고 교체 이력이 남습니다."
+          );
+          if (ok) {
+            setSaving(false);
+            await save(true);
+            return;
+          }
+          setError("교체하지 않았습니다.");
+          return;
+        }
+
+        throw new Error(data.message ?? "등록에 실패했습니다.");
+      }
+
+      setMessage(data.action === "unchanged" ? "이미 같은 내용으로 등록되어 있습니다." : "등록했습니다.");
+      setDraft((current) => ({ ...emptyDraft, storeId: current.storeId, pcType: current.pcType }));
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "등록에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -119,6 +209,120 @@ export function RemoteAccessClient() {
           새로고침
         </button>
       </header>
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save(false);
+        }}
+        className="rounded-md border border-[#dfe8dc] bg-[#fbfcfa] p-4"
+      >
+        <div className="flex items-center gap-2">
+          <Plus className="text-vista-leaf" size={18} aria-hidden="true" />
+          <h2 className="font-extrabold">수동 등록</h2>
+        </div>
+        <p className="mt-1 text-xs font-semibold text-[#697468]">
+          세팅 도구를 돌릴 수 없는 PC 를 직접 넣습니다. 매장과 타석은 먼저 등록되어 있어야 합니다.
+        </p>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <label className="grid gap-1 text-xs font-bold text-[#4f5b50]">
+            매장
+            <select
+              value={draft.storeId}
+              onChange={(event) => setDraft((current) => ({ ...current, storeId: event.target.value, bayId: "" }))}
+              required
+              className="rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf"
+            >
+              <option value="">선택하세요</option>
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold text-[#4f5b50]">
+            타석
+            <select
+              value={draft.bayId}
+              onChange={(event) => setDraft((current) => ({ ...current, bayId: event.target.value }))}
+              required
+              disabled={bayOptions.length === 0}
+              className="rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf disabled:opacity-60"
+            >
+              <option value="">{draft.storeId ? "선택하세요" : "매장을 먼저 고르세요"}</option>
+              {bayOptions.map((bay) => (
+                <option key={bay.id} value={bay.id}>
+                  {bay.bayCode} · {bay.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold text-[#4f5b50]">
+            구분
+            <select
+              value={draft.pcType}
+              onChange={(event) => setDraft((current) => ({ ...current, pcType: event.target.value }))}
+              className="rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf"
+            >
+              <option value="park">파크골프</option>
+              <option value="range">골프연습장</option>
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold text-[#4f5b50]">
+            PC 이름
+            <input
+              value={draft.computerName}
+              onChange={(event) => setDraft((current) => ({ ...current, computerName: event.target.value }))}
+              required
+              placeholder="예: PARK01"
+              className="rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf"
+            />
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold text-[#4f5b50]">
+            AnyDesk ID
+            <input
+              value={draft.anydeskId}
+              onChange={(event) => setDraft((current) => ({ ...current, anydeskId: event.target.value }))}
+              required
+              inputMode="numeric"
+              placeholder="예: 123 456 789"
+              className="rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf"
+            />
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold text-[#4f5b50]">
+            Windows <span className="font-semibold text-[#8a968b]">(선택)</span>
+            <input
+              value={draft.windowsEdition}
+              onChange={(event) => setDraft((current) => ({ ...current, windowsEdition: event.target.value }))}
+              placeholder="예: Windows 11 IoT Enterprise"
+              className="rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf"
+            />
+          </label>
+        </div>
+
+        <button
+          type="submit"
+          disabled={saving || loading}
+          className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md bg-vista-leaf px-4 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+          등록
+        </button>
+      </form>
+
+      {message ? (
+        <p className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+          <Check size={16} aria-hidden="true" />
+          {message}
+        </p>
+      ) : null}
 
       {error ? (
         <p className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
@@ -194,7 +398,9 @@ export function RemoteAccessClient() {
                   <td className="px-4 py-4 font-semibold">
                     <p>{formatDateTime(device.registeredAt)}</p>
                     {device.setupToolVersion ? (
-                      <p className="mt-0.5 text-xs text-[#697468]">세팅 도구 {device.setupToolVersion}</p>
+                      <p className="mt-0.5 text-xs text-[#697468]">
+                        {device.setupToolVersion === "manual" ? "수동 등록" : `세팅 도구 ${device.setupToolVersion}`}
+                      </p>
                     ) : null}
                   </td>
                   <td className="px-4 py-4">
