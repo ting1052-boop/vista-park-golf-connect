@@ -366,8 +366,18 @@ export function DashboardClient({
     }
   };
 
-  const handlePowerOff = async (bay: LiveBay) => {
-    const confirmed = window.confirm(`${bay.name} 타석 이용을 종료할까요?\n손님 화면 잠금과 장비 OFF 자동화를 함께 요청합니다.`);
+  // 이 버튼은 장비만 끄는 것이 아니다. 하는 일을 전부 적어두지 않으면
+  // "장비 OFF" 라는 이름만 보고 전원만 내리는 줄 알게 된다.
+  // PC 는 여기서 꺼지지 않는다. PC 종료는 무인제어 탭의 타석 토글(shutdown_pc)이 한다.
+  const handleEndSession = async (bay: LiveBay) => {
+    const confirmed = window.confirm(
+      `${bay.name} 이용을 종료합니다.\n\n` +
+        "· 이용 시간을 끝내고 타석을 배정 가능으로 되돌립니다\n" +
+        "· 손님 키오스크 화면을 잠급니다\n" +
+        "· 타석 프로젝터와 공용 조명·냉난방 OFF 를 매장 제어기에 요청합니다\n" +
+        "· 타석 PC 는 켜둡니다 (PC 종료는 무인제어 탭에서)\n\n" +
+        "진행할까요?"
+    );
     if (!confirmed) return;
 
     setIsSyncing(true);
@@ -404,19 +414,32 @@ export function DashboardClient({
               startedAtIso: undefined,
               endsAtIso: undefined,
               mode: "즉시 배정 가능",
-              note: "관리자 원격 OFF 완료"
+              note: "관리자 이용 종료"
             }
           : item
       )
     );
+
+    // "요청함" 과 "성공" 을 구분한다. 서버가 돌려주는 requested 는 매장 제어기에
+    // 명령을 넘겼다는 뜻이고, 기기가 실제로 꺼졌다는 확인은 아니다.
+    // 프로젝터·에어컨은 IR 이라 Home Assistant 도 꺼졌는지 읽지 못한다.
     const automationFailed = data.automationStatus === "failed";
+    const automationSkipped = data.automationStatus === "skipped";
     addLog(
       bay.name,
-      automationFailed ? "이용 종료 완료, 장비 OFF 자동화 확인 필요" : "키오스크 잠금, 조명·냉난방·타석 전원 OFF 요청",
-      automationFailed ? "자동화 실패" : "성공",
-      automationFailed ? "warning" : "control"
+      automationFailed
+        ? "이용 종료 완료, 장비 OFF 요청 실패"
+        : automationSkipped
+          ? "이용 종료 완료, 장비 OFF 는 건너뜀"
+          : "이용 종료, 키오스크 잠금, 장비 OFF 요청함",
+      automationFailed ? "자동화 실패" : automationSkipped ? "일부 생략" : "요청함",
+      automationFailed ? "danger" : automationSkipped ? "warning" : "control"
     );
-    setToast(automationFailed ? `${bay.name} 이용은 종료됐지만 장비 OFF 확인이 필요합니다.` : `${bay.name} 이용을 종료했습니다.`);
+    setToast(
+      automationFailed
+        ? `${bay.name} 이용은 종료됐지만 장비 OFF 요청이 실패했습니다. 무인제어 탭에서 확인하세요.`
+        : `${bay.name} 이용을 종료하고 장비 OFF 를 요청했습니다.`
+    );
   };
 
   // 이용 중인 타석의 종료 시각을 실제로 조정한다.
@@ -784,8 +807,8 @@ export function DashboardClient({
                       key={`overtime-${bay.id}`}
                       title={`${bay.name} 미퇴장 확인 필요`}
                       description={`${bay.customer ?? "이용 고객"}의 이용 시간이 초과되었습니다. 퇴장 안내 또는 추가 연장 처리가 필요합니다.`}
-                      actionLabel="장비 OFF"
-                      onAction={() => handlePowerOff(bay)}
+                      actionLabel="이용 종료"
+                      onAction={() => handleEndSession(bay)}
                     />
                   ))}
                   {soonEndingBays.map((bay) => (
@@ -937,7 +960,7 @@ export function DashboardClient({
                       <BayCard
                         key={bay.id}
                         bay={bay}
-                        onPowerOff={handlePowerOff}
+                        onEndSession={handleEndSession}
                         onExtendTime={handleExtendTime}
                         onCheckIn={handleCheckIn}
                         onMaintenanceDone={handleMaintenanceDone}
@@ -1171,7 +1194,7 @@ export function DashboardClient({
                           </div>
                           <button
                             type="button"
-                            onClick={() => handlePowerOff(bay)}
+                            onClick={() => handleEndSession(bay)}
                             disabled={isSyncing}
                             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-rose-600 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
                           >
@@ -1264,13 +1287,13 @@ function WarningItem({
 
 function BayCard({
   bay,
-  onPowerOff,
+  onEndSession,
   onExtendTime,
   onCheckIn,
   onMaintenanceDone
 }: {
   bay: LiveBay;
-  onPowerOff: (bay: LiveBay) => void | Promise<void>;
+  onEndSession: (bay: LiveBay) => void | Promise<void>;
   onExtendTime: (bay: LiveBay) => void | Promise<void>;
   onCheckIn: (bay: LiveBay) => void | Promise<void>;
   onMaintenanceDone: (bay: LiveBay) => void | Promise<void>;
@@ -1389,11 +1412,11 @@ function BayCard({
           <>
             <button
               type="button"
-              onClick={() => onPowerOff(bay)}
+              onClick={() => onEndSession(bay)}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-rose-600 px-3 py-2.5 text-sm font-extrabold text-white transition hover:bg-rose-500"
             >
               <Power size={18} aria-hidden="true" />
-              장비 OFF
+              이용 종료
             </button>
             <button
               type="button"
