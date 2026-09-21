@@ -12,10 +12,9 @@ function error(status: number, code: string, message: string, extra: Record<stri
 }
 
 export async function POST(request: NextRequest) {
+  // 토큰이 없으면 거절하지 않는다. 그 매장의 등록 창구가 열려 있으면 통과하고,
+  // 닫혀 있으면 registerBayPc 가 enrollment_closed 로 막는다.
   const token = getBearerToken(request);
-  if (!token) {
-    return error(401, "unauthorized", "등록 토큰이 필요합니다.");
-  }
 
   let supabase;
   try {

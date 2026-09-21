@@ -35,19 +35,33 @@ VISTA 서버에 HTTPS 로 등록하는 기능.
 ## 2. 접속 정보
 
 - Base URL: 별도 전달 (형태: `https://<vista-도메인>`)
-- 전역 등록 토큰 `PC_SETUP_TOKEN`: 별도 전달. **이 문서에 적지 않는다.**
+- 최초 등록에는 **토큰이 필요 없다** (등록 창구 방식, 3절).
+- 전역 등록 토큰 `PC_SETUP_TOKEN`: 복구용. 필요할 때만 별도 전달. **이 문서에 적지 않는다.**
 - 모든 호출은 HTTPS. 인증 헤더는 `Authorization: Bearer <토큰>`.
 
 ---
 
-## 3. 인증 모델 — 2단계 토큰
+## 3. 인증 모델 — 등록 창구 + 장비 토큰
 
 이 설계의 핵심이다. 정확히 따르라.
 
-### 전역 토큰 (`PC_SETUP_TOKEN`)
+### 최초 등록 — 토큰 없음
 
-- **운영자가 세팅 도구 실행 시 직접 입력한다.** 복제 이미지에 굽지 않는다.
-- 등록 요청을 보내는 동안만 메모리에 들고 있다가 **즉시 버린다.**
+**세팅 도구에 비밀값을 넣지 마라.** 고정 식별값을 프로그램에 박는 방식은 쓰지 않는다.
+배포 파일에서 읽을 수 있는 값은 영구히 유출된 것과 같고, 그 값이면 누구나 남의 매장
+AnyDesk ID 를 덮어쓸 수 있다.
+
+대신 관리자가 설치 작업 동안만 **등록 창구**를 연다(기본 30분 / 최대 10대).
+
+- 창이 열린 동안에는 `Authorization` 헤더 **없이** 등록과 catalog 조회가 된다.
+- 창이 닫혀 있으면 `401 enrollment_closed` 가 온다. 이때는 재시도하지 말고
+  **"관리자 화면 원격접속에서 PC 등록을 허용해주세요"** 를 띄우고 사람을 기다려라.
+- 도구는 창을 열 수 없다. 그건 관리자 화면에서만 한다.
+
+### 전역 토큰 (`PC_SETUP_TOKEN`) — 복구용, 선택
+
+- 창구를 못 여는 상황에서 운영자가 **실행 시 직접 입력**하는 예비 경로다. 평소에는 쓰지 않는다.
+- 복제 이미지에 굽지 않는다. 요청 동안만 메모리에 들고 있다가 **즉시 버린다.**
 - 어떤 경우에도 디스크에 쓰지 않는다.
 
 ### 장비 토큰 (`deviceToken`)
@@ -67,13 +81,14 @@ VISTA 서버에 HTTPS 로 등록하는 기능.
 
 ## 4. `GET /api/pc-setup/catalog` — 매장·타석 목록
 
-**전역 토큰 전용.** 현장에서 매장코드·타석코드를 손으로 적으면 오타가 난다. 이 목록으로
-**드롭다운**을 만들어 고르게 하라.
+현장에서 매장코드·타석코드를 손으로 적으면 오타가 난다. 이 목록으로 **드롭다운**을 만들어
+고르게 하라.
 
-요청:
+**창구가 열린 매장만** 돌려준다. 열린 매장이 없으면 `401 enrollment_closed`.
+
+요청 (토큰 없음):
 ```
 GET /api/pc-setup/catalog
-Authorization: Bearer <PC_SETUP_TOKEN>
 ```
 
 응답 `200`:
@@ -130,7 +145,7 @@ Authorization: Bearer <PC_SETUP_TOKEN>
 
 ```
 POST /api/pc-setup/register
-Authorization: Bearer <PC_SETUP_TOKEN 또는 deviceToken>
+Authorization: Bearer <deviceToken>      ← 최초 등록에는 이 헤더를 아예 보내지 않는다
 Content-Type: application/json
 ```
 
@@ -189,7 +204,7 @@ Content-Type: application/json
       "message": "PC 이름 PARK01 이(가) 다른 장비에도 쓰이고 있습니다.",
       "deviceIds": ["..."] }
   ],
-  "deviceToken": "...(전역 토큰으로 등록했을 때만, 한 번만)",
+  "deviceToken": "...(최초 등록 때만, 한 번만)",
   "registeredAt": "2026-09-19T05:12:00.000Z"
 }
 ```
@@ -212,6 +227,7 @@ Content-Type: application/json
 
 | HTTP | `code` | 재시도 | 도구 동작 |
 |---|---|---|---|
+| 401 | `enrollment_closed` | ❌ | **등록 창구가 닫혀 있다.** "관리자 화면 원격접속에서 PC 등록을 허용해주세요" 안내 후 대기. 사람이 열면 다시 시도 |
 | 401 | `unauthorized` | ❌ | 토큰이 틀렸다. 전역 토큰 재입력 요청 |
 | 403 | `device_mismatch` | ❌ | 저장된 장비 토큰이 이 PC 것이 아니다. 토큰 파일 삭제 후 전역 토큰으로 재등록 |
 | 400 | `invalid_payload` | ❌ | `field` 가 가리키는 항목을 고치게 한다 |
@@ -270,7 +286,8 @@ Content-Type: application/json
    나머지 세팅 단계는 계속 진행한다. 등록 실패가 세팅 전체를 막으면 안 된다.
 3. 다음 실행 시 대기 파일이 있으면:
    - 저장된 장비 토큰이 있으면 그 토큰으로 바로 전송한다.
-   - 없으면 **운영자에게 전역 토큰을 다시 입력받아** 전송한다.
+   - 없으면 **토큰 없이** 전송한다. `401 enrollment_closed` 면 관리자에게 창구를
+     열어달라고 안내하고 대기한다.
 4. 성공(2xx)하면 대기 파일을 삭제한다. 4xx 를 받아도 삭제하고 오류를 보여준다
    (재시도해도 같은 결과다). 5xx 면 파일을 남기고 다음 실행을 기다린다.
 5. 대기 파일에 `queuedAt` 을 기록하고, **7일 이상 된 항목은 전송 전에 값을 다시 수집**하라.
@@ -290,8 +307,9 @@ Content-Type: application/json
 4. AnyDesk 복제 설정 초기화 → 새 ID 확인        (기존 기능)
 5. 저장된 장비 토큰이 있는가?
      있음 → 그 토큰 사용, catalog 호출 생략(이전 선택 재사용)
-     없음 → 운영자에게 전역 토큰 입력받기 → GET /api/pc-setup/catalog
-            → 매장·타석 드롭다운 선택 → pcType 선택
+     없음 → GET /api/pc-setup/catalog (토큰 없이)
+            401 enrollment_closed → "관리자 화면에서 PC 등록을 허용해주세요" 안내 후 대기
+            200 → 매장·타석 드롭다운 선택 → pcType 선택
 6. POST /api/pc-setup/register
 7. 성공: deviceToken 이 있으면 DPAPI 로 저장. action 에 맞는 메시지 표시
    409 slot_occupied: 확인받고 replace:true 로 재전송
@@ -308,7 +326,9 @@ Content-Type: application/json
 서버 없이도 확인할 수 있는 것부터 테스트하라. 스텁 서버로 각 응답을 흉내 내면 된다.
 
 - [ ] `deviceId` 가 같은 PC 에서 반복 실행해도 동일하다
+- [ ] **프로그램 안에 고정 비밀값·식별값이 없다** (바이너리 문자열 검사)
 - [ ] 전역 토큰이 디스크 어디에도 기록되지 않는다 (파일·레지스트리·로그 전수 확인)
+- [ ] `401 enrollment_closed` 에서 재시도하지 않고 사람에게 안내한다
 - [ ] `deviceToken` 이 DPAPI 로 감싸여 저장되고, 평문이 로그·화면에 나오지 않는다
 - [ ] 로그에 `Authorization` 헤더와 요청 본문 전체가 없다. `deviceId` 는 앞 8자만
 - [ ] 제품키·비밀번호가 요청 본문에 없다

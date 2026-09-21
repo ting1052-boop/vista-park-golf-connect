@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin-auth";
+import { closeEnrollment, getEnrollmentState, openEnrollment } from "@/lib/pc-enrollment";
 import { parseRegisterPayload } from "@/lib/pc-registry-payload";
 import { registerBayPc } from "@/lib/pc-registry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -123,7 +124,20 @@ export async function GET(request: NextRequest) {
       .map((bay) => ({ id: bay.id, bayCode: bay.bay_code, name: bay.display_name ?? bay.bay_code }))
   }));
 
-  return NextResponse.json({ ok: true, devices, history, stores });
+  // 매장별 등록 창구 상태. 창이 열린 동안만 세팅 도구가 토큰 없이 등록할 수 있다.
+  const enrollment: Record<string, { open: boolean; until: string | null; remaining: number | null }> = {};
+  let enrollmentSupported = true;
+  for (const store of storeRows) {
+    try {
+      const state = await getEnrollmentState(supabase, store.id);
+      enrollmentSupported = enrollmentSupported && state.supported;
+      enrollment[store.id] = { open: state.open, until: state.until, remaining: state.remaining };
+    } catch {
+      enrollmentSupported = false;
+    }
+  }
+
+  return NextResponse.json({ ok: true, devices, history, stores, enrollment, enrollmentSupported });
 }
 
 /**
@@ -144,6 +158,46 @@ export async function POST(request: NextRequest) {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ ok: false, code: "invalid_payload", message: "요청 본문을 확인해주세요." }, { status: 400 });
+  }
+
+  // 등록 창구 열기·닫기. 수동 등록과 같은 라우트를 쓰되 action 으로 가른다.
+  if (body.action === "open_enrollment" || body.action === "close_enrollment") {
+    const storeId = typeof body.storeId === "string" ? body.storeId : null;
+    if (!storeId) {
+      return NextResponse.json({ ok: false, code: "invalid_payload", message: "매장을 선택해주세요." }, { status: 400 });
+    }
+
+    let supabaseAdmin;
+    try {
+      supabaseAdmin = createSupabaseAdminClient();
+    } catch (caught) {
+      return NextResponse.json(
+        { ok: false, code: "server_error", message: caught instanceof Error ? caught.message : "서버 설정 오류" },
+        { status: 500 }
+      );
+    }
+
+    try {
+      if (body.action === "close_enrollment") {
+        await closeEnrollment(supabaseAdmin, storeId);
+        return NextResponse.json({ ok: true, message: "등록 창구를 닫았습니다." });
+      }
+
+      const opened = await openEnrollment(supabaseAdmin, storeId, {
+        minutes: typeof body.minutes === "number" ? body.minutes : undefined,
+        count: typeof body.count === "number" ? body.count : undefined
+      });
+      return NextResponse.json({
+        ok: true,
+        message: `${opened.minutes}분간 최대 ${opened.remaining}대까지 등록을 허용합니다.`,
+        ...opened
+      });
+    } catch (caught) {
+      return NextResponse.json(
+        { ok: false, code: "server_error", message: caught instanceof Error ? caught.message : "등록 창구를 바꾸지 못했습니다." },
+        { status: 500 }
+      );
+    }
   }
 
   // 손으로 넣는 PC 에는 하드웨어 해시가 없다. 임의 식별자를 만들어 준다.

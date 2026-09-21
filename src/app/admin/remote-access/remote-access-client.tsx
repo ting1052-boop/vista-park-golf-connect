@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Check, Copy, History, Loader2, MonitorSmartphone, Plus, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, Copy, DoorOpen, History, Loader2, MonitorSmartphone, Plus, RefreshCw } from "lucide-react";
 
 type Device = {
   deviceId: string;
@@ -36,12 +36,16 @@ type StoreOption = {
   bays: Array<{ id: string; bayCode: string; name: string }>;
 };
 
+type EnrollmentState = { open: boolean; until: string | null; remaining: number | null };
+
 type ApiResponse = {
   ok?: boolean;
   message?: string;
   devices?: Device[];
   history?: HistoryEntry[];
   stores?: StoreOption[];
+  enrollment?: Record<string, EnrollmentState>;
+  enrollmentSupported?: boolean;
 };
 
 type SaveResponse = {
@@ -87,6 +91,8 @@ export function RemoteAccessClient() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [stores, setStores] = useState<StoreOption[]>([]);
+  const [enrollment, setEnrollment] = useState<Record<string, EnrollmentState>>({});
+  const [enrollmentSupported, setEnrollmentSupported] = useState(true);
   const [openHistoryFor, setOpenHistoryFor] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +112,8 @@ export function RemoteAccessClient() {
       setDevices(data.devices ?? []);
       setHistory(data.history ?? []);
       setStores(data.stores ?? []);
+      setEnrollment(data.enrollment ?? {});
+      setEnrollmentSupported(data.enrollmentSupported !== false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "원격접속 목록을 불러오지 못했습니다.");
     } finally {
@@ -114,6 +122,26 @@ export function RemoteAccessClient() {
   }, []);
 
   const bayOptions = stores.find((store) => store.id === draft.storeId)?.bays ?? [];
+  const changeEnrollment = async (storeId: string, action: "open_enrollment" | "close_enrollment") => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/remote-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, storeId, minutes: 30, count: 10 })
+      });
+      const data = (await response.json()) as SaveResponse;
+      if (!response.ok || data.ok === false) throw new Error(data.message ?? "등록 창구를 바꾸지 못했습니다.");
+      setMessage(data.message ?? null);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "등록 창구를 바꾸지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const save = async (replace: boolean) => {
     setSaving(true);
@@ -209,6 +237,55 @@ export function RemoteAccessClient() {
           새로고침
         </button>
       </header>
+
+      <section className="rounded-md border border-[#dfe8dc] bg-white p-4">
+        <div className="flex items-center gap-2">
+          <DoorOpen className="text-vista-leaf" size={18} aria-hidden="true" />
+          <h2 className="font-extrabold">PC 등록 창구</h2>
+        </div>
+        <p className="mt-1 text-xs font-semibold leading-5 text-[#697468]">
+          창을 열어둔 동안에만 세팅 도구가 토큰 없이 등록할 수 있습니다. 설치가 끝나면 닫아주세요.
+          30분이 지나거나 10대를 채우면 자동으로 닫힙니다.
+        </p>
+
+        {!enrollmentSupported ? (
+          <p className="mt-3 rounded-md bg-[#fff9f0] px-3 py-2 text-xs font-bold text-[#8a5a21]">
+            등록 창구 마이그레이션이 아직 적용되지 않았습니다. 적용 전에는 세팅 도구가 PC_SETUP_TOKEN 을 써야 합니다.
+          </p>
+        ) : (
+          <div className="mt-3 grid gap-2">
+            {stores.map((store) => {
+              const state = enrollment[store.id];
+              const isOpen = Boolean(state?.open);
+              return (
+                <div
+                  key={store.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#e5ece1] bg-[#fbfcfa] px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-extrabold">{store.name}</p>
+                    <p className="mt-0.5 text-xs font-bold text-[#697468]">
+                      {isOpen
+                        ? `${formatDateTime(state!.until as string)} 까지 · ${state!.remaining ?? 0}대 남음`
+                        : "닫힘"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void changeEnrollment(store.id, isOpen ? "close_enrollment" : "open_enrollment")}
+                    disabled={saving || loading}
+                    className={`min-h-11 shrink-0 rounded-md px-4 text-sm font-extrabold disabled:opacity-60 ${
+                      isOpen ? "border border-[#cad8c6] bg-white" : "bg-vista-leaf text-white"
+                    }`}
+                  >
+                    {isOpen ? "닫기" : "30분간 열기"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <form
         onSubmit={(event) => {

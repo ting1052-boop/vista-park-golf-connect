@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerToken } from "@/lib/agent-server";
+import { listOpenEnrollmentStoreIds } from "@/lib/pc-enrollment";
 import { matchesGlobalSetupToken } from "@/lib/pc-registry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -11,14 +12,15 @@ type RegistryRow = { bay_id: string; pc_type: string; computer_name: string };
  * 세팅 도구의 매장·타석 드롭다운용 목록.
  * 현장에서 storeCode 와 bayCode 를 손으로 적으면 오타가 난다.
  *
+ * 전역 토큰이면 전 매장을 돌려준다. 토큰이 없으면 등록 창구가 열린 매장만
+ * 돌려준다. 창이 하나도 안 열려 있으면 아무것도 보여주지 않는다.
+ *
  * 장비 토큰으로는 열 수 없다. 장비 토큰은 자기 장비만 갱신하는 권한이고,
- * 이 응답은 전 매장 타석 목록이다.
+ * 이 응답은 매장 타석 목록이다.
  */
 export async function GET(request: NextRequest) {
   const token = getBearerToken(request);
-  if (!token || !matchesGlobalSetupToken(token)) {
-    return NextResponse.json({ ok: false, code: "unauthorized", message: "등록 토큰이 올바르지 않습니다." }, { status: 401 });
-  }
+  const isGlobal = Boolean(token && matchesGlobalSetupToken(token));
 
   let supabase;
   try {
@@ -28,6 +30,21 @@ export async function GET(request: NextRequest) {
       { ok: false, code: "server_error", message: caught instanceof Error ? caught.message : "서버 설정 오류" },
       { status: 500 }
     );
+  }
+
+  let allowedStoreIds: string[] | null = null;
+  if (!isGlobal) {
+    allowedStoreIds = await listOpenEnrollmentStoreIds(supabase);
+    if (allowedStoreIds.length === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "enrollment_closed",
+          message: "지금은 PC 등록 창구가 열린 매장이 없습니다. 관리자 화면 원격접속에서 등록을 허용해주세요."
+        },
+        { status: 401 }
+      );
+    }
   }
 
   const [storeResult, bayResult, registryResult] = await Promise.all([
@@ -58,6 +75,7 @@ export async function GET(request: NextRequest) {
 
   const stores = ((storeResult.data ?? []) as StoreRow[])
     .filter((store) => store.status !== "closed")
+    .filter((store) => allowedStoreIds === null || allowedStoreIds.includes(store.id))
     .map((store) => ({
       id: store.id,
       code: store.code,

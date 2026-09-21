@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { consumeEnrollmentSlot, getEnrollmentState, type EnrollmentState } from "@/lib/pc-enrollment";
 import type { RegisterPayload } from "@/lib/pc-registry-payload";
 
 export type RegistryRow = {
@@ -18,8 +19,13 @@ export type RegistryRow = {
   updated_at: string;
 };
 
-// global: 세팅 도구가 전역 토큰으로. device: 자기 장비만. admin: 관리자 화면 수동 입력.
-export type RegisterAuth = { kind: "global" } | { kind: "device"; deviceId: string } | { kind: "admin" };
+// enrollment: 토큰 없는 최초 등록. 관리자가 그 매장 창구를 열어둔 동안만 통한다.
+// global: 운영자 복구용 전역 토큰. device: 등록 뒤 자기 장비만. admin: 관리자 화면 수동 입력.
+export type RegisterAuth =
+  | { kind: "global" }
+  | { kind: "enrollment" }
+  | { kind: "device"; deviceId: string }
+  | { kind: "admin" };
 
 export type RegisterFailure = {
   status: number;
@@ -29,6 +35,7 @@ export type RegisterFailure = {
     | "anydesk_id_taken"
     | "slot_occupied"
     | "device_mismatch"
+    | "enrollment_closed"
     | "server_error";
   message: string;
   conflict?: { deviceId: string; computerName: string; anydeskId: string; bayCode: string | null };
@@ -63,13 +70,18 @@ export function matchesGlobalSetupToken(token: string) {
 }
 
 /**
- * 토큰 하나로 인증 주체를 가른다. 전역 토큰은 어느 장비든 등록할 수 있고,
+ * 토큰으로 인증 주체를 가른다. 전역 토큰은 어느 장비든 등록할 수 있고,
  * 장비 토큰은 자기 device_id 만 갱신할 수 있다.
+ *
+ * 토큰이 아예 없으면 enrollment 후보로 둔다. 실제 허용 여부는 매장을 알아낸 뒤
+ * registerBayPc 에서 그 매장의 창구가 열려 있는지로 판단한다. 여기서 바로
+ * 통과시키지 않는 이유는, 창구가 매장별이기 때문이다.
  */
 export async function resolveRegisterAuth(
   supabase: SupabaseClient,
-  token: string
+  token: string | null
 ): Promise<RegisterAuth | null> {
+  if (!token) return { kind: "enrollment" };
   if (matchesGlobalSetupToken(token)) return { kind: "global" };
 
   const { data, error } = await supabase
@@ -103,6 +115,21 @@ export async function registerBayPc(
   const bay = await findBay(supabase, store.id, payload);
   if (!bay) {
     return fail(404, "bay_not_found", "등록된 타석이 아닙니다. 관리자 화면 타석관리에서 먼저 추가해주세요.");
+  }
+
+  // 토큰 없는 등록은 그 매장의 창구가 열려 있을 때만 통한다. 매장을 알아낸
+  // 지금이 판단할 수 있는 가장 이른 시점이다.
+  let enrollment: EnrollmentState | null = null;
+  if (auth.kind === "enrollment") {
+    const state = await getEnrollmentState(supabase, store.id);
+    if (!state.open) {
+      return fail(
+        401,
+        "enrollment_closed",
+        "이 매장의 PC 등록 창구가 닫혀 있습니다. 관리자 화면 원격접속에서 등록을 허용한 뒤 다시 시도해주세요."
+      );
+    }
+    enrollment = state;
   }
 
   // AnyDesk ID 는 한 장비에 하나뿐이다. replace 로도 넘어갈 수 없는 하드 에러다.
@@ -183,7 +210,8 @@ export async function registerBayPc(
   // 전역 토큰으로 들어온 등록에는 장비 토큰을 새로 발급한다. 현장에서 장비
   // 토큰을 잃어버렸을 때 운영자가 전역 토큰으로 다시 받아갈 수 있어야 한다.
   // 관리자 수동 입력은 그 PC 가 앞으로 스스로 보고한다는 뜻이 아니므로 발급하지 않는다.
-  const issuedToken = auth.kind === "global" ? randomBytes(32).toString("base64url") : null;
+  const issuedToken =
+    auth.kind === "global" || auth.kind === "enrollment" ? randomBytes(32).toString("base64url") : null;
   const changeSource = auth.kind === "admin" ? "admin" : "setup_tool";
   const tokenColumns = issuedToken
     ? { device_token_hash: hashToken(issuedToken), device_token_issued_at: nowIso }
@@ -199,6 +227,12 @@ export async function registerBayPc(
     if (insertError) return fail(500, "server_error", insertError.message);
 
     action = "created";
+
+    // 새 장비 하나가 창구 한 자리를 쓴다. 갱신은 소모하지 않는다.
+    if (enrollment && enrollment.remaining !== null) {
+      await consumeEnrollmentSlot(supabase, store.id, enrollment.remaining);
+    }
+
     await writeHistory(supabase, {
       deviceId: payload.deviceId,
       bayId: bay.id,
