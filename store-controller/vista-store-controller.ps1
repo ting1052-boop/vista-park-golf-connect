@@ -105,6 +105,9 @@ function Process-Command {
 $config = Read-ControllerConfig
 $apiBase = $config.apiBaseUrl.TrimEnd('/')
 $headers = @{ Authorization = "Bearer $($config.controllerToken)"; "x-store-controller-id" = [string]$config.controllerId }
+if ($null -ne $config.storeId -and -not [string]::IsNullOrWhiteSpace([string]$config.storeId)) {
+  $headers["x-store-id"] = [string]$config.storeId
+}
 $configuredInterval = if ($null -eq $config.pollIntervalSeconds) { 5 } else { [int]$config.pollIntervalSeconds }
 $interval = [Math]::Max(3, $configuredInterval)
 

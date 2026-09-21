@@ -60,6 +60,12 @@ create table public.store_settings (
   extension_buffer_minutes integer not null default 10,
   extension_price integer not null default 6000,
   conflict_policy text not null default 'partial',
+  automation_schedule_enabled boolean not null default false,
+  automation_open_time time,
+  automation_close_time time,
+  automation_timezone text not null default 'Asia/Seoul',
+  automation_last_opened_on date,
+  automation_last_closed_on date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint store_settings_extension_mode_check check (extension_mode in ('auto', 'manual')),
@@ -70,7 +76,10 @@ create table public.store_settings (
   ),
   constraint store_settings_extension_buffer_minutes_check check (extension_buffer_minutes between 0 and 240),
   constraint store_settings_extension_price_check check (extension_price >= 0),
-  constraint store_settings_conflict_policy_check check (conflict_policy in ('reject', 'partial', 'manual_review'))
+  constraint store_settings_conflict_policy_check check (conflict_policy in ('reject', 'partial', 'manual_review')),
+  constraint store_settings_automation_time_order_check check (
+    automation_open_time is null or automation_close_time is null or automation_open_time < automation_close_time
+  )
 );
 
 create table public.store_users (

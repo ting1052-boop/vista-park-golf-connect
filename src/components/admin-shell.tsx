@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -9,7 +10,6 @@ import {
   Bell,
   CalendarClock,
   FileText,
-  Gamepad2,
   Home,
   LayoutDashboard,
   LogOut,
@@ -18,11 +18,11 @@ import {
   MonitorSmartphone,
   PackageCheck,
   ShieldCheck,
-  Trophy,
   Users,
   Wallet
 } from "lucide-react";
-import { adminNavItems } from "@/lib/dashboard-data";
+import type { AdminContext } from "@/lib/admin-context";
+import { getAdminNavItems } from "@/lib/dashboard-data";
 
 const navIconMap = {
   "/admin/dashboard": LayoutDashboard,
@@ -34,16 +34,21 @@ const navIconMap = {
   "/admin/bays": LayoutDashboard,
   "/admin/devices": PackageCheck,
   "/admin/members": Users,
-  "/admin/games": Gamepad2,
-  "/admin/rankings": Trophy,
-  "/admin/tournaments": Trophy,
   "/admin/join": Users,
   "/admin/reports": FileText
 } as const;
 
-export function AdminShell({ children }: { children: ReactNode }) {
+export function AdminShell({ children, adminContext }: { children: ReactNode; adminContext: AdminContext | null }) {
   const pathname = usePathname();
   const router = useRouter();
+  const limitedMenu = adminContext?.limitedMenu ?? false;
+  const navItems = useMemo(() => getAdminNavItems(limitedMenu), [limitedMenu]);
+
+  useEffect(() => {
+    if (limitedMenu && !navItems.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))) {
+      router.replace("/admin/dashboard");
+    }
+  }, [limitedMenu, navItems, pathname, router]);
 
   const handleLogout = async () => {
     const supabase = createBrowserSupabaseClient();
@@ -57,8 +62,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   const activeItem =
-    adminNavItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) ??
-    adminNavItems[0];
+    navItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) ?? navItems[0];
 
   return (
     <main className="min-h-screen bg-[#eef2ec] text-vista-ink">
@@ -79,7 +83,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </div>
 
             <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5" aria-label="관리자 메뉴">
-              {adminNavItems.map((item) => {
+              {navItems.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = navIconMap[item.href as keyof typeof navIconMap] ?? LayoutDashboard;
 
@@ -108,7 +112,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="text-vista-leaf" size={23} aria-hidden="true" />
                   <div>
-                    <p className="text-sm font-extrabold">본사관리자</p>
+                    <p className="text-sm font-extrabold">{adminContext?.roleLabel ?? "본사관리자"}</p>
                     <p className="text-xs font-semibold text-[#697468]">권한 적용 완료</p>
                   </div>
                 </div>
@@ -129,11 +133,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <header className="sticky top-0 z-20 border-b border-[#d9e3d5] bg-white/95 backdrop-blur">
             <div className="flex items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-vista-leaf">비스타파크골프 시흥점</p>
+                <p className="text-sm font-bold text-vista-leaf">{adminContext?.storeName ?? "비스타파크골프 시흥점"}</p>
                 <h2 className="truncate text-xl font-extrabold sm:text-2xl">{activeItem.label}</h2>
               </div>
               <div className="hidden rounded-md border border-[#d9e4d6] bg-vista-fairway px-4 py-2 text-sm font-bold text-vista-leaf sm:block">
-                본사관리자
+                {adminContext?.roleLabel ?? "본사관리자"}
               </div>
               <button className="relative grid size-11 place-items-center rounded-md border border-[#d9e4d6] bg-white text-vista-ink">
                 <Bell size={20} aria-hidden="true" />
@@ -141,7 +145,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </button>
             </div>
             <nav className="flex gap-2 overflow-x-auto border-t border-[#edf2ea] px-4 py-3 sm:px-6 lg:hidden" aria-label="모바일 관리자 메뉴">
-              {adminNavItems.map((item) => {
+              {navItems.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link

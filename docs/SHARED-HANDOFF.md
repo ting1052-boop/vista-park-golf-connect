@@ -17,6 +17,8 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·DB 적용/배포 대기 | 관리자 메뉴 단순화, 매장 관리자 전용 메뉴 제한, 무인제어 매장 시작·종료 시간 예약 기능 구현 | `src/lib/admin-context.ts`, `src/lib/dashboard-data.ts`, 관리자 셸·대시보드·무인제어 UI/API, 매장 제어기 스케줄 처리, `202609210001_store_automation_schedule.sql`, 본 원장 |
+| Codex | 중지·미커밋 보존 | 기존 Agent를 중단·백업하고 설정을 보존한 채 0.8.0 포터블 Agent를 설치하는 현장용 전체 패키지 제작 | `windows-agent/install-agent.ps1`, 설치 안내·패키지 산출물, 본 원장 |
 | Codex | 완료·현장 설치 대기 | Agent 0.8.0 통합 변경, 신규 DB migration, GitHub push 및 Vercel 운영 배포·검증 완료. A-02 Agent 교체와 HUD ROI 보정만 현장 작업으로 남음 | Agent 0.8.0 소스·테스트, heartbeat/telemetry/event 저장, 관리자 대시보드, 신규 migration, 본 원장 |
 | Codex | 완료·운영 미적용 | A-02 현장 감지 기능을 Agent 0.8.0·서버 telemetry/event 저장·관리자 대시보드에 통합하고 로컬 검증 | `windows-agent/` 감지·outbox·패키징, `src/lib/game-telemetry.ts`, Agent heartbeat/저장 계층, 대시보드 데이터·화면, 신규 migration, 본 원장 |
 | Codex | 완료·계획서만 | A-02 현장 전달본 분석 및 Agent 최종 배포본·관리자 대시보드 통합 구현 위임 계획서 작성 | `docs/agent-dashboard-field-integration-plan-20260917.md`, 본 원장; 구현·빌드·배포 없음 |
@@ -114,6 +116,7 @@
 
 | 날짜 | 작업자 | 변경·검증 | 상태 |
 | --- | --- | --- | --- |
+| Codex | 진행 중 | HH 골프 PC 세팅 도구 즉시 자동등록: 토큰 입력 제거, 제한된 자동등록 인증과 현장 보호 유지 | `src/app/api/pc-setup/catalog/route.ts`, `src/app/api/pc-setup/register/route.ts`, `src/lib/pc-registry.ts`, PC 세팅 도구, 본 원장 |
 | 2026-07-25 | Codex | 공용 원장, `AGENTS.md`/`CLAUDE.md` 시작 규칙, `npm run preflight` 추가 및 실행 검증 | 완료 |
 | 2026-07-25 | Codex | typecheck, lint, Windows Agent check, production build 기준선 통과 | 완료 |
 | 2026-07-25 | Codex | `npm run verify` 자동 루프 추가, 정적 검사 4종과 HTTP 15종 통과 | 완료 |
@@ -512,3 +515,14 @@ Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 �
 - 최종 포터블 실행파일은 `windows-agent/dist/VISTA-Bay-Agent.exe`와 `windows-agent/release/VISTA-Bay-Agent-0.8.0.exe`이며 파일 버전은 0.8.0, SHA-256은 `F805C76B46F3E453220E9F0DA1D9359572DA0BC3B1D5D0756E42DAE687BBC3A3`이다. 기존 0.7.0은 `windows-agent/release/VISTA-Bay-Agent-0.7.0-backup.exe`로 보존했다.
 - 프로덕션 대시보드 실측: A-02는 최근 heartbeat로 `PC 켜짐`, `라운드 진행 · 홀 확인 불가`를 표시한다. 상세에는 실제 실행 중인 현장 Agent가 아직 0.6.0이고 출처가 `mixed`임이 보인다. 신규 이벤트 테이블 조회는 정상이며 오늘 로비 복귀는 0회다.
 - 남은 현장 작업: A-02의 실행파일을 0.8.0으로 교체하고 시작프로그램을 재등록한 뒤, 오프라인 진단 프로필로 HUD ROI를 보정한다. 이후 1→2홀, 로비 복귀, 중단, Agent 재시작 후 outbox 재전송을 실증해야 한다. 장비 제어는 이번 배포 검증에서 수행하지 않았다.
+
+## Store Manager Menu + Operating Schedule (2026-09-21, Codex)
+
+- 전체 관리자 메뉴에서 아직 운영하지 않는 `경기기록`, `랭킹`, `대회운영`을 숨겼다. 페이지 소스와 데이터는 삭제하지 않았다.
+- `public.users.role`과 `store_users` 배정을 우선 읽는 관리자 컨텍스트를 추가했다. `store_manager`와 `staff`는 배정된 매장의 `대시보드`, `무인제어`만 보며, 대시보드와 무인제어 API도 그 매장 ID로 조회·제어한다. 기존 본사 계정이나 구형 DB는 시흥점 기본값으로 호환된다.
+- 무인제어 화면에 자동제어 사용 여부, 매장 시작 시간, 종료 시간 입력과 저장 버튼을 추가했다. 시작 시 공용 장비와 해당 매장에서 장비 매핑이 확인된 모든 타석에 ON 명령을 보내고, 종료 시 진행/초과 세션이 없을 때만 Agent PC 정상 종료와 타석·공용 장비 OFF를 실행한다.
+- 매장 제어기 요청에 선택적 `x-store-id`를 추가하고 명령 조회·오래된 명령 정리 범위를 해당 매장으로 제한했다. 기존 시흥점 설정에 `storeId`가 없어도 기존 시흥점 ID를 사용한다. 신규 매장은 `controller.config.json`에 실제 매장 ID가 필요하다.
+- 신규 migration: `supabase/migrations/202609210001_store_automation_schedule.sql`. 운영시간, 활성화 여부, 마지막 일일 실행 날짜를 `store_settings`에 저장한다. migration 미적용 화면은 저장을 막고 적용 필요 상태를 표시한다.
+- 아파트 매장에서 실제 PC·프로젝터를 켜려면 아파트 `stores`/`store_users` 등록, 타석 코드별 `device-map` 또는 HA 스크립트 매핑, 해당 매장 제어기의 `storeId` 설정이 추가로 필요하다. 현재 저장소에는 아파트의 실제 매장 ID와 9개 타석 장비 매핑이 없다.
+- 검증: `npm run typecheck`, `npm run lint`, 프로덕션 `npm run build`, 승인 실행의 `npm run verify:quick`(정적 검사 4종, HTTP 15종), `git diff --check` 통과. 로컬 관리자 로그인 화면 HTTP 200을 확인했다. 인증 계정별 실제 렌더, 운영 DB migration, 배포, 장비 제어는 수행하지 않았다.
+- 변경은 아직 미커밋이다. 다른 작업자의 문서·PC 세팅 API 변경과 중지된 Agent 설치 패키지 파일은 보존했으며 수정하지 않았다.

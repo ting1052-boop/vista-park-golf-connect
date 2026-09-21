@@ -29,14 +29,15 @@ import {
   Zap
 } from "lucide-react";
 import {
-  adminNavItems,
   featureChecks,
+  getAdminNavItems,
   type AdminAlert,
   type ControlLog,
   type LiveBay,
   type LiveBayStatus,
   type LogTone
 } from "@/lib/dashboard-data";
+import type { AdminContext } from "@/lib/admin-context";
 import type { AutomationDeviceStatusRow, PowerState } from "@/lib/supabase/automation-status";
 import {
   ADMIN_MAX_HOURS,
@@ -144,6 +145,7 @@ function getEntryMethodLabel(value: string | undefined) {
 
 type DashboardClientProps = {
   currentStoreId: string;
+  adminContext: AdminContext;
   initialBays: LiveBay[];
   initialStoreSummaries?: DashboardStoreSummary[];
   initialReservations?: DashboardReservationRow[];
@@ -182,6 +184,7 @@ const emptyTodayReservationSummary: DashboardReservationSummary = {
 
 export function DashboardClient({
   currentStoreId,
+  adminContext,
   initialBays,
   initialStoreSummaries = [],
   initialReservations = [],
@@ -209,6 +212,7 @@ export function DashboardClient({
   const storeSummaries: DashboardStoreSummary[] = initialStoreSummaries;
   const automationDevices: AutomationDeviceStatusRow[] = initialAutomationDevices;
   const sharedPower: PowerState = initialSharedPower;
+  const navItems = getAdminNavItems(adminContext.limitedMenu);
 
   useEffect(() => {
     setNow(new Date());
@@ -633,7 +637,7 @@ export function DashboardClient({
             </div>
 
             <nav className="flex-1 space-y-1 px-4 py-5" aria-label="관리자 메뉴">
-              {adminNavItems.map((item) => (
+              {navItems.map((item) => (
                 <Link
                   key={item.label}
                   href={item.href}
@@ -657,8 +661,8 @@ export function DashboardClient({
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="text-vista-leaf" size={23} aria-hidden="true" />
                   <div>
-                    <p className="text-sm font-extrabold">본사관리자</p>
-                    <p className="text-xs font-semibold text-[#697468]">본사관리자 권한 적용 완료</p>
+                    <p className="text-sm font-extrabold">{adminContext.roleLabel}</p>
+                    <p className="text-xs font-semibold text-[#697468]">권한 적용 완료</p>
                   </div>
                 </div>
                 <button
@@ -688,7 +692,7 @@ export function DashboardClient({
               </button>
 
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-vista-leaf">비스타파크골프 시흥점</p>
+                <p className="text-sm font-bold text-vista-leaf">{adminContext.storeName}</p>
                 <h2 className="truncate text-xl font-extrabold sm:text-2xl">무인 매장 운영 대시보드</h2>
               </div>
 
@@ -706,7 +710,7 @@ export function DashboardClient({
               </label>
 
               <div className="hidden rounded-md border border-[#d9e4d6] bg-vista-fairway px-4 py-2 text-sm font-bold text-vista-leaf sm:block">
-                본사관리자
+                {adminContext.roleLabel}
               </div>
               <button className="relative grid size-11 place-items-center rounded-md border border-[#d9e4d6] bg-white text-vista-ink">
                 <Bell size={20} aria-hidden="true" />

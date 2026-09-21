@@ -4,8 +4,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { StoreControllerCommandPayload, StoreControllerCommandStatus } from "@/lib/store-controller";
 import { prepareDueReservations } from "@/lib/reservation-prepare";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
+import { processStoreAutomationSchedule } from "@/lib/store-automation-schedule";
 
-const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
+const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
 type CommandRow = {
   id: string;
@@ -24,6 +25,11 @@ const COMMAND_MAX_ATTEMPTS = 20;
 
 function getControllerId(request: NextRequest) {
   return request.headers.get("x-store-controller-id")?.trim() || "vista-store-controller";
+}
+
+function getControllerStoreId(request: NextRequest) {
+  const value = request.headers.get("x-store-id")?.trim();
+  return value && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value) ? value : DEFAULT_STORE_ID;
 }
 
 function hasValidControllerToken(request: NextRequest) {
@@ -60,13 +66,14 @@ export async function GET(request: NextRequest) {
   const nowIso = now.toISOString();
   const staleBeforeIso = new Date(now.getTime() - COMMAND_MAX_AGE_MS).toISOString();
   const controllerId = getControllerId(request);
+  const storeId = getControllerStoreId(request);
   const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
 
   // 매장 제어기가 상시 조회하는 이 엔드포인트를 종료·준비 스케줄러로 사용한다.
   // 종료를 먼저 처리해야 같은 타석에 OFF와 ON이 함께 생길 때 최종 순서가 ON이 된다.
   // 각 확인 실패는 격리해 기존 장비 명령 수령을 막지 않는다.
   try {
-    const cleanup = await closeExpiredSessions(supabase, now, { storeId: CURRENT_STORE_ID });
+    const cleanup = await closeExpiredSessions(supabase, now, { storeId });
     if (cleanup.failed > 0) {
       console.warn("만료 세션 일부 정리 실패", {
         scanned: cleanup.scanned,
@@ -82,9 +89,17 @@ export async function GET(request: NextRequest) {
 
   // 곧 시작하는 예약의 타석을 미리 켠다.
   try {
-    await prepareDueReservations(supabase, CURRENT_STORE_ID, now);
+    await prepareDueReservations(supabase, storeId, now);
   } catch (error) {
     console.warn("예약 사전 준비 확인 실패", {
+      error: error instanceof Error ? error.message : "unknown"
+    });
+  }
+
+  try {
+    await processStoreAutomationSchedule(supabase, storeId, now);
+  } catch (error) {
+    console.warn("매장 운영시간 자동제어 확인 실패", {
       error: error instanceof Error ? error.message : "unknown"
     });
   }
@@ -99,6 +114,7 @@ export async function GET(request: NextRequest) {
       lease_expires_at: null,
       error_message: "명령 유효시간(15분)이 지나 자동 취소되었습니다."
     })
+    .eq("store_id", storeId)
     .eq("status", "pending")
     .in("command_type", [...CONTROLLER_COMMAND_TYPES])
     .lt("created_at", staleBeforeIso);
@@ -115,6 +131,7 @@ export async function GET(request: NextRequest) {
       lease_expires_at: null,
       error_message: "처리 중 응답이 끊겼고 명령 유효시간이 지나 자동 취소되었습니다."
     })
+    .eq("store_id", storeId)
     .eq("status", "processing")
     .in("command_type", [...CONTROLLER_COMMAND_TYPES])
     .lt("lease_expires_at", nowIso)
@@ -132,6 +149,7 @@ export async function GET(request: NextRequest) {
       lease_expires_at: null,
       error_message: "제어기 재시도 한도를 초과했습니다."
     })
+    .eq("store_id", storeId)
     .eq("status", "pending")
     .in("command_type", [...CONTROLLER_COMMAND_TYPES])
     .gte("attempts", COMMAND_MAX_ATTEMPTS);
@@ -143,6 +161,7 @@ export async function GET(request: NextRequest) {
   const { error: recoverError } = await supabase
     .from("store_controller_commands")
     .update({ status: "pending", controller_id: null, lease_expires_at: null })
+    .eq("store_id", storeId)
     .eq("status", "processing")
     .lt("lease_expires_at", nowIso);
 
@@ -152,6 +171,7 @@ export async function GET(request: NextRequest) {
     .from("store_controller_commands")
     .select("id, store_id, bay_id, access_session_id, reservation_id, command_type, payload, attempts")
     .eq("status", "pending")
+    .eq("store_id", storeId)
     .in("command_type", [...CONTROLLER_COMMAND_TYPES])
     .gte("created_at", staleBeforeIso)
     .lt("attempts", COMMAND_MAX_ATTEMPTS)

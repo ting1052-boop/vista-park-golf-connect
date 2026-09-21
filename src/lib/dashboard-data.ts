@@ -84,12 +84,14 @@ export const adminNavItems = [
   { label: "타석관리", href: "/admin/bays", active: false },
   { label: "장비관리", href: "/admin/devices", active: false },
   { label: "회원관리", href: "/admin/members", active: false },
-  { label: "경기기록", href: "/admin/games", active: false },
-  { label: "랭킹", href: "/admin/rankings", active: false },
-  { label: "대회운영", href: "/admin/tournaments", active: false },
   { label: "조인모집", href: "/admin/join", active: false },
   { label: "리포트", href: "/admin/reports", active: false }
 ] as const;
+
+export function getAdminNavItems(limitedMenu: boolean) {
+  if (!limitedMenu) return adminNavItems;
+  return adminNavItems.filter((item) => item.href === "/admin/dashboard" || item.href === "/admin/automation");
+}
 
 export const featureChecks = [
   ["입장 인증", "예약 QR 또는 전화번호로 고객 확인 후 키오스크 세션 시작"],

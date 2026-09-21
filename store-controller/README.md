@@ -18,8 +18,10 @@ Assistant directly.
 
 1. Copy this `store-controller` folder to `C:\VISTA\store-controller`.
 2. Copy `controller.config.example.json` as `controller.config.json`.
-3. Open `controller.config.json` in Notepad and fill in the same controller token
-   used in Vercel, plus the Home Assistant long-lived access token.
+3. Open `controller.config.json` in Notepad and fill in the assigned `storeId`,
+   the same controller token used in Vercel, and the Home Assistant long-lived
+   access token. Older Siheung configs without `storeId` continue to use the
+   Siheung store by default.
 4. Double-click `start-controller.cmd`. Keep the first test window open.
 5. Once the test succeeds, open PowerShell in this folder and run:
 
@@ -42,5 +44,10 @@ reliable startup settings are applied.
 4. It calls `script.bay2_on` in Home Assistant.
 5. Home Assistant runs the configured sequence: projector ON, delay, PC WOL.
 6. The result appears in the VISTA automation log.
+
+When the store open/close schedule is enabled in Admin > Automation, this same
+poll runs the daily preparation and safe closing checks. Apply
+`supabase/migrations/202609210001_store_automation_schedule.sql` before enabling
+that schedule. Closing waits until there are no active or overdue sessions.
 
 No real tokens belong in GitHub. `controller.config.json` is ignored by Git.

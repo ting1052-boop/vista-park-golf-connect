@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   ListChecks,
   Loader2,
   Monitor,
   Power,
   RefreshCw,
+  Save,
   Server,
   ShieldCheck,
   Timer,
@@ -54,6 +56,15 @@ type AutomationStatus = {
   sessions: SessionRow[];
   logs: LogRow[];
   bays: BayControlRow[];
+  schedule: {
+    enabled: boolean;
+    openTime: string | null;
+    closeTime: string | null;
+    timezone: string;
+    lastOpenedOn: string | null;
+    lastClosedOn: string | null;
+  } | null;
+  scheduleAvailable: boolean;
 };
 
 type ApiResponse = { ok?: boolean; message?: string; requiresForce?: boolean };
@@ -177,6 +188,10 @@ export function AutomationClient() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [openTime, setOpenTime] = useState("08:00");
+  const [closeTime, setCloseTime] = useState("21:00");
+  const scheduleLoaded = useRef(false);
 
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -186,6 +201,12 @@ export function AutomationClient() {
       const data = (await response.json()) as AutomationStatus & ApiResponse;
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "무인제어 현황을 불러오지 못했습니다.");
       setStatus(data);
+      if (!scheduleLoaded.current && data.schedule) {
+        setScheduleEnabled(data.schedule.enabled);
+        setOpenTime(data.schedule.openTime ?? "08:00");
+        setCloseTime(data.schedule.closeTime ?? "21:00");
+        scheduleLoaded.current = true;
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "무인제어 현황을 불러오지 못했습니다.");
     } finally {
@@ -236,6 +257,27 @@ export function AutomationClient() {
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "처리 중 오류가 발생했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveSchedule() {
+    setBusy("save_schedule");
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/automation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save_schedule", enabled: scheduleEnabled, openTime, closeTime })
+      });
+      const data = (await response.json()) as ApiResponse;
+      if (!response.ok || data.ok === false) throw new Error(data.message ?? "운영시간을 저장하지 못했습니다.");
+      setMessage(data.message ?? "운영시간을 저장했습니다.");
+      await load(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "운영시간을 저장하지 못했습니다.");
     } finally {
       setBusy(null);
     }
@@ -360,6 +402,70 @@ export function AutomationClient() {
             <p>{error ?? message}</p>
           </div>
         )}
+
+        <section className="mt-5 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
+          <div className="flex flex-col gap-4 border-b border-[#e5ece1] p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid size-11 shrink-0 place-items-center rounded-md bg-vista-fairway text-vista-leaf">
+                <CalendarClock size={22} />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-vista-leaf">매장 운영시간</p>
+                <h2 className="mt-1 text-xl font-extrabold">PC·프로젝터 자동 시작과 종료</h2>
+              </div>
+            </div>
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-extrabold">
+              <input
+                type="checkbox"
+                checked={scheduleEnabled}
+                onChange={(event) => setScheduleEnabled(event.target.checked)}
+                className="size-5 accent-vista-leaf"
+                disabled={busy !== null || status?.scheduleAvailable === false}
+              />
+              자동제어 사용
+            </label>
+          </div>
+          <div className="grid gap-4 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <label className="grid gap-2 text-sm font-extrabold text-[#4f5b50]">
+              매장 시작 시간
+              <input
+                type="time"
+                value={openTime}
+                onChange={(event) => setOpenTime(event.target.value)}
+                className="h-11 rounded-md border border-[#cad8c6] bg-white px-3 text-base font-bold text-vista-ink"
+                disabled={busy !== null || status?.scheduleAvailable === false}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-extrabold text-[#4f5b50]">
+              매장 종료 시간
+              <input
+                type="time"
+                value={closeTime}
+                onChange={(event) => setCloseTime(event.target.value)}
+                className="h-11 rounded-md border border-[#cad8c6] bg-white px-3 text-base font-bold text-vista-ink"
+                disabled={busy !== null || status?.scheduleAvailable === false}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void saveSchedule()}
+              disabled={busy !== null || status?.scheduleAvailable === false}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-vista-leaf px-5 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy === "save_schedule" ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+              저장
+            </button>
+          </div>
+          {status?.scheduleAvailable === false ? (
+            <p className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm font-bold text-amber-800">
+              운영시간 DB 설정이 아직 적용되지 않았습니다.
+            </p>
+          ) : status?.schedule?.enabled ? (
+            <p className="border-t border-[#e5ece1] px-5 py-3 text-xs font-semibold text-[#697468]">
+              최근 자동 시작 {status.schedule.lastOpenedOn ?? "기록 없음"} · 최근 자동 종료 {status.schedule.lastClosedOn ?? "기록 없음"}
+            </p>
+          ) : null}
+        </section>
 
         <section className="mt-5 grid gap-4 md:grid-cols-3">
           <button

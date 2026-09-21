@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { getAdminContext } from "@/lib/admin-context";
 import {
   commonAutomationScripts,
-  getBayAutomationByCode,
-  siheungBayAutomation
+  getBayAutomationByCode
 } from "@/lib/automation/device-map";
 import {
   enqueueBayAgentShutdown,
   enqueueManualAutomation,
-  enqueueStoreAgentShutdowns,
+  enqueueStoreClosure,
+  enqueueStorePreparation,
   isStoreControllerEnabled
 } from "@/lib/store-controller";
+import { getStoreAutomationSchedule } from "@/lib/store-automation-schedule";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { getLatestScriptRuns, getPowerState } from "@/lib/supabase/automation-status";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-
-const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
 type ActiveSessionRow = {
   id: string;
@@ -68,18 +67,21 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
-async function ensureAdmin() {
+async function requireContext() {
   try {
-    await requireAdminUser();
-    return null;
+    return { context: await getAdminContext(), denied: null };
   } catch {
-    return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
+    return {
+      context: null,
+      denied: NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 })
+    };
   }
 }
 
 export async function GET() {
-  const denied = await ensureAdmin();
+  const { context, denied } = await requireContext();
   if (denied) return denied;
+  const storeId = context!.storeId;
 
   try {
     const supabase = createSupabaseAdminClient();
@@ -87,19 +89,19 @@ export async function GET() {
       supabase
         .from("access_sessions")
         .select("id, bay_id, guest_name, started_at, ends_at, status, bays(bay_code, display_name)")
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
         .in("status", ["active", "extended", "overdue"])
         .order("started_at", { ascending: false }),
       supabase
         .from("store_controller_commands")
         .select("id, created_at, command_type, status, error_message, payload")
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
         .order("created_at", { ascending: false })
         .limit(8),
       supabase
         .from("store_controller_commands")
         .select("created_at, status")
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
         .in("status", ["pending", "processing"])
         .in("command_type", ["prepare_bay", "release_bay", "run_scripts"])
         .order("created_at", { ascending: true })
@@ -107,12 +109,12 @@ export async function GET() {
       supabase
         .from("bays")
         .select("id, bay_code, display_name")
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
         .order("bay_code", { ascending: true }),
       supabase
         .from("agent_devices")
         .select("bay_id, pc_name, is_active, last_seen_at")
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
     ]);
 
     if (sessionsResult.error) throw new Error(sessionsResult.error.message);
@@ -173,7 +175,7 @@ export async function GET() {
 
     // 타석별 마지막 장비 명령(제어기 실행 기록 기준)과 이용 중 여부.
     // 실제 PC 연결은 Agent 신호로 별도 표시하고, 이용 중인 타석을 실수로 끄지 않도록 쓰인다.
-    const latestRuns = await getLatestScriptRuns(supabase, CURRENT_STORE_ID);
+    const latestRuns = await getLatestScriptRuns(supabase, storeId);
     const activeBayIds = new Set(
       ((sessionsResult.data ?? []) as ActiveSessionRow[]).map((row) => row.bay_id).filter((id): id is string => Boolean(id))
     );
@@ -202,6 +204,14 @@ export async function GET() {
       };
     });
 
+    let schedule = null;
+    let scheduleAvailable = true;
+    try {
+      schedule = await getStoreAutomationSchedule(supabase, storeId);
+    } catch {
+      scheduleAvailable = false;
+    }
+
     return NextResponse.json({
       ok: true,
       controllerEnabled,
@@ -216,7 +226,9 @@ export async function GET() {
           : null,
       sessions,
       logs,
-      bays
+      bays,
+      schedule,
+      scheduleAvailable
     });
   } catch (error) {
     return NextResponse.json(
@@ -226,11 +238,19 @@ export async function GET() {
   }
 }
 
-type ActionBody = { action?: unknown; bayId?: unknown; force?: unknown };
+type ActionBody = {
+  action?: unknown;
+  bayId?: unknown;
+  force?: unknown;
+  enabled?: unknown;
+  openTime?: unknown;
+  closeTime?: unknown;
+};
 
 export async function POST(request: NextRequest) {
-  const denied = await ensureAdmin();
+  const { context, denied } = await requireContext();
   if (denied) return denied;
+  const storeId = context!.storeId;
 
   let body: ActionBody;
   try {
@@ -243,7 +263,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
 
     if (body.action === "close_expired") {
-      const result = await closeExpiredSessions(supabase, new Date(), { storeId: CURRENT_STORE_ID });
+      const result = await closeExpiredSessions(supabase, new Date(), { storeId });
       return NextResponse.json({
         ok: true,
         message:
@@ -251,6 +271,37 @@ export async function POST(request: NextRequest) {
             ? "정리할 종료 초과 이용이 없습니다."
             : `${result.completed}건의 종료 초과 이용을 정리했습니다.`,
         result
+      });
+    }
+
+    if (body.action === "save_schedule") {
+      const enabled = body.enabled === true;
+      const openTime = typeof body.openTime === "string" ? body.openTime : "";
+      const closeTime = typeof body.closeTime === "string" ? body.closeTime : "";
+      const validClock = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+      if (!validClock.test(openTime) || !validClock.test(closeTime)) {
+        return NextResponse.json({ ok: false, message: "시작 시간과 종료 시간을 확인해주세요." }, { status: 400 });
+      }
+      if (openTime >= closeTime) {
+        return NextResponse.json({ ok: false, message: "종료 시간은 시작 시간보다 늦어야 합니다." }, { status: 400 });
+      }
+
+      const { error } = await supabase.from("store_settings").upsert(
+        {
+          store_id: storeId,
+          automation_schedule_enabled: enabled,
+          automation_open_time: openTime,
+          automation_close_time: closeTime,
+          automation_timezone: "Asia/Seoul"
+        },
+        { onConflict: "store_id" }
+      );
+      if (error) throw new Error(error.message);
+
+      return NextResponse.json({
+        ok: true,
+        message: enabled ? "매장 운영시간 자동제어를 저장했습니다." : "운영시간 자동제어를 껐습니다."
       });
     }
 
@@ -263,7 +314,7 @@ export async function POST(request: NextRequest) {
         .from("bays")
         .select("id, bay_code")
         .eq("id", body.bayId)
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
         .maybeSingle();
 
       if (bayError) throw new Error(bayError.message);
@@ -291,7 +342,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const result = await enqueueBayAgentShutdown(supabase, CURRENT_STORE_ID, bay.id);
+      const result = await enqueueBayAgentShutdown(supabase, storeId, bay.id);
       if (!result.agentOnline) {
         return NextResponse.json(
           { ok: false, message: `${bay.bay_code} Agent가 연결되어 있지 않아 PC 종료 명령을 보낼 수 없습니다.` },
@@ -326,7 +377,7 @@ export async function POST(request: NextRequest) {
         .from("bays")
         .select("id, store_id, bay_code")
         .eq("id", body.bayId)
-        .eq("store_id", CURRENT_STORE_ID)
+        .eq("store_id", storeId)
         .maybeSingle();
 
       if (bayError) throw new Error(bayError.message);
@@ -364,7 +415,7 @@ export async function POST(request: NextRequest) {
       }
 
       const command = await enqueueManualAutomation(supabase, {
-        storeId: CURRENT_STORE_ID,
+        storeId,
         scripts: [
           {
             name: `${mapping.label} 장비 ${turningOn ? "ON" : "OFF"}`,
@@ -384,65 +435,34 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "store_close") {
-      const { count: activeSessionCount, error: activeSessionError } = await supabase
-        .from("access_sessions")
-        .select("id", { count: "exact", head: true })
-        .eq("store_id", CURRENT_STORE_ID)
-        .in("status", ["active", "extended", "overdue"]);
-
-      if (activeSessionError) throw new Error(activeSessionError.message);
-      if ((activeSessionCount ?? 0) > 0) {
+      const result = await enqueueStoreClosure(supabase, storeId, "admin_store_close");
+      if (result.blocked) {
         return NextResponse.json(
           {
             ok: false,
-            message: `현재 이용 중이거나 종료 확인이 필요한 타석이 ${activeSessionCount}개 있습니다. 먼저 이용 종료 처리 후 매장 종료를 실행해주세요.`
+            message: `현재 이용 중이거나 종료 확인이 필요한 타석이 ${result.activeSessionCount}개 있습니다. 먼저 이용 종료 처리 후 매장 종료를 실행해주세요.`
           },
           { status: 409 }
         );
       }
 
-      const agentShutdown = await enqueueStoreAgentShutdowns(supabase, CURRENT_STORE_ID);
-      const scripts = [
-        ...siheungBayAutomation.map((bay) => ({
-          name: `${bay.label} 장비 OFF`,
-          script: bay.exitScript
-        })),
-        { name: "공용 조명·냉난방 OFF", script: commonAutomationScripts.off }
-      ];
-      const command = await enqueueManualAutomation(supabase, {
-        storeId: CURRENT_STORE_ID,
-        scripts,
-        action: "store_close"
-      });
-
       return NextResponse.json({
         ok: true,
-        message: `타석 PC ${agentShutdown.queued + agentShutdown.reused}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`,
-        command,
-        agentShutdown
+        message: `타석 PC ${result.agentShutdown.queued + result.agentShutdown.reused}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`,
+        command: result.command,
+        agentShutdown: result.agentShutdown
       });
     }
 
     // 조명·냉난방과 모든 타석 장비를 한 번에 켠다. 단체 예약이나 점검 준비용.
     // 평소 영업은 손님이 입장할 때 해당 타석만 켜지므로 이 동작이 필요 없다.
     if (body.action === "store_prepare") {
-      const scripts = [
-        { name: "공용 조명·냉난방 ON", script: commonAutomationScripts.on },
-        ...siheungBayAutomation.map((bay) => ({
-          name: `${bay.label} 장비 ON`,
-          script: bay.enterScript
-        }))
-      ];
-      const command = await enqueueManualAutomation(supabase, {
-        storeId: CURRENT_STORE_ID,
-        scripts,
-        action: "store_prepare"
-      });
+      const result = await enqueueStorePreparation(supabase, storeId, "admin_store_prepare");
 
       return NextResponse.json({
         ok: true,
-        message: `공용 조명·냉난방과 타석 ${siheungBayAutomation.length}곳의 장비 ON 명령을 전달했습니다.`,
-        command
+        message: `공용 조명·냉난방과 타석 ${result.bayCount}곳의 장비 ON 명령을 전달했습니다.`,
+        command: result.command
       });
     }
 
@@ -453,7 +473,7 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "shared_on" || body.action === "shared_off") {
       const command = await enqueueManualAutomation(supabase, {
-        storeId: CURRENT_STORE_ID,
+        storeId,
         scripts: [...scriptsByAction[body.action]],
         action: body.action
       });

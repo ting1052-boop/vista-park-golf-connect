@@ -196,6 +196,54 @@ export async function enqueueManualAutomation(
   });
 }
 
+async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, action: "on" | "off") {
+  const { data, error } = await supabase
+    .from("bays")
+    .select("bay_code")
+    .eq("store_id", storeId)
+    .order("bay_code", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as Array<{ bay_code: string | null }>)
+    .map((row) => getBayAutomationByCode(row.bay_code))
+    .filter((mapping, index, mappings) => mapping && mappings.findIndex((candidate) => candidate?.key === mapping.key) === index)
+    .map((mapping) => ({
+      name: `${mapping!.label} 장비 ${action === "on" ? "ON" : "OFF"}`,
+      script: action === "on" ? mapping!.enterScript : mapping!.exitScript
+    }));
+}
+
+export async function enqueueStorePreparation(supabase: SupabaseClient, storeId: string, requestedFrom: string) {
+  const bayScripts = await getStoreBayScripts(supabase, storeId, "on");
+  const command = await enqueueManualAutomation(supabase, {
+    storeId,
+    scripts: [{ name: "공용 조명·냉난방 ON", script: commonAutomationScripts.on }, ...bayScripts],
+    action: requestedFrom
+  });
+  return { command, bayCount: bayScripts.length };
+}
+
+export async function enqueueStoreClosure(supabase: SupabaseClient, storeId: string, requestedFrom: string) {
+  const { count, error } = await supabase
+    .from("access_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .in("status", ["active", "extended", "overdue"]);
+
+  if (error) throw new Error(error.message);
+  if ((count ?? 0) > 0) return { blocked: true as const, activeSessionCount: count ?? 0 };
+
+  const agentShutdown = await enqueueStoreAgentShutdowns(supabase, storeId);
+  const bayScripts = await getStoreBayScripts(supabase, storeId, "off");
+  const command = await enqueueManualAutomation(supabase, {
+    storeId,
+    scripts: [...bayScripts, { name: "공용 조명·냉난방 OFF", script: commonAutomationScripts.off }],
+    action: requestedFrom
+  });
+  return { blocked: false as const, activeSessionCount: 0, agentShutdown, command, bayCount: bayScripts.length };
+}
+
 async function enqueueAgentShutdownCommands(
   supabase: SupabaseClient,
   args: { storeId: string; bayIds: string[]; requestedFrom: string }

@@ -4,22 +4,23 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
 import { getStoreSummaries } from "@/lib/supabase/stores";
+import { getAdminContext } from "@/lib/admin-context";
 import { DashboardClient } from "./dashboard-client";
-
-const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
 // Always derive the dashboard from current sessions, never a static build snapshot.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminDashboardPage() {
+  const adminContext = await getAdminContext();
+  const currentStoreId = adminContext.storeId;
   const [bayResult, storeResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
-    getDashboardBays(CURRENT_STORE_ID),
+    getDashboardBays(currentStoreId),
     getStoreSummaries(),
-    getDashboardOperationalRows(CURRENT_STORE_ID),
-    getAutomationDeviceStatuses(CURRENT_STORE_ID),
+    getDashboardOperationalRows(currentStoreId),
+    getAutomationDeviceStatuses(currentStoreId),
     // 공용 조명·냉난방의 현재 상태. 대시보드 조명 버튼이 ON/OFF 중 무엇을 보여줄지 결정한다.
-    getLatestScriptRuns(createSupabaseAdminClient(), CURRENT_STORE_ID).then((runs) =>
+    getLatestScriptRuns(createSupabaseAdminClient(), currentStoreId).then((runs) =>
       getPowerState(runs, commonAutomationScripts.on, commonAutomationScripts.off)
     )
   ]);
@@ -56,9 +57,10 @@ export default async function AdminDashboardPage() {
 
   return (
     <DashboardClient
-      currentStoreId={CURRENT_STORE_ID}
+      currentStoreId={currentStoreId}
+      adminContext={adminContext}
       initialBays={bays}
-      initialStoreSummaries={stores}
+      initialStoreSummaries={adminContext.limitedMenu ? stores.filter((store) => store.id === currentStoreId) : stores}
       initialReservations={dashboardRows.reservations}
       initialAlerts={dashboardRows.alerts}
       initialNoShows={dashboardRows.noShows}
