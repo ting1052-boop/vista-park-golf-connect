@@ -17,6 +17,14 @@ export type RegistryRow = {
   setup_tool_version: string | null;
   registered_at: string;
   updated_at: string;
+  wol_mac_address: string | null;
+  mac_addresses: Array<{ address: string; type: string; name: string }> | null;
+  ipv4_address: string | null;
+  network_prefix_length: number | null;
+  wol_broadcast_address: string | null;
+  wake_on_lan_status: string;
+  power_control_method: string;
+  network_collected_at: string | null;
 };
 
 // enrollment: 토큰 없는 최초 등록. 관리자가 그 매장 창구를 열어둔 동안만 통한다.
@@ -170,7 +178,7 @@ export async function registerBayPc(
 
   const { data: existingRow, error: existingError } = await supabase
     .from("bay_pc_registry")
-    .select("id, device_id, store_id, bay_id, pc_type, computer_name, anydesk_id, windows_edition, windows_version, activation_status, setup_tool_version, registered_at, updated_at")
+    .select("id, device_id, store_id, bay_id, pc_type, computer_name, anydesk_id, windows_edition, windows_version, activation_status, setup_tool_version, wol_mac_address, mac_addresses, ipv4_address, network_prefix_length, wol_broadcast_address, wake_on_lan_status, power_control_method, network_collected_at, registered_at, updated_at")
     .eq("device_id", payload.deviceId)
     .maybeSingle();
   if (existingError) return fail(500, "server_error", existingError.message);
@@ -205,6 +213,14 @@ export async function registerBayPc(
     windows_version: payload.windowsVersion,
     activation_status: payload.activationStatus,
     setup_tool_version: payload.setupToolVersion
+    ,wol_mac_address: payload.wolMacAddress
+    ,mac_addresses: payload.macAddresses
+    ,ipv4_address: payload.ipv4Address
+    ,network_prefix_length: payload.networkPrefixLength
+    ,wol_broadcast_address: payload.wolBroadcastAddress
+    ,wake_on_lan_status: payload.wakeOnLanStatus
+    ,power_control_method: payload.powerControlMethod
+    ,network_collected_at: payload.networkCollectedAt
   };
 
   // 전역 토큰으로 들어온 등록에는 장비 토큰을 새로 발급한다. 현장에서 장비

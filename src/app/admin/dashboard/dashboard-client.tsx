@@ -29,7 +29,6 @@ import {
   Zap
 } from "lucide-react";
 import {
-  featureChecks,
   getAdminNavItems,
   type AdminAlert,
   type ControlLog,
@@ -147,7 +146,6 @@ type DashboardClientProps = {
   currentStoreId: string;
   adminContext: AdminContext;
   initialBays: LiveBay[];
-  initialStoreSummaries?: DashboardStoreSummary[];
   initialReservations?: DashboardReservationRow[];
   initialAlerts?: AdminAlert[];
   initialNoShows?: NoShowRow[];
@@ -155,17 +153,6 @@ type DashboardClientProps = {
   initialAutomationDevices?: AutomationDeviceStatusRow[];
   initialSharedPower?: PowerState;
   initialError?: string | null;
-};
-
-type DashboardStoreSummary = {
-  id?: string;
-  store: string;
-  address?: string;
-  phone?: string;
-  bayCount?: number;
-  region?: string;
-  reservations?: string;
-  status: string;
 };
 
 type NoShowRow = {
@@ -186,7 +173,6 @@ export function DashboardClient({
   currentStoreId,
   adminContext,
   initialBays,
-  initialStoreSummaries = [],
   initialReservations = [],
   initialAlerts = [],
   initialNoShows = [],
@@ -209,7 +195,6 @@ export function DashboardClient({
   const [dataError, setDataError] = useState<string | null>(initialError);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUsageDetailOpen, setIsUsageDetailOpen] = useState(false);
-  const storeSummaries: DashboardStoreSummary[] = initialStoreSummaries;
   const automationDevices: AutomationDeviceStatusRow[] = initialAutomationDevices;
   const sharedPower: PowerState = initialSharedPower;
   const navItems = getAdminNavItems(adminContext.limitedMenu);
@@ -733,25 +718,7 @@ export function DashboardClient({
               </section>
             ) : null}
 
-            <section className="rounded-md border border-[#d9e3d5] bg-white p-5 shadow-soft-line sm:p-6">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-vista-leaf">VISTA Park Golf Connect</p>
-                  <h3 className="mt-2 text-2xl font-extrabold tracking-normal sm:text-3xl">
-                    타석 예약, 입장 인증, 키오스크 시간, 장비 전원을 한 화면에서 관리합니다
-                  </h3>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-[#5f6b5e]">
-                    1차 MVP는 출입문 제어를 제외하고 고객 예약 또는 현장 입장 승인 후 조명, 냉난방, 키오스크,
-                    타석 전원을 자동으로 준비하고 종료하는 매장관리 흐름에 집중합니다.
-                  </p>
-                </div>
-                <div className="rounded-md border border-vista-mint bg-vista-fairway px-4 py-3 text-sm font-bold text-vista-leaf">
-                  출입문 제어는 안전 검토 후 2차 기능
-                </div>
-              </div>
-            </section>
-
-            <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="주요 지표">
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="주요 지표">
               {metrics.map((item) => {
                 const Icon = item.icon;
                 const content = (
@@ -1013,28 +980,28 @@ export function DashboardClient({
               </aside>
             </section>
 
-            <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
-                <div className="border-b border-[#e5ece1] p-5">
-                  <h3 className="text-lg font-extrabold">무인 장비 마지막 명령</h3>
-                  <p className="mt-1 text-sm text-[#697468]">
-                    매장 제어기가 마지막으로 실행한 ON/OFF 명령입니다. 실제 PC 연결 상태는 위 타석 카드에서 확인합니다.
-                  </p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-left text-sm">
-                    <thead className="bg-vista-fairway text-[#566153]">
-                      <tr>
-                        <th className="px-5 py-3 font-bold">구역</th>
-                        <th className="px-5 py-3 font-bold">장비</th>
-                        <th className="px-5 py-3 font-bold">연동</th>
-                        <th className="px-5 py-3 font-bold">마지막 명령 결과</th>
-                        <th className="px-5 py-3 font-bold">마지막 실행</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#edf2ea]">
-                      {automationDevices.length > 0 ? (
-                        automationDevices.map((row) => (
+            <section className={cn("mt-6 grid gap-6", automationDevices.length > 0 && "xl:grid-cols-[1.1fr_0.9fr]")}>
+              {automationDevices.length > 0 ? (
+                <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
+                  <div className="border-b border-[#e5ece1] p-5">
+                    <h3 className="text-lg font-extrabold">무인 장비 마지막 명령</h3>
+                    <p className="mt-1 text-sm text-[#697468]">
+                      매장 제어기가 마지막으로 실행한 ON/OFF 명령입니다. 실제 PC 연결 상태는 위 타석 카드에서 확인합니다.
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-sm">
+                      <thead className="bg-vista-fairway text-[#566153]">
+                        <tr>
+                          <th className="px-5 py-3 font-bold">구역</th>
+                          <th className="px-5 py-3 font-bold">장비</th>
+                          <th className="px-5 py-3 font-bold">연동</th>
+                          <th className="px-5 py-3 font-bold">마지막 명령 결과</th>
+                          <th className="px-5 py-3 font-bold">마지막 실행</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#edf2ea]">
+                        {automationDevices.map((row) => (
                           <tr key={`${row.zone}-${row.device}`} className="hover:bg-[#fbfcfa]">
                             <td className="px-5 py-4 font-extrabold">{row.zone}</td>
                             <td className="px-5 py-4">{row.device}</td>
@@ -1044,28 +1011,21 @@ export function DashboardClient({
                                 "px-5 py-4 font-bold",
                                 row.tone === "on" && "text-vista-leaf",
                                 row.tone === "off" && "text-[#697468]",
-                                row.tone === "failed" && "text-rose-700",
-                                row.tone === "unknown" && "text-[#9aa39a]"
+                                row.tone === "failed" && "text-rose-700"
                               )}
                             >
                               {row.state}
                             </td>
                             <td className="px-5 py-4 text-[#697468]">
-                              {row.lastRunAt ? formatSessionDateTime(row.lastRunAt) : row.action}
+                              {row.lastRunAt ? formatSessionDateTime(row.lastRunAt) : ""}
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td className="px-5 py-6 text-[#697468]" colSpan={5}>
-                            아직 장비 자동화 실행 기록이 없습니다. 키오스크 입장 또는 무인제어 실행 후 표시됩니다.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              ) : null}
 
               <article className="rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
                 <div className="border-b border-[#e5ece1] p-5">
@@ -1092,46 +1052,6 @@ export function DashboardClient({
               </article>
             </section>
 
-            <section className="mt-6 grid gap-6 xl:grid-cols-2">
-              <article className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
-                <h3 className="text-lg font-extrabold">본사 매장 현황</h3>
-                <div className="mt-4 grid gap-3">
-                  {storeSummaries.length > 0 ? (
-                    storeSummaries.map((row) => (
-                      <div key={row.id ?? row.store} className="rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-extrabold">{row.store}</p>
-                          <span className="text-xs font-bold text-vista-leaf">{row.status}</span>
-                        </div>
-                        <p className="mt-2 text-xs font-semibold text-[#697468]">
-                          {row.address ?? row.region ?? "주소 미등록"} · 타석 {row.bayCount ?? row.reservations ?? 0}
-                          {row.phone ? ` · ${row.phone}` : ""}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-md bg-[#fbfcfa] p-3 text-sm font-bold text-[#697468] ring-1 ring-[#e5ece1]">
-                      표시할 매장 데이터가 없습니다.
-                    </div>
-                  )}
-                </div>
-              </article>
-
-              <article className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
-                <h3 className="text-lg font-extrabold">무인 운영 1차 MVP 범위</h3>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {featureChecks.slice(0, 8).map(([name, status]) => (
-                    <div key={name} className="flex gap-3 rounded-md bg-[#fbfcfa] p-3 ring-1 ring-[#e5ece1]">
-                      <CheckCircle2 className="mt-0.5 shrink-0 text-vista-leaf" size={18} aria-hidden="true" />
-                      <div>
-                        <p className="text-sm font-extrabold">{name}</p>
-                        <p className="mt-1 text-xs font-semibold text-[#697468]">{status}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            </section>
           </div>
         </section>
 

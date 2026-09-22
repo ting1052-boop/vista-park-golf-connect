@@ -19,6 +19,14 @@ type RegistryRow = {
   setup_tool_version: string | null;
   registered_at: string;
   updated_at: string;
+  wol_mac_address: string | null;
+  mac_addresses: Array<{ address: string; type: string; name: string }> | null;
+  ipv4_address: string | null;
+  network_prefix_length: number | null;
+  wol_broadcast_address: string | null;
+  wake_on_lan_status: string;
+  power_control_method: string;
+  network_collected_at: string | null;
 };
 
 type HistoryRow = {
@@ -52,7 +60,7 @@ export async function GET(request: NextRequest) {
 
   // device_token_hash 는 어떤 경우에도 고르지 않는다.
   const columns =
-    "device_id, store_id, bay_id, pc_type, computer_name, anydesk_id, windows_edition, windows_version, activation_status, setup_tool_version, registered_at, updated_at";
+    "device_id, store_id, bay_id, pc_type, computer_name, anydesk_id, windows_edition, windows_version, activation_status, setup_tool_version, wol_mac_address, mac_addresses, ipv4_address, network_prefix_length, wol_broadcast_address, wake_on_lan_status, power_control_method, network_collected_at, registered_at, updated_at";
 
   const [registryResult, historyResult, storeResult, bayResult] = await Promise.all([
     supabase.from("bay_pc_registry").select(columns).order("registered_at", { ascending: false }),
@@ -102,6 +110,14 @@ export async function GET(request: NextRequest) {
       setupToolVersion: row.setup_tool_version,
       registeredAt: row.registered_at,
       updatedAt: row.updated_at
+      ,wolMacAddress: row.wol_mac_address
+      ,macAddresses: row.mac_addresses ?? []
+      ,ipv4Address: row.ipv4_address
+      ,networkPrefixLength: row.network_prefix_length
+      ,wolBroadcastAddress: row.wol_broadcast_address
+      ,wakeOnLanStatus: row.wake_on_lan_status
+      ,powerControlMethod: row.power_control_method
+      ,networkCollectedAt: row.network_collected_at
     };
   });
 

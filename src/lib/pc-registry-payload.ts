@@ -18,6 +18,14 @@ export type RegisterPayload = {
   activationStatus: ActivationStatus;
   setupToolVersion: string | null;
   replace: boolean;
+  wolMacAddress: string | null;
+  macAddresses: Array<{ address: string; type: "ethernet" | "wifi"; name: string }>;
+  ipv4Address: string | null;
+  networkPrefixLength: number | null;
+  wolBroadcastAddress: string | null;
+  wakeOnLanStatus: "enabled" | "disabled" | "unknown";
+  powerControlMethod: "wol_agent" | "wol_only" | "unknown";
+  networkCollectedAt: string | null;
 };
 
 export type PayloadRejection = { code: "invalid_payload" | "forbidden_field"; field: string; message: string };
@@ -40,6 +48,8 @@ const COMPUTER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/;
 
 const PC_TYPES: PcType[] = ["range", "park"];
 const ACTIVATION_STATUSES: ActivationStatus[] = ["licensed", "unlicensed", "unknown"];
+const MAC = /^[0-9a-f]{12}$/i;
+const IPV4 = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
 
 function reject(field: string, message: string, code: PayloadRejection["code"] = "invalid_payload"): PayloadResult {
   return { ok: false, error: { code, field, message } };
@@ -50,6 +60,26 @@ function text(value: unknown, max: number): string | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   return trimmed.slice(0, max);
+}
+
+function normalizeMac(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const mac = value.replace(/[:.\-\s]/g, "").toUpperCase();
+  return MAC.test(mac) ? mac : null;
+}
+
+function normalizeIpv4(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const ip = value.trim();
+  return IPV4.test(ip) ? ip : null;
+}
+
+function calculatedBroadcast(ip: string, prefix: number): string {
+  const octets = ip.split(".").map(Number);
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  const addr = (((octets[0] << 24) >>> 0) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  const broadcast = (addr | (~mask >>> 0)) >>> 0;
+  return [broadcast >>> 24, (broadcast >>> 16) & 255, (broadcast >>> 8) & 255, broadcast & 255].join(".");
 }
 
 // AnyDesk 는 화면에 "123 456 789" 또는 "123456789@ad" 로 보여준다. 운영자가 보이는
@@ -114,6 +144,54 @@ export function parseRegisterPayload(body: unknown): PayloadResult {
     return reject("replace", "replace 는 true 또는 false 여야 합니다.");
   }
 
+  let macAddresses: RegisterPayload["macAddresses"] = [];
+  if (raw.macAddresses !== undefined) {
+    if (!Array.isArray(raw.macAddresses) || raw.macAddresses.length > 16) {
+      return reject("macAddresses", "macAddresses 는 최대 16개의 목록이어야 합니다.");
+    }
+    for (let index = 0; index < raw.macAddresses.length; index += 1) {
+      const item = raw.macAddresses[index];
+      if (typeof item !== "object" || item === null) return reject(`macAddresses[${index}]`, "MAC 항목 형식이 잘못되었습니다.");
+      const row = item as Record<string, unknown>;
+      const address = normalizeMac(row.address);
+      const type = row.type === "ethernet" || row.type === "wifi" ? row.type : null;
+      const name = text(row.name, 120);
+      if (!address || !type || !name) return reject(`macAddresses[${index}]`, "MAC 주소, type(ethernet/wifi), name이 필요합니다.");
+      macAddresses.push({ address, type, name });
+    }
+    macAddresses = macAddresses.filter((row, index, list) => list.findIndex((x) => x.address === row.address) === index);
+  }
+
+  const wolMacAddress = raw.wolMacAddress === undefined || raw.wolMacAddress === null ? null : normalizeMac(raw.wolMacAddress);
+  if (raw.wolMacAddress !== undefined && raw.wolMacAddress !== null && !wolMacAddress) {
+    return reject("wolMacAddress", "wolMacAddress 는 12자리 MAC 주소여야 합니다.");
+  }
+  if (wolMacAddress && !macAddresses.some((row) => row.address === wolMacAddress)) {
+    return reject("wolMacAddress", "wolMacAddress 는 macAddresses 안에 있어야 합니다.");
+  }
+
+  const ipv4Address = raw.ipv4Address === undefined || raw.ipv4Address === null ? null : normalizeIpv4(raw.ipv4Address);
+  if (raw.ipv4Address !== undefined && raw.ipv4Address !== null && !ipv4Address) return reject("ipv4Address", "IPv4 주소 형식이 잘못되었습니다.");
+  let networkPrefixLength: number | null = null;
+  if (raw.networkPrefixLength !== undefined && raw.networkPrefixLength !== null) {
+    if (typeof raw.networkPrefixLength !== "number" || !Number.isInteger(raw.networkPrefixLength) || raw.networkPrefixLength < 0 || raw.networkPrefixLength > 32) {
+      return reject("networkPrefixLength", "networkPrefixLength 는 0~32 정수여야 합니다.");
+    }
+    networkPrefixLength = raw.networkPrefixLength;
+  }
+  if (ipv4Address && networkPrefixLength === null) return reject("networkPrefixLength", "IPv4가 있으면 prefix length가 필요합니다.");
+  const wolBroadcastAddress = raw.wolBroadcastAddress === undefined || raw.wolBroadcastAddress === null ? null : normalizeIpv4(raw.wolBroadcastAddress);
+  if (raw.wolBroadcastAddress !== undefined && raw.wolBroadcastAddress !== null && !wolBroadcastAddress) return reject("wolBroadcastAddress", "브로드캐스트 IPv4 주소 형식이 잘못되었습니다.");
+  if (ipv4Address && networkPrefixLength !== null && wolBroadcastAddress && wolBroadcastAddress !== calculatedBroadcast(ipv4Address, networkPrefixLength)) {
+    return reject("wolBroadcastAddress", "IPv4와 prefix로 계산한 브로드캐스트 주소와 다릅니다.");
+  }
+  const wakeOnLanStatus = raw.wakeOnLanStatus === undefined ? "unknown" : raw.wakeOnLanStatus;
+  if (wakeOnLanStatus !== "enabled" && wakeOnLanStatus !== "disabled" && wakeOnLanStatus !== "unknown") return reject("wakeOnLanStatus", "wakeOnLanStatus 값이 잘못되었습니다.");
+  const powerControlMethod = raw.powerControlMethod === undefined ? "unknown" : raw.powerControlMethod;
+  if (powerControlMethod !== "wol_agent" && powerControlMethod !== "wol_only" && powerControlMethod !== "unknown") return reject("powerControlMethod", "powerControlMethod 값이 잘못되었습니다.");
+  const networkCollectedAt = raw.networkCollectedAt === undefined || raw.networkCollectedAt === null ? null : text(raw.networkCollectedAt, 80);
+  if (raw.networkCollectedAt !== undefined && raw.networkCollectedAt !== null && (!networkCollectedAt || Number.isNaN(Date.parse(networkCollectedAt)))) return reject("networkCollectedAt", "networkCollectedAt는 ISO 날짜여야 합니다.");
+
   return {
     ok: true,
     payload: {
@@ -129,7 +207,15 @@ export function parseRegisterPayload(body: unknown): PayloadResult {
       windowsVersion: text(raw.windowsVersion, 120),
       activationStatus: activationRaw as ActivationStatus,
       setupToolVersion: text(raw.setupToolVersion, 40),
-      replace: raw.replace === true
+      replace: raw.replace === true,
+      wolMacAddress,
+      macAddresses,
+      ipv4Address,
+      networkPrefixLength,
+      wolBroadcastAddress,
+      wakeOnLanStatus: wakeOnLanStatus as RegisterPayload["wakeOnLanStatus"],
+      powerControlMethod: powerControlMethod as RegisterPayload["powerControlMethod"],
+      networkCollectedAt
     }
   };
 }

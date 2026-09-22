@@ -178,6 +178,39 @@ Content-Type: application/json
 | `activationStatus` | | `licensed` \| `unlicensed` \| `unknown` (생략 시 `unknown`) |
 | `setupToolVersion` | | 40자 이하. `3.4.0` 처럼 |
 | `replace` | | 기본 `false`. 7절 참고 |
+| `wolMacAddress` | | 유선 NIC MAC. `macAddresses` 안에 있어야 함 |
+| `macAddresses` | | `[{address, type: "ethernet"\|"wifi", name}]` 최대 16개 |
+| `ipv4Address` | | 보내면 `networkPrefixLength` 도 필수 |
+| `networkPrefixLength` | | 0~32 |
+| `wolBroadcastAddress` | | IP·prefix 로 계산한 값과 다르면 **거절된다** |
+| `wakeOnLanStatus` | | `enabled` \| `disabled` \| `unknown` |
+| `powerControlMethod` | | `wol_agent` \| `wol_only` \| `unknown` |
+| `networkCollectedAt` | | ISO 날짜 |
+
+### WOL 정보 수집과 설정
+
+전부 선택 사항이지만, 보내면 관리자가 **꺼진 PC 를 원격으로 깨울 수 있다.**
+
+**유선 NIC 만 고른다.** Wi-Fi 는 WOL 이 사실상 안 되고, VirtualBox·WSL·Hyper-V·VPN
+가상 어댑터는 대상이 아니며 MAC 이 PC 끼리 겹치기도 한다.
+
+```powershell
+$nic = Get-NetAdapter -Physical |
+  Where-Object { $_.Status -eq 'Up' -and $_.MediaType -eq '802.3' } |
+  Sort-Object InterfaceMetric | Select-Object -First 1
+```
+
+**값만 보내지 말고 WOL 이 되게 설정까지 하라.** 안 되는 원인 1위는 MAC 이 아니라
+Windows 빠른 시작이다. 켜져 있으면 종료 후 NIC 가 전원을 잃어 매직 패킷을 못 받는다.
+
+```powershell
+powercfg /hibernate off
+Enable-NetAdapterPowerManagement -Name $nic.Name -WakeOnMagicPacket -ErrorAction SilentlyContinue
+$ok = (Get-NetAdapterPowerManagement -Name $nic.Name).WakeOnMagicPacket   # 이 결과를 wakeOnLanStatus 로
+```
+
+BIOS 의 WOL 항목은 프로그램이 못 켠다. **원본 PC 에서 켜두고 복제**한다. 복제 전
+체크리스트에 넣어라.
 
 ### 값 수집 방법 (PowerShell 기준)
 

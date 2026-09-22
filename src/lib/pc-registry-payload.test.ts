@@ -73,3 +73,45 @@ test("로그에는 장비 식별자 앞부분만 남긴다", () => {
   assert.equal(logged.deviceIdPrefix, "aaaaaaaa…");
   assert.equal(Object.keys(logged).length, 1, "다른 필드가 로그로 새어 나가면 안 된다");
 });
+
+test("WOL 네트워크 정보를 정규화하고 브로드캐스트를 검증한다", () => {
+  const result = parseRegisterPayload({
+    ...valid,
+    wolMacAddress: "aa:bb:cc:dd:ee:ff",
+    macAddresses: [
+      { address: "AA-BB-CC-DD-EE-FF", type: "ethernet", name: "Intel Ethernet" },
+      { address: "11:22:33:44:55:66", type: "wifi", name: "Intel Wi-Fi" }
+    ],
+    ipv4Address: "192.168.0.25",
+    networkPrefixLength: 24,
+    wolBroadcastAddress: "192.168.0.255",
+    wakeOnLanStatus: "enabled",
+    powerControlMethod: "wol_agent",
+    networkCollectedAt: "2026-09-22T12:00:00.000Z"
+  });
+  assert.ok(result.ok);
+  assert.equal(result.payload.wolMacAddress, "AABBCCDDEEFF");
+  assert.equal(result.payload.macAddresses.length, 2);
+  assert.equal(result.payload.wolBroadcastAddress, "192.168.0.255");
+});
+
+test("대표 MAC이 목록에 없거나 브로드캐스트가 틀리면 거절한다", () => {
+  const noMac = parseRegisterPayload({
+    ...valid,
+    wolMacAddress: "AABBCCDDEEFF",
+    macAddresses: []
+  });
+  assert.ok(!noMac.ok);
+  assert.equal(noMac.error.field, "wolMacAddress");
+
+  const badBroadcast = parseRegisterPayload({
+    ...valid,
+    wolMacAddress: "AABBCCDDEEFF",
+    macAddresses: [{ address: "AABBCCDDEEFF", type: "ethernet", name: "Ethernet" }],
+    ipv4Address: "192.168.0.25",
+    networkPrefixLength: 24,
+    wolBroadcastAddress: "192.168.1.255"
+  });
+  assert.ok(!badBroadcast.ok);
+  assert.equal(badBroadcast.error.field, "wolBroadcastAddress");
+});

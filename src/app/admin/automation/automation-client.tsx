@@ -69,6 +69,9 @@ type AutomationStatus = {
 
 type ApiResponse = { ok?: boolean; message?: string; requiresForce?: boolean };
 
+const DEFAULT_OPEN_TIME = "06:00";
+const DEFAULT_CLOSE_TIME = "23:00";
+
 function remainingLabel(session: SessionRow) {
   if (session.remainingMinutes === null) return "시간 확인 필요";
   if (session.remainingMinutes <= 0) return `${Math.abs(session.remainingMinutes)}분 초과`;
@@ -189,8 +192,8 @@ export function AutomationClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [openTime, setOpenTime] = useState("08:00");
-  const [closeTime, setCloseTime] = useState("21:00");
+  const [openTime, setOpenTime] = useState(DEFAULT_OPEN_TIME);
+  const [closeTime, setCloseTime] = useState(DEFAULT_CLOSE_TIME);
   const scheduleLoaded = useRef(false);
 
   const load = useCallback(async (showLoading = true) => {
@@ -203,8 +206,8 @@ export function AutomationClient() {
       setStatus(data);
       if (!scheduleLoaded.current && data.schedule) {
         setScheduleEnabled(data.schedule.enabled);
-        setOpenTime(data.schedule.openTime ?? "08:00");
-        setCloseTime(data.schedule.closeTime ?? "21:00");
+        setOpenTime(data.schedule.openTime ?? DEFAULT_OPEN_TIME);
+        setCloseTime(data.schedule.closeTime ?? DEFAULT_CLOSE_TIME);
         scheduleLoaded.current = true;
       }
     } catch (caught) {
@@ -432,6 +435,9 @@ export function AutomationClient() {
                 type="time"
                 value={openTime}
                 onChange={(event) => setOpenTime(event.target.value)}
+                min="00:00"
+                max="23:59"
+                step={60}
                 className="h-11 rounded-md border border-[#cad8c6] bg-white px-3 text-base font-bold text-vista-ink"
                 disabled={busy !== null || status?.scheduleAvailable === false}
               />
@@ -442,6 +448,9 @@ export function AutomationClient() {
                 type="time"
                 value={closeTime}
                 onChange={(event) => setCloseTime(event.target.value)}
+                min="00:00"
+                max="23:59"
+                step={60}
                 className="h-11 rounded-md border border-[#cad8c6] bg-white px-3 text-base font-bold text-vista-ink"
                 disabled={busy !== null || status?.scheduleAvailable === false}
               />

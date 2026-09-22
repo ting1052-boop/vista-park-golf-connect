@@ -3,7 +3,6 @@ import { getAutomationDeviceStatuses, getLatestScriptRuns, getPowerState } from 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
-import { getStoreSummaries } from "@/lib/supabase/stores";
 import { getAdminContext } from "@/lib/admin-context";
 import { DashboardClient } from "./dashboard-client";
 
@@ -14,9 +13,8 @@ export const revalidate = 0;
 export default async function AdminDashboardPage() {
   const adminContext = await getAdminContext();
   const currentStoreId = adminContext.storeId;
-  const [bayResult, storeResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
+  const [bayResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
     getDashboardBays(currentStoreId),
-    getStoreSummaries(),
     getDashboardOperationalRows(currentStoreId),
     getAutomationDeviceStatuses(currentStoreId),
     // 공용 조명·냉난방의 현재 상태. 대시보드 조명 버튼이 ON/OFF 중 무엇을 보여줄지 결정한다.
@@ -25,7 +23,6 @@ export default async function AdminDashboardPage() {
     )
   ]);
   const bays = bayResult.status === "fulfilled" ? bayResult.value : [];
-  const stores = storeResult.status === "fulfilled" ? storeResult.value : [];
   const automationDevices = automationResult.status === "fulfilled" ? automationResult.value : [];
   const sharedPower =
     sharedPowerResult.status === "fulfilled"
@@ -44,9 +41,6 @@ export default async function AdminDashboardPage() {
     bayResult.status === "rejected"
       ? `타석 상태를 불러오지 못했습니다: ${bayResult.reason instanceof Error ? bayResult.reason.message : "알 수 없는 오류"}`
       : null,
-    storeResult.status === "rejected"
-      ? `매장 현황을 불러오지 못했습니다: ${storeResult.reason instanceof Error ? storeResult.reason.message : "알 수 없는 오류"}`
-      : null,
     dashboardResult.status === "rejected"
       ? `오늘 예약 현황을 불러오지 못했습니다: ${dashboardResult.reason instanceof Error ? dashboardResult.reason.message : "알 수 없는 오류"}`
       : null,
@@ -60,7 +54,6 @@ export default async function AdminDashboardPage() {
       currentStoreId={currentStoreId}
       adminContext={adminContext}
       initialBays={bays}
-      initialStoreSummaries={adminContext.limitedMenu ? stores.filter((store) => store.id === currentStoreId) : stores}
       initialReservations={dashboardRows.reservations}
       initialAlerts={dashboardRows.alerts}
       initialNoShows={dashboardRows.noShows}

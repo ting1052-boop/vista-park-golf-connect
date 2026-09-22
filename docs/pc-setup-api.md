@@ -182,6 +182,57 @@
 - `anydeskId` 는 `123 456 789`, `123456789@ad`, 숫자 모두 받아 숫자만 남긴다.
 - `activationStatus` 생략 시 `unknown`.
 - `replace` 생략 시 `false`.
+
+### WOL·네트워크 필드 (선택)
+
+전부 생략 가능하다. 보내면 관리자 화면에서 꺼진 PC 를 깨울 수 있다.
+
+```json
+{
+  "wolMacAddress": "AABBCCDDEEFF",
+  "macAddresses": [
+    { "address": "AABBCCDDEEFF", "type": "ethernet", "name": "Intel Ethernet I219-V" },
+    { "address": "112233445566", "type": "wifi", "name": "Intel Wi-Fi 6 AX201" }
+  ],
+  "ipv4Address": "192.168.0.25",
+  "networkPrefixLength": 24,
+  "wolBroadcastAddress": "192.168.0.255",
+  "wakeOnLanStatus": "enabled",
+  "powerControlMethod": "wol_agent",
+  "networkCollectedAt": "2026-09-22T12:00:00.000Z"
+}
+```
+
+| 필드 | 규칙 |
+| --- | --- |
+| `wolMacAddress` | 구분자 없는 12자리(대문자로 정규화). 콜론·하이픈 표기도 받는다. **`macAddresses` 안에 있어야 한다** |
+| `macAddresses` | 최대 16개. `type` 은 `ethernet` \| `wifi`. 중복 주소는 하나로 합친다 |
+| `ipv4Address` | IPv4. 보내면 `networkPrefixLength` 도 **필수** |
+| `networkPrefixLength` | 0~32 정수 |
+| `wolBroadcastAddress` | IPv4. **IP 와 prefix 로 계산한 값과 다르면 거절한다** |
+| `wakeOnLanStatus` | `enabled` \| `disabled` \| `unknown` (생략 시 `unknown`) |
+| `powerControlMethod` | `wol_agent` \| `wol_only` \| `unknown` |
+| `networkCollectedAt` | ISO 날짜 |
+
+**유선 NIC 를 골라야 한다.** Wi-Fi 는 WOL 이 사실상 안 되고, VirtualBox·WSL·Hyper-V·VPN
+가상 어댑터는 WOL 대상이 아니다. 가상 어댑터 MAC 은 PC 끼리 겹치기도 한다.
+
+```powershell
+Get-NetAdapter -Physical |
+  Where-Object { $_.Status -eq 'Up' -and $_.MediaType -eq '802.3' } |
+  Sort-Object InterfaceMetric | Select-Object -First 1
+```
+
+`wakeOnLanStatus` 를 정확히 보내려면 세팅 도구가 WOL 을 **설정까지** 해야 한다.
+안 되는 원인 1위는 MAC 이 아니라 Windows 빠른 시작이다.
+
+```powershell
+powercfg /hibernate off                       # 빠른 시작 끄기
+Enable-NetAdapterPowerManagement -Name $nic -WakeOnMagicPacket
+(Get-NetAdapterPowerManagement -Name $nic).WakeOnMagicPacket   # 결과를 그대로 보고
+```
+
+BIOS 의 WOL 항목은 프로그램이 못 켠다. 원본 PC 에서 켜고 복제한다.
 - **`password`, `anydeskPassword`, `unattendedPassword`, `productKey`, `windowsProductKey`,
   `licenseKey` 가 들어 있으면 `400 forbidden_field` 로 거절한다.** 조용히 버리면 세팅 도구가
   계속 보내게 된다.

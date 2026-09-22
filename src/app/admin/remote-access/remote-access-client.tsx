@@ -16,6 +16,14 @@ type Device = {
   windowsVersion: string | null;
   activationStatus: string;
   setupToolVersion: string | null;
+  wolMacAddress: string | null;
+  macAddresses: Array<{ address: string; type: string; name: string }>;
+  ipv4Address: string | null;
+  networkPrefixLength: number | null;
+  wolBroadcastAddress: string | null;
+  wakeOnLanStatus: string;
+  powerControlMethod: string;
+  networkCollectedAt: string | null;
   registeredAt: string;
   updatedAt: string;
 };
@@ -413,7 +421,7 @@ export function RemoteAccessClient() {
           <table className="min-w-[1040px] text-left text-sm">
             <thead className="bg-vista-fairway text-[#566153]">
               <tr>
-                {["매장", "타석", "구분", "PC 이름", "AnyDesk ID", "Windows", "마지막 등록", "연결"].map((label) => (
+                {["매장", "타석", "구분", "PC 이름", "AnyDesk ID", "Windows", "WOL / 네트워크", "마지막 등록", "연결"].map((label) => (
                   <th key={label} className="px-4 py-3 font-extrabold">
                     {label}
                   </th>
@@ -470,6 +478,15 @@ export function RemoteAccessClient() {
                     <p>{device.windowsEdition ?? "-"}</p>
                     <p className="mt-0.5 text-xs text-[#697468]">
                       {device.windowsVersion ?? "-"} · {activationLabel[device.activationStatus] ?? device.activationStatus}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4 text-xs font-semibold">
+                    <p className="font-extrabold">{device.wolMacAddress ?? "-"}</p>
+                    <p className="mt-0.5 text-[#697468]">
+                      {device.ipv4Address ? `${device.ipv4Address}/${device.networkPrefixLength ?? "-"}` : "IP 미수집"}
+                    </p>
+                    <p className="mt-0.5 text-[#697468]">
+                      WOL {device.wakeOnLanStatus === "enabled" ? "가능" : device.wakeOnLanStatus === "disabled" ? "꺼짐" : "미확인"}
                     </p>
                   </td>
                   <td className="px-4 py-4 font-semibold">

@@ -166,5 +166,7 @@ export async function getAutomationDeviceStatuses(storeId: string): Promise<Auto
     });
   }
 
-  return rows;
+  // 장비 매핑만 있고 실제 실행 이력이 없는 행은 대시보드에 노출하지 않는다.
+  // 특히 다른 매장 계정에서 시흥점 기본 매핑이 빈 상태값으로 보이는 일을 막는다.
+  return rows.filter((row) => row.lastRunAt !== null);
 }
