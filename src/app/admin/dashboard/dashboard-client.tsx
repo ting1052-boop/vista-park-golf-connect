@@ -718,21 +718,22 @@ export function DashboardClient({
               </section>
             ) : null}
 
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="주요 지표">
+            <section className="grid min-w-0 grid-cols-5 gap-2 sm:gap-3" aria-label="주요 지표">
               {metrics.map((item) => {
                 const Icon = item.icon;
                 const content = (
                   <>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-[#697468]">{item.label}</p>
-                        <strong className="mt-2 block text-3xl font-extrabold">{item.value}</strong>
+                    <div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold leading-4 text-[#697468] sm:text-sm">{item.label}</p>
+                        <strong className="mt-1 block text-xl font-extrabold leading-tight sm:mt-2 sm:text-3xl">{item.value}</strong>
                       </div>
-                      <span className={cn("grid size-11 place-items-center rounded-md border", item.className)}>
-                        <Icon size={21} aria-hidden="true" />
+                      <span className={cn("grid size-7 shrink-0 place-items-center rounded-md border sm:size-11", item.className)}>
+                        <Icon size={16} className="sm:hidden" aria-hidden="true" />
+                        <Icon size={21} className="hidden sm:block" aria-hidden="true" />
                       </span>
                     </div>
-                    {item.helper ? <p className="mt-4 text-sm font-semibold text-[#5f6b5e]">{item.helper}</p> : null}
+                    {item.helper ? <p className="hidden text-sm font-semibold text-[#5f6b5e] sm:mt-4 sm:block">{item.helper}</p> : null}
                   </>
                 );
 
@@ -742,7 +743,7 @@ export function DashboardClient({
                       key={item.label}
                       type="button"
                       onClick={item.onClick}
-                      className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-sky-400 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 text-left shadow-soft-line transition hover:border-sky-400 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500 sm:p-5"
                       aria-haspopup="dialog"
                     >
                       {content}
@@ -751,7 +752,7 @@ export function DashboardClient({
                 }
 
                 return (
-                  <article key={item.label} className="rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
+                  <article key={item.label} className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-5">
                     {content}
                   </article>
                 );
