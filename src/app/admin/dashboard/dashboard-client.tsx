@@ -17,7 +17,6 @@ import {
   LayoutDashboard,
   Lightbulb,
   LogOut,
-  Menu,
   PlusCircle,
   Power,
   Search,
@@ -47,6 +46,7 @@ import {
 } from "@/lib/reservation-policy";
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
+import { AdminQuickNav } from "@/components/admin-quick-nav";
 
 const VISTA_GREEN = "#4E8969";
 const RING_SIZE = 104;
@@ -671,11 +671,6 @@ export function DashboardClient({
         <section className="min-w-0">
           <header className="sticky top-0 z-10 border-b border-[#d9e3d5] bg-white/95 backdrop-blur">
             <div className="flex items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
-              <button className="grid size-11 place-items-center rounded-md border border-[#d9e4d6] bg-white text-vista-ink lg:hidden">
-                <Menu size={22} aria-hidden="true" />
-                <span className="sr-only">메뉴 열기</span>
-              </button>
-
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-vista-leaf">{adminContext.storeName}</p>
                 <h2 className="truncate text-xl font-extrabold sm:text-2xl">무인 매장 운영 대시보드</h2>
@@ -703,6 +698,7 @@ export function DashboardClient({
                 <span className="sr-only">알림</span>
               </button>
             </div>
+            <AdminQuickNav />
           </header>
 
           <div className="px-4 py-6 sm:px-6 lg:px-8">

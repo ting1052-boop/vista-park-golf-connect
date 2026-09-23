@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { AdminContext } from "@/lib/admin-context";
 import { getAdminNavItems } from "@/lib/dashboard-data";
+import { AdminQuickNav } from "@/components/admin-quick-nav";
 
 const navIconMap = {
   "/admin/dashboard": LayoutDashboard,
@@ -144,22 +145,7 @@ export function AdminShell({ children, adminContext }: { children: ReactNode; ad
                 <span className="sr-only">알림</span>
               </button>
             </div>
-            <nav className="flex gap-2 overflow-x-auto border-t border-[#edf2ea] px-4 py-3 sm:px-6 lg:hidden" aria-label="모바일 관리자 메뉴">
-              {navItems.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`shrink-0 rounded-md px-3 py-2 text-sm font-extrabold ${
-                      isActive ? "bg-vista-leaf text-white" : "border border-[#d9e4d6] bg-white text-[#4f5b50]"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            <AdminQuickNav />
           </header>
 
           {children}
