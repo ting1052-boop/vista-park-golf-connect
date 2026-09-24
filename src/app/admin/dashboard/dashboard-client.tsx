@@ -579,17 +579,19 @@ export function DashboardClient({
   const metrics = [
     {
       label: "현재 이용 중",
+      mobileLabel: "이용 중",
       value: `${summary.inUse} / ${bays.length}`,
+      mobileValue: `${summary.inUse}/${bays.length}`,
       helper: overtimeBays.length > 0 ? `종료 확인 ${overtimeBays.length}건 · 눌러서 상세 보기` : "눌러서 이용 상세 보기",
       icon: Activity,
       className: "border-sky-200 bg-sky-50 text-sky-700",
       onClick: () => setIsUsageDetailOpen(true)
     },
-    { label: "입장 대기", value: `${summary.waiting}`, helper: "키오스크 인증 또는 승인 필요", icon: Clock3, className: "border-amber-200 bg-amber-50 text-amber-700" },
-    { label: "사용 가능", value: `${summary.available}`, helper: "즉시 배정 가능한 타석", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { label: "점검/알림", value: `${summary.maintenance + alerts.length + noShows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
+    { label: "사용 가능", mobileLabel: "빈 타석", value: `${summary.available}`, helper: "즉시 배정 가능한 타석", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+    { label: "점검/알림", mobileLabel: "알림", value: `${summary.maintenance + alerts.length + noShows.length + overtimeBays.length}`, helper: "확인 필요한 항목", icon: AlertTriangle, className: "border-rose-200 bg-rose-50 text-rose-700" },
     {
       label: "오늘 예약·입장",
+      mobileLabel: "오늘",
       value: `${todayReservationSummary.total}`,
       helper:
         todayReservationSummary.total > 0
@@ -714,19 +716,24 @@ export function DashboardClient({
               </section>
             ) : null}
 
-            <section className="grid min-w-0 grid-cols-5 gap-2 sm:gap-3" aria-label="주요 지표">
+            <section className="grid min-w-0 grid-cols-4 gap-1.5 sm:gap-3" aria-label="주요 지표">
               {metrics.map((item) => {
                 const Icon = item.icon;
                 const content = (
                   <>
-                    <div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3">
+                    <div className="flex min-w-0 flex-col items-center justify-center sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0">
-                        <p className="text-[11px] font-bold leading-4 text-[#697468] sm:text-sm">{item.label}</p>
-                        <strong className="mt-1 block text-xl font-extrabold leading-tight sm:mt-2 sm:text-3xl">{item.value}</strong>
+                        <p className="whitespace-nowrap text-center text-[11px] font-bold leading-4 text-[#697468] sm:text-left sm:text-sm">
+                          <span className="sm:hidden">{item.mobileLabel}</span>
+                          <span className="hidden sm:inline">{item.label}</span>
+                        </p>
+                        <strong className="mt-1 block whitespace-nowrap text-center text-lg font-extrabold leading-tight sm:mt-2 sm:text-left sm:text-3xl">
+                          <span className="sm:hidden">{"mobileValue" in item ? item.mobileValue : item.value}</span>
+                          <span className="hidden sm:inline">{item.value}</span>
+                        </strong>
                       </div>
-                      <span className={cn("grid size-7 shrink-0 place-items-center rounded-md border sm:size-11", item.className)}>
-                        <Icon size={16} className="sm:hidden" aria-hidden="true" />
-                        <Icon size={21} className="hidden sm:block" aria-hidden="true" />
+                      <span className={cn("hidden size-11 shrink-0 place-items-center rounded-md border sm:grid", item.className)}>
+                        <Icon size={21} aria-hidden="true" />
                       </span>
                     </div>
                     {item.helper ? <p className="hidden text-sm font-semibold text-[#5f6b5e] sm:mt-4 sm:block">{item.helper}</p> : null}
@@ -739,8 +746,9 @@ export function DashboardClient({
                       key={item.label}
                       type="button"
                       onClick={item.onClick}
-                      className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 text-left shadow-soft-line transition hover:border-sky-400 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500 sm:p-5"
+                      className="min-w-0 rounded-md border border-[#dfe8dc] bg-white px-1 py-2 text-left shadow-soft-line transition hover:border-sky-400 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500 sm:p-5"
                       aria-haspopup="dialog"
+                      aria-label={`${item.label} ${item.value} 상세 보기`}
                     >
                       {content}
                     </button>
@@ -748,7 +756,7 @@ export function DashboardClient({
                 }
 
                 return (
-                  <article key={item.label} className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-5">
+                  <article key={item.label} className="min-w-0 rounded-md border border-[#dfe8dc] bg-white px-1 py-2 shadow-soft-line sm:p-5">
                     {content}
                   </article>
                 );
@@ -835,8 +843,8 @@ export function DashboardClient({
                 </span>
               </div>
 
-              <div className="grid gap-4 p-5 md:grid-cols-3">
-                <button
+              <div className={cn("grid grid-cols-2 gap-2 p-3 sm:gap-4 sm:p-5", !adminContext.limitedMenu && "lg:grid-cols-3")}>
+                {!adminContext.limitedMenu ? <button
                   type="button"
                   disabled={isSyncing}
                   onClick={() =>
@@ -848,7 +856,7 @@ export function DashboardClient({
                       sharedPower.on ? "매장 조명·냉난방 OFF" : "매장 조명·냉난방 ON"
                     )
                   }
-                  className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60"
+                  className="col-span-2 rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60 lg:col-span-1"
                 >
                   <span className="grid size-12 place-items-center rounded-md bg-vista-leaf text-white">
                     <Lightbulb size={22} aria-hidden="true" />
@@ -857,7 +865,7 @@ export function DashboardClient({
                   <p className="mt-2 text-sm leading-6 text-[#697468]">
                     로비·홀 조명과 냉난방만 {sharedPower.on ? "끕니다" : "켭니다"}. 개점·폐점 때 쓰는 버튼입니다.
                   </p>
-                </button>
+                </button> : null}
 
                 <button
                   type="button"
@@ -869,15 +877,12 @@ export function DashboardClient({
                       "매장 전체 준비 ON"
                     )
                   }
-                  className="rounded-md border border-[#dfe8dc] bg-white p-5 text-left shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex min-h-12 items-center justify-center rounded-md border border-[#dfe8dc] bg-white p-2 text-center shadow-soft-line transition hover:border-vista-leaf hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-60 sm:block sm:p-5 sm:text-left"
                 >
-                  <span className="grid size-12 place-items-center rounded-md bg-vista-leaf text-white">
+                  <span className="hidden size-12 place-items-center rounded-md bg-vista-leaf text-white sm:grid">
                     <Zap size={22} aria-hidden="true" />
                   </span>
-                  <h4 className="mt-4 text-lg font-extrabold">매장 전체 준비 ON</h4>
-                  <p className="mt-2 text-sm leading-6 text-[#697468]">
-                    조명·냉난방과 전 타석 프로젝터·PC를 모두 켭니다. 단체 예약·점검용입니다.
-                  </p>
+                  <h4 className="text-[11px] font-extrabold whitespace-nowrap sm:mt-4 sm:text-lg">매장 전체 준비 ON</h4>
                 </button>
 
                 <button
@@ -890,13 +895,13 @@ export function DashboardClient({
                       "매장 종료"
                     )
                   }
-                  className="rounded-md border border-[#efc7c7] bg-[#fff8f8] p-5 text-left shadow-soft-line transition hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex min-h-12 items-center justify-center rounded-md border border-[#efc7c7] bg-[#fff8f8] p-2 text-center shadow-soft-line transition hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-60 sm:block sm:p-5 sm:text-left"
                 >
-                  <span className="grid size-12 place-items-center rounded-md bg-rose-600 text-white">
+                  <span className="hidden size-12 place-items-center rounded-md bg-rose-600 text-white sm:grid">
                     <Power size={22} aria-hidden="true" />
                   </span>
-                  <h4 className="mt-4 text-lg font-extrabold">매장 종료</h4>
-                  <p className="mt-2 text-sm leading-6 text-[#697468]">
+                  <h4 className="text-sm font-extrabold whitespace-nowrap sm:mt-4 sm:text-lg">매장 종료</h4>
+                  <p className="mt-2 hidden text-sm leading-6 text-[#697468] sm:block">
                     타석 PC를 정상 종료한 뒤 모든 장비와 조명·냉난방을 끕니다.
                   </p>
                 </button>
@@ -928,6 +933,7 @@ export function DashboardClient({
                       <BayCard
                         key={bay.id}
                         bay={bay}
+                        limitedMenu={adminContext.limitedMenu}
                         onEndSession={handleEndSession}
                         onExtendTime={handleExtendTime}
                         onCheckIn={handleCheckIn}
@@ -1208,12 +1214,14 @@ function WarningItem({
 
 function BayCard({
   bay,
+  limitedMenu,
   onEndSession,
   onExtendTime,
   onCheckIn,
   onMaintenanceDone
 }: {
   bay: LiveBay;
+  limitedMenu: boolean;
   onEndSession: (bay: LiveBay) => void | Promise<void>;
   onExtendTime: (bay: LiveBay) => void | Promise<void>;
   onCheckIn: (bay: LiveBay) => void | Promise<void>;
@@ -1223,6 +1231,8 @@ function BayCard({
   const StatusIcon = meta.icon;
   const usageText = getBayUsageText(bay);
   const gameStatus = getGameStatusDisplay(bay);
+  const hideUnknownGameStatus = limitedMenu && /^A-0[1-7]$/i.test(bay.name) &&
+    (gameStatus.label === "게임 상태 확인 불가" || gameStatus.label === "게임 감지 미지원");
 
   return (
     <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", meta.card)}>
@@ -1263,7 +1273,7 @@ function BayCard({
         </div>
       </div>
 
-      <details
+      {!hideUnknownGameStatus ? <details
         className={cn(
           "group mt-3 rounded-md border px-4 py-2.5 text-base font-bold",
           gameStatus.tone === "active"
@@ -1299,17 +1309,17 @@ function BayCard({
           ) : <p className="mt-1">게임 이력 DB 적용 전이거나 조회할 수 없습니다.</p>}
           <p className="mt-1 opacity-75">로비 복귀는 18홀 완주·예약·결제 건수가 아닙니다.</p>
         </div>
-      </details>
+      </details> : null}
 
       {bay.status === "in_use" ? (
         <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
             <CircularTimer remainingMinutes={bay.remainingMinutes ?? 0} totalMinutes={bay.totalMinutes ?? 120} />
             <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 text-sm">
-              <InfoBlock label="이용 고객" value={bay.customer ?? "-"} />
+              {!limitedMenu ? <InfoBlock label="이용 고객" value={bay.customer ?? "-"} /> : null}
               <InfoBlock label="종료 예정" value={bay.endsAt ?? "-"} />
               <InfoBlock label="시작 시간" value={bay.startedAt ?? "-"} />
-              <InfoBlock label="메모" value={bay.note} />
+              {!limitedMenu ? <InfoBlock label="메모" value={bay.note} /> : null}
             </div>
           </div>
         </div>

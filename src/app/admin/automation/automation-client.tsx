@@ -102,63 +102,48 @@ function BayControls({
       ? "마지막 ON 명령 실패"
       : "마지막 OFF 명령 실패"
     : bay.powerOn === null
-      ? "장비 명령 기록 없음"
+      ? "마지막 명령 없음"
       : lastEquipmentCommandOn
-        ? "마지막 장비 명령 ON"
-        : "마지막 장비 명령 OFF";
+        ? "마지막 명령 ON"
+        : "마지막 명령 OFF";
 
   return (
     <div className="mt-4 border-t border-[#e5ece1] pt-4">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-extrabold">PC 전원</p>
-          <p className={`mt-0.5 text-xs font-bold ${pcOn ? "text-emerald-700" : "text-[#8a9488]"}`}>
-            {pcOn ? "Agent 연결 · 켜짐" : "Agent 신호 없음 · 상태 확인 필요"}
-          </p>
-        </div>
+        <p className="text-sm font-extrabold">PC 제어</p>
 
-        <button
+        {!pcOn && !bay.hasAutomation ? (
+          <span className="text-xs font-bold text-[#8a9488]">원격 켜기 미설정</span>
+        ) : <button
           type="button"
-          role="switch"
-          aria-checked={pcOn}
           aria-label={`${bay.code} PC ${pcOn ? "정상 종료" : "켜기"}`}
           disabled={pcDisabled || pcPending}
           onClick={() => onPcToggle(!pcOn)}
-          className={`relative inline-flex h-9 w-16 shrink-0 items-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-            pcOn ? "border-vista-leaf bg-vista-leaf" : "border-[#cad8c6] bg-[#e8ece7]"
-          }`}
+          className="inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-[#cad8c6] bg-white px-3 py-1.5 text-xs font-extrabold text-vista-leaf transition hover:bg-vista-fairway disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span
-            className={`grid size-7 place-items-center rounded-full bg-white shadow transition-transform ${
-              pcOn ? "translate-x-8" : "translate-x-1"
-            }`}
-          >
-            {pcPending ? (
-              <Loader2 size={15} className="animate-spin text-[#697468]" />
-            ) : (
-              <Power size={15} className={pcOn ? "text-vista-leaf" : "text-[#8a9488]"} />
-            )}
-          </span>
-        </button>
+          {pcPending ? <Loader2 size={15} className="animate-spin" /> : <Power size={15} />}
+          {pcPending ? "명령 전송 중" : pcOn ? "PC 정상 종료" : "PC 켜기"}
+        </button>}
       </div>
 
-      {bay.inUse && (
+      {bay.inUse && bay.agentOnline && (
         <p className="mt-2 rounded-md bg-[#fff4eb] px-2.5 py-1.5 text-xs font-bold text-[#9a561a]">
-          고객 이용 중 · 끄면 이용에 지장이 있습니다
+          이용 중 · PC를 끄면 이용에 지장이 있습니다
         </p>
       )}
 
-      <div className="mt-4 rounded-md bg-white p-3 ring-1 ring-[#e5ece1]">
+      {bay.hasAutomation ? <div className="mt-4 rounded-md bg-white p-3 ring-1 ring-[#e5ece1]">
         <div className="flex items-start justify-between gap-3">
           <div>
+            <p className="text-xs font-bold text-[#697468]">타석 장비</p>
             <p className={`text-xs font-extrabold ${bay.powerFailed ? "text-rose-700" : "text-[#697468]"}`}>
               {stateLabel}
             </p>
-            <p className="mt-1 text-[11px] font-semibold leading-4 text-[#8a9488]">
-              {bay.powerLastRunAt
-                ? `${new Date(bay.powerLastRunAt).toLocaleString("ko-KR")} · 실제 전원 상태가 아닌 명령 기록`
-                : "제어 기록 없음"}
-            </p>
+            {bay.powerLastRunAt ? (
+              <p className="mt-1 text-[11px] font-semibold leading-4 text-[#8a9488]">
+                {new Date(bay.powerLastRunAt).toLocaleString("ko-KR")} · 실제 전원 상태는 확인되지 않음
+              </p>
+            ) : null}
           </div>
           {equipmentPending ? <Loader2 size={16} className="shrink-0 animate-spin text-vista-leaf" /> : null}
         </div>
@@ -180,7 +165,7 @@ function BayControls({
             장비 OFF
           </button>
         </div>
-      </div>
+      </div> : <p className="mt-3 text-xs font-bold text-[#8a9488]">타석 장비 제어 미연결</p>}
     </div>
   );
 }
@@ -354,32 +339,32 @@ export function AutomationClient() {
           <span className="shrink-0 text-xs font-bold opacity-70">자동 갱신 15초</span>
         </section>
 
-        <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="운영 상태 요약">
-          <article className="rounded-md border border-[#dfe8dc] bg-white p-4 shadow-soft-line">
+        <section className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4" aria-label="운영 상태 요약">
+          <article className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-4">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-sm font-bold text-[#697468]">매장 제어기</p><strong className="mt-2 block text-xl font-extrabold">{controllerReady ? "사용 가능" : status?.controllerStalled ? "응답 지연" : "확인 필요"}</strong></div>
-              <span className={`grid size-10 place-items-center rounded-md ${controllerReady ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}><Server size={20} /></span>
+              <div><p className="text-xs font-bold text-[#697468] sm:text-sm">매장 제어기</p><strong className="mt-2 block text-lg font-extrabold sm:text-xl">{controllerReady ? "사용 가능" : status?.controllerStalled ? "응답 지연" : "확인 필요"}</strong></div>
+              <span className={`hidden size-10 place-items-center rounded-md sm:grid ${controllerReady ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}><Server size={20} /></span>
             </div>
             <p className="mt-3 text-xs font-semibold text-[#697468]">HA 노트북 명령 전달 경로</p>
           </article>
-          <article className="rounded-md border border-[#dfe8dc] bg-white p-4 shadow-soft-line">
+          <article className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-4">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-sm font-bold text-[#697468]">장비 명령 대기</p><strong className="mt-2 block text-xl font-extrabold">{status ? `${status.pendingCommandCount}건` : "-"}</strong></div>
-              <span className={`grid size-10 place-items-center rounded-md ${status?.controllerStalled ? "bg-rose-50 text-rose-700" : "bg-sky-50 text-sky-700"}`}><ListChecks size={20} /></span>
+              <div><p className="text-xs font-bold text-[#697468] sm:text-sm">장비 명령 대기</p><strong className="mt-2 block text-lg font-extrabold sm:text-xl">{status ? `${status.pendingCommandCount}건` : "-"}</strong></div>
+              <span className={`hidden size-10 place-items-center rounded-md sm:grid ${status?.controllerStalled ? "bg-rose-50 text-rose-700" : "bg-sky-50 text-sky-700"}`}><ListChecks size={20} /></span>
             </div>
             <p className="mt-3 text-xs font-semibold text-[#697468]">30초 초과 {status?.stalePendingCount ?? 0}건</p>
           </article>
-          <article className="rounded-md border border-[#dfe8dc] bg-white p-4 shadow-soft-line">
+          <article className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-4">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-sm font-bold text-[#697468]">PC Agent 연결</p><strong className="mt-2 block text-xl font-extrabold">{status ? `${onlinePcCount} / ${status.bays.length}` : "-"}</strong></div>
-              <span className="grid size-10 place-items-center rounded-md bg-emerald-50 text-emerald-700"><Monitor size={20} /></span>
+              <div><p className="text-xs font-bold text-[#697468] sm:text-sm">PC Agent 연결</p><strong className="mt-2 block text-lg font-extrabold sm:text-xl">{status ? `${onlinePcCount} / ${status.bays.length}` : "-"}</strong></div>
+              <span className="hidden size-10 place-items-center rounded-md bg-emerald-50 text-emerald-700 sm:grid"><Monitor size={20} /></span>
             </div>
             <p className="mt-3 text-xs font-semibold text-[#697468]">최근 2분 신호 기준</p>
           </article>
-          <article className="rounded-md border border-[#dfe8dc] bg-white p-4 shadow-soft-line">
+          <article className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-4">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-sm font-bold text-[#697468]">현재 이용 세션</p><strong className="mt-2 block text-xl font-extrabold">{status ? `${status.sessions.length}건` : "-"}</strong></div>
-              <span className={`grid size-10 place-items-center rounded-md ${expiredCount > 0 ? "bg-amber-50 text-amber-700" : "bg-vista-fairway text-vista-leaf"}`}><Activity size={20} /></span>
+              <div><p className="text-xs font-bold text-[#697468] sm:text-sm">현재 이용 세션</p><strong className="mt-2 block text-lg font-extrabold sm:text-xl">{status ? `${status.sessions.length}건` : "-"}</strong></div>
+              <span className={`hidden size-10 place-items-center rounded-md sm:grid ${expiredCount > 0 ? "bg-amber-50 text-amber-700" : "bg-vista-fairway text-vista-leaf"}`}><Activity size={20} /></span>
             </div>
             <p className="mt-3 text-xs font-semibold text-[#697468]">종료 초과 {expiredCount}건</p>
           </article>
@@ -550,7 +535,7 @@ export function AutomationClient() {
                 </p>
                 {bay.inUse && !bay.agentOnline ? (
                   <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-extrabold text-amber-800">
-                    이용 중인데 PC Agent 신호가 없습니다
+                    이용 중 · PC 상태를 원격으로 확인할 수 없습니다
                   </p>
                 ) : null}
                 <BayControls
