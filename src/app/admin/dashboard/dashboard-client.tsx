@@ -1331,10 +1331,6 @@ function BayCard({
             {bay.status === "waiting" && "예약자 입장 대기"}
             {bay.status === "maintenance" && "관리자 점검 필요"}
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-            <InfoBlock label={bay.status === "waiting" ? "예약자" : "다음 예약"} value={bay.status === "waiting" ? bay.reservationName ?? "-" : bay.nextReservation ?? "-"} />
-            <InfoBlock label="메모" value={bay.note} />
-          </div>
         </div>
       )}
 
