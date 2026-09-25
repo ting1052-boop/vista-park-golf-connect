@@ -3,7 +3,8 @@ import { getAutomationDeviceStatuses, getLatestScriptRuns, getPowerState } from 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
-import { getAdminContext } from "@/lib/admin-context";
+import { redirect } from "next/navigation";
+import { getOptionalAdminContext } from "@/lib/admin-context";
 import { DashboardClient } from "./dashboard-client";
 
 // Always derive the dashboard from current sessions, never a static build snapshot.
@@ -11,7 +12,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminDashboardPage() {
-  const adminContext = await getAdminContext();
+  // 관리자 역할이 없으면(고객 로그인 등) 조용히 로그인으로 돌려보낸다.
+  const adminContext = await getOptionalAdminContext();
+  if (!adminContext) redirect("/admin/login");
   const currentStoreId = adminContext.storeId;
   const [bayResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
     getDashboardBays(currentStoreId),
