@@ -8,3 +8,9 @@ bays.config.local.json
 # 빌드 산출물 (토큰이 박힌 exe/zip 포함 — 공개 레포에 올리지 말 것)
 dist/
 dist-packager/
+
+# 송도 Agent 토큰 (9대분 전부 들어 있다. 절대 커밋 금지)
+songdo/songdo-tokens.json
+songdo/*-tokens.json
+songdo/등록SQL-작성됨.sql
+songdo/VISTA-Bay-Agent.exe

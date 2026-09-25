@@ -6,7 +6,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { randomUUID } = require("node:crypto");
 const { execFile } = require("node:child_process");
-const { mergeBaysConfig } = require("./agent-config");
+const { mergeBaysConfig, resolveBayPolicy } = require("./agent-config");
 const { createGameLogProbe } = require("./game-log-probe");
 const { createScreenGolfMonitor } = require("./screen-golf-monitor");
 const { createGameLogLocator } = require("./game-log-locator");
@@ -16,7 +16,7 @@ const { createRoundEventOutbox } = require("./round-event-outbox");
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.9.4";
+const VERSION = "0.9.5";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
@@ -177,7 +177,8 @@ function loadConfig() {
     sessionFile: merged.sessionFile || "agent-session.json",
     pollIntervalSeconds: Number(merged.pollIntervalSeconds || 3),
     warningBeforeMinutes: Number(merged.warningBeforeMinutes || 10),
-    autoShutdownAfterEndMinutes: Math.max(0, Number(merged.autoShutdownAfterEndMinutes ?? 5)),
+    // monitorOnly / showsCustomerUi / mayEndServerSession / autoShutdownAfterEndMinutes
+    ...resolveBayPolicy(merged),
     criticalBeforeMinutes: Number(merged.criticalBeforeMinutes || 3),
     extensionMinutes: Number(merged.extensionMinutes || 30),
     extensionPrice: Number(merged.extensionPrice || 6000),
@@ -401,6 +402,9 @@ function scheduleAutoShutdown(accessSessionId) {
 }
 
 function beginEndNotice(session) {
+  // Monitor-only bays never change server state. Blocking it here also blocks the
+  // auto-shutdown chain, which is only ever scheduled from this function's callback.
+  if (!config.mayEndServerSession) return;
   if (endNotice?.accessSessionId === session.accessSessionId) return;
 
   clearEndNotice();
@@ -787,7 +791,7 @@ async function tick() {
     extensionRequestState = null;
   }
 
-  ensureWindow(mode);
+  ensureWindow(config.showsCustomerUi ? mode : "hidden");
 
   const state = {
     mode,
@@ -842,7 +846,7 @@ async function tick() {
       gameAppRunning,
       ...(config.gameMonitoringEnabled ? { gameTelemetry } : {}),
       ...(roundEventOutbox ? { roundEvents: roundEventOutbox.list(20) } : {}),
-      screenLocked: mode === "lock",
+      screenLocked: config.showsCustomerUi && mode === "lock",
       lastSeenAt: nowIso()
     });
     if (heartbeatResult.ok && roundEventOutbox) {

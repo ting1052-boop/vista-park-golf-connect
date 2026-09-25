@@ -58,6 +58,89 @@
       "label": "3번 타석",
       "pcName": "VISTA-BAY-03",
       "agentToken": "REPLACE_WITH_BAY_03_AGENT_TOKEN"
+    },
+
+    {
+      "_comment": "송도파크자이는 아파트 커뮤니티 시설이다. 고객에게 남은시간 경고·잠금화면을 보여주지 않고, 스스로 PC를 끄지도 않는다(monitorOnly). 대시보드 상태 보고와 관리자 'PC 정상 종료' 명령만 받는다. pcName은 적지 않는다 - PC 이름을 그대로 쓴다. storeId/bayId는 서버가 토큰으로 판별하므로 필요없다.",
+      "agentId": "vista-songdo-range-01",
+      "bayCode": "SD-R-01",
+      "label": "송도 · 골프 1번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_01_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-range-02",
+      "bayCode": "SD-R-02",
+      "label": "송도 · 골프 2번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_02_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-range-03",
+      "bayCode": "SD-R-03",
+      "label": "송도 · 골프 3번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_03_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-range-04",
+      "bayCode": "SD-R-04",
+      "label": "송도 · 골프 4번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_04_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-range-05",
+      "bayCode": "SD-R-05",
+      "label": "송도 · 골프 5번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_05_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-range-06",
+      "bayCode": "SD-R-06",
+      "label": "송도 · 골프 6번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_06_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-range-07",
+      "bayCode": "SD-R-07",
+      "label": "송도 · 골프 7번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_RANGE_07_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-park-01",
+      "bayCode": "SD-P-01",
+      "label": "송도 · 파크 1번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_PARK_01_AGENT_TOKEN"
+    },
+    {
+      "agentId": "vista-songdo-park-02",
+      "bayCode": "SD-P-02",
+      "label": "송도 · 파크 2번",
+      "monitorOnly": true,
+      "gameMonitoringEnabled": false,
+      "gameLogDiagnosticsEnabled": false,
+      "agentToken": "REPLACE_WITH_SONGDO_PARK_02_AGENT_TOKEN"
     }
   ]
 }

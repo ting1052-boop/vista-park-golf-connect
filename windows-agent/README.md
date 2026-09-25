@@ -98,7 +98,7 @@ Agent는 게임 실행 여부와 다음 상태를 서로 분리해서 관찰합�
 로컬 진단 결과:
 
 ```text
-%APPDATA%\VISTA Bay Agent\logs\game-monitor-diagnostics.log
+%APPDATA%\vista-windows-agent\logs\game-monitor-diagnostics.log
 ```
 
 기록되는 후보 신호는 다음뿐입니다.
@@ -120,13 +120,35 @@ Agent는 게임 실행 여부와 다음 상태를 서로 분리해서 관찰합�
 2. 더블클릭 실행
 3. **"이 PC는 몇 번 타석인가요?"** 화면에서 해당 타석 버튼 클릭 → 끝
 4. 잘못 골랐으면: 아래 설정 폴더의 `agent.config.json`을 지우고 다시 실행
-   - 설정/로그 폴더: `%APPDATA%\VISTA Bay Agent`
+   - 설정/로그 폴더: `%APPDATA%\vista-windows-agent`
+
+### 아파트 매장 (`monitorOnly`)
+
+송도파크자이처럼 **요금·이용시간이 없는 아파트 커뮤니티 시설**은 타석 설정에
+`"monitorOnly": true` 를 넣습니다. 별도 exe 가 아니라 같은 exe 이고, 설치 방법도
+위와 같습니다. 타석 목록에서 `송도 · 골프 1번` 처럼 매장 이름이 붙은 항목을 고르면
+됩니다.
+
+| | 일반 매장 (시흥) | `monitorOnly` (송도) |
+| --- | --- | --- |
+| 남은시간 경고창 | 표시 | **표시 안 함** |
+| 종료 후 잠금화면 | 표시 | **표시 안 함** |
+| 이용 종료 후 자동 PC 종료 | 5분 뒤 | **하지 않음** |
+| 대시보드 heartbeat·게임상태 | 보냄 | 보냄 |
+| 관리자 `PC 정상 종료` 명령 | 받음 | 받음 |
+
+`monitorOnly` 는 `autoShutdownAfterEndMinutes` 를 강제로 0 으로 만듭니다. 값을
+따로 적어둘 필요가 없고, 적어두더라도 무시합니다.
+
+화면에 아무것도 뜨지 않으므로 살아 있는지는 **대시보드/무인제어의 `PC 켜짐`**
+으로 확인합니다. 트레이 아이콘은 두지 않았습니다. Agent 가 죽으면 아이콘도 같이
+사라져서 확인 수단이 되지 못하고, 대시보드가 이미 같은 일을 하기 때문입니다.
 
 ## 로컬 테스트가 필요할 때
 
 서버 연결 없이 오버레이만 확인하려면 `bays.config.json`의 `sessionSource`를
 임시로 `local`로 바꾸고, 세션 파일을 직접 넣어 오버레이 동작을 확인합니다.
-설정 폴더(`%APPDATA%\VISTA Bay Agent`)에 `agent-session.json`을 만들고
+설정 폴더(`%APPDATA%\vista-windows-agent`)에 `agent-session.json`을 만들고
 `endsAt`을 현재 시간 기준 몇 분 이내로 바꿉니다. (개발 중 소스로 실행할
 때는 `windows-agent` 폴더의 `agent-session.json`도 인식합니다.)
 
