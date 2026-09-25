@@ -21,9 +21,10 @@ import {
   Users,
   Wallet
 } from "lucide-react";
-import type { AdminContext } from "@/lib/admin-context";
+import type { AdminContext, AdminStoreOption } from "@/lib/admin-context";
 import { getAdminNavItems } from "@/lib/dashboard-data";
 import { AdminQuickNav } from "@/components/admin-quick-nav";
+import { StoreSwitcher } from "@/components/store-switcher";
 
 const navIconMap = {
   "/admin/dashboard": LayoutDashboard,
@@ -39,7 +40,15 @@ const navIconMap = {
   "/admin/reports": FileText
 } as const;
 
-export function AdminShell({ children, adminContext }: { children: ReactNode; adminContext: AdminContext | null }) {
+export function AdminShell({
+  children,
+  adminContext,
+  stores = []
+}: {
+  children: ReactNode;
+  adminContext: AdminContext | null;
+  stores?: AdminStoreOption[];
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const limitedMenu = adminContext?.limitedMenu ?? false;
@@ -134,7 +143,15 @@ export function AdminShell({ children, adminContext }: { children: ReactNode; ad
           <header className="sticky top-0 z-20 border-b border-[#d9e3d5] bg-white/95 backdrop-blur">
             <div className="flex items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-vista-leaf">{adminContext?.storeName ?? "비스타파크골프 시흥점"}</p>
+                {adminContext?.isHeadAdmin ? (
+                  <StoreSwitcher
+                    stores={stores}
+                    currentStoreId={adminContext.storeId}
+                    currentStoreName={adminContext.storeName}
+                  />
+                ) : (
+                  <p className="text-sm font-bold text-vista-leaf">{adminContext?.storeName ?? "비스타파크골프 시흥점"}</p>
+                )}
                 <h2 className="truncate text-xl font-extrabold sm:text-2xl">{activeItem.label}</h2>
               </div>
               <div className="hidden rounded-md border border-[#d9e4d6] bg-vista-fairway px-4 py-2 text-sm font-bold text-vista-leaf sm:block">

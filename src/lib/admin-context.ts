@@ -116,3 +116,15 @@ export async function getOptionalAdminContext() {
     return null;
   }
 }
+
+export type AdminStoreOption = { id: string; name: string };
+
+// 본사관리자만 매장 목록을 받는다(매장 선택 드롭다운용). 서비스 롤로 읽어
+// paused 매장도 포함한다. 매장관리자는 자기 매장뿐이라 빈 배열을 준다.
+export async function listAdminStores(context: AdminContext): Promise<AdminStoreOption[]> {
+  if (!context.isHeadAdmin) return [];
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.from("stores").select("id, name").order("name", { ascending: true });
+  if (error) return [];
+  return (data as AdminStoreOption[] | null) ?? [];
+}

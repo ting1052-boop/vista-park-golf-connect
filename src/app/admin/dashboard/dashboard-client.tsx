@@ -35,7 +35,8 @@ import {
   type LiveBayStatus,
   type LogTone
 } from "@/lib/dashboard-data";
-import type { AdminContext } from "@/lib/admin-context";
+import type { AdminContext, AdminStoreOption } from "@/lib/admin-context";
+import { StoreSwitcher } from "@/components/store-switcher";
 import type { AutomationDeviceStatusRow, PowerState } from "@/lib/supabase/automation-status";
 import {
   ADMIN_MAX_HOURS,
@@ -145,6 +146,7 @@ function getEntryMethodLabel(value: string | undefined) {
 type DashboardClientProps = {
   currentStoreId: string;
   adminContext: AdminContext;
+  stores?: AdminStoreOption[];
   initialBays: LiveBay[];
   initialReservations?: DashboardReservationRow[];
   initialAlerts?: AdminAlert[];
@@ -172,6 +174,7 @@ const emptyTodayReservationSummary: DashboardReservationSummary = {
 export function DashboardClient({
   currentStoreId,
   adminContext,
+  stores = [],
   initialBays,
   initialReservations = [],
   initialAlerts = [],
@@ -674,7 +677,15 @@ export function DashboardClient({
           <header className="sticky top-0 z-10 border-b border-[#d9e3d5] bg-white/95 backdrop-blur">
             <div className="flex items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-vista-leaf">{adminContext.storeName}</p>
+                {adminContext.isHeadAdmin ? (
+                  <StoreSwitcher
+                    stores={stores}
+                    currentStoreId={adminContext.storeId}
+                    currentStoreName={adminContext.storeName}
+                  />
+                ) : (
+                  <p className="text-sm font-bold text-vista-leaf">{adminContext.storeName}</p>
+                )}
                 <h2 className="truncate text-xl font-extrabold sm:text-2xl">무인 매장 운영 대시보드</h2>
               </div>
 

@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getDashboardBays } from "@/lib/supabase/bays-server";
 import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
 import { redirect } from "next/navigation";
-import { getOptionalAdminContext } from "@/lib/admin-context";
+import { getOptionalAdminContext, listAdminStores } from "@/lib/admin-context";
 import { DashboardClient } from "./dashboard-client";
 
 // Always derive the dashboard from current sessions, never a static build snapshot.
@@ -16,6 +16,7 @@ export default async function AdminDashboardPage() {
   const adminContext = await getOptionalAdminContext();
   if (!adminContext) redirect("/admin/login");
   const currentStoreId = adminContext.storeId;
+  const stores = await listAdminStores(adminContext);
   const [bayResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
     getDashboardBays(currentStoreId),
     getDashboardOperationalRows(currentStoreId),
@@ -56,6 +57,7 @@ export default async function AdminDashboardPage() {
     <DashboardClient
       currentStoreId={currentStoreId}
       adminContext={adminContext}
+      stores={stores}
       initialBays={bays}
       initialReservations={dashboardRows.reservations}
       initialAlerts={dashboardRows.alerts}
