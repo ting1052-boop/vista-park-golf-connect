@@ -436,6 +436,16 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "store_close") {
       const controllerEnabled = isStoreControllerEnabled();
+      const force = body.force === true;
+
+      // 예외 상황: 관리자가 강제 종료하면 이용 중 세션까지 먼저 닫아 타석을 반납한다.
+      // 유령 세션(종료시각이 지났는데 active 로 남은 것) 때문에 매장 종료가 막힐 때 쓴다.
+      let forcedClosed = 0;
+      if (force) {
+        const cleanup = await closeExpiredSessions(supabase, new Date(), { storeId, force: true });
+        forcedClosed = cleanup.completed;
+      }
+
       const result = await enqueueStoreClosure(supabase, storeId, "admin_store_close", {
         includeEquipment: controllerEnabled
       });
@@ -443,7 +453,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             ok: false,
-            message: `현재 이용 중이거나 종료 확인이 필요한 타석이 ${result.activeSessionCount}개 있습니다. 먼저 이용 종료 처리 후 매장 종료를 실행해주세요.`
+            requiresForce: true,
+            activeSessionCount: result.activeSessionCount,
+            message: `현재 이용 중이거나 종료 확인이 필요한 타석이 ${result.activeSessionCount}개 있습니다. 그래도 모두 종료하려면 한 번 더 확인해주세요.`
           },
           { status: 409 }
         );
@@ -457,14 +469,16 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const forcedNote = forcedClosed > 0 ? ` 이용 중이던 ${forcedClosed}타석을 먼저 종료 처리했습니다.` : "";
       return NextResponse.json({
         ok: true,
-        message: controllerEnabled
+        message: (controllerEnabled
           ? `타석 PC ${shutdownCount}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`
-          : `온라인 Agent가 있는 타석 PC ${shutdownCount}대에 정상 종료 명령을 전달했습니다. 매장 제어기가 없어 프로젝터·타석 장비·조명·냉난방 OFF는 실행하지 않았습니다.`,
+          : `온라인 Agent가 있는 타석 PC ${shutdownCount}대에 정상 종료 명령을 전달했습니다. 매장 제어기가 없어 프로젝터·타석 장비·조명·냉난방 OFF는 실행하지 않았습니다.`) + forcedNote,
         command: result.command,
         agentShutdown: result.agentShutdown,
-        controllerEnabled
+        controllerEnabled,
+        forcedClosed
       });
     }
 

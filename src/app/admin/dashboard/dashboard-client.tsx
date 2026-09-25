@@ -329,12 +329,36 @@ export function DashboardClient({
 
     setIsSyncing(true);
     try {
-      const response = await fetch("/api/admin/automation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action })
-      });
-      const data = (await response.json()) as { ok?: boolean; message?: string };
+      const post = (force: boolean) =>
+        fetch("/api/admin/automation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(force ? { action, force: true } : { action })
+        });
+
+      let response = await post(false);
+      let data = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        requiresForce?: boolean;
+        activeSessionCount?: number;
+      };
+
+      // 이용 중 타석 때문에 매장 종료가 막히면, 강제 종료를 한 번 더 확인받고 재시도한다.
+      if (response.status === 409 && data.requiresForce) {
+        const count = data.activeSessionCount ?? 0;
+        const forceConfirmed = window.confirm(
+          `이용 중이거나 시간이 지난 타석이 ${count}개 있습니다.\n\n` +
+            "그래도 매장을 종료하면 그 타석들의 이용을 강제로 끝내고 타석 PC를 모두 종료합니다.\n" +
+            "손님이 실제로 이용 중이면 진행하지 마세요.\n\n정말 모두 종료할까요?"
+        );
+        if (!forceConfirmed) {
+          setToast("매장 종료를 취소했습니다.");
+          return;
+        }
+        response = await post(true);
+        data = (await response.json()) as typeof data;
+      }
 
       if (!response.ok || data.ok === false) {
         const message = data.message ?? "장비 제어에 실패했습니다.";

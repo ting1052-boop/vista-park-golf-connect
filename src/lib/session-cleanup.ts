@@ -182,14 +182,18 @@ export async function closeSingleSession(
 export async function closeExpiredSessions(
   supabase: SupabaseClient,
   now = new Date(),
-  options: { storeId?: string } = {}
+  options: { storeId?: string; force?: boolean } = {}
 ): Promise<SessionCleanupResult> {
   let query = supabase
     .from("access_sessions")
     .select("id, store_id, reservation_id, bay_id, ends_at")
-    .in("status", [...EXPIRING_SESSION_STATUSES])
-    .not("ends_at", "is", null)
-    .lte("ends_at", now.toISOString());
+    .in("status", [...EXPIRING_SESSION_STATUSES]);
+
+  // force: 종료시각이 안 지난 이용 중 세션까지 모두 닫는다(관리자 강제 매장 종료).
+  // 평소에는 종료시각이 지난 세션만 정리한다.
+  if (!options.force) {
+    query = query.not("ends_at", "is", null).lte("ends_at", now.toISOString());
+  }
 
   if (options.storeId) {
     query = query.eq("store_id", options.storeId);
