@@ -891,7 +891,7 @@ export function DashboardClient({
                   onClick={() =>
                     void handleStoreControl(
                       "store_close",
-                      "매장을 종료합니다. 타석 PC를 정상 종료하고 모든 장비와 조명·냉난방을 끕니다. 이용 중인 고객이 없을 때만 실행됩니다. 진행할까요?",
+                      "매장을 종료합니다. 온라인 Agent가 있는 타석 PC를 정상 종료합니다. 매장 제어기가 연결된 경우 프로젝터·타석 장비·조명·냉난방도 함께 끕니다. 이용 중인 고객이 없을 때만 실행됩니다. 진행할까요?",
                       "매장 종료"
                     )
                   }
@@ -902,7 +902,7 @@ export function DashboardClient({
                   </span>
                   <h4 className="text-sm font-extrabold whitespace-nowrap sm:mt-4 sm:text-lg">매장 종료</h4>
                   <p className="mt-2 hidden text-sm leading-6 text-[#697468] sm:block">
-                    타석 PC를 정상 종료한 뒤 모든 장비와 조명·냉난방을 끕니다.
+                    온라인 Agent가 있는 타석 PC를 정상 종료합니다. 매장 제어기가 연결된 경우 주변 장비와 조명·냉난방도 함께 끕니다.
                   </p>
                 </button>
               </div>

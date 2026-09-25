@@ -359,14 +359,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!isStoreControllerEnabled()) {
-      return NextResponse.json(
-        { ok: false, message: "매장 제어기가 아직 활성화되지 않았습니다. 매장 노트북의 제어기 실행 상태를 확인해 주세요." },
-        { status: 409 }
-      );
-    }
-
     if (body.action === "bay_off" || body.action === "bay_on") {
+      if (!isStoreControllerEnabled()) {
+        return NextResponse.json(
+          { ok: false, message: "매장 제어기가 아직 활성화되지 않았습니다. 매장 노트북의 제어기 실행 상태를 확인해 주세요." },
+          { status: 409 }
+        );
+      }
+
       const turningOn = body.action === "bay_on";
 
       if (typeof body.bayId !== "string" || body.bayId.length === 0) {
@@ -435,7 +435,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "store_close") {
-      const result = await enqueueStoreClosure(supabase, storeId, "admin_store_close");
+      const controllerEnabled = isStoreControllerEnabled();
+      const result = await enqueueStoreClosure(supabase, storeId, "admin_store_close", {
+        includeEquipment: controllerEnabled
+      });
       if (result.blocked) {
         return NextResponse.json(
           {
@@ -446,12 +449,30 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const shutdownCount = result.agentShutdown.queued + result.agentShutdown.reused;
+      if (!controllerEnabled && shutdownCount === 0) {
+        return NextResponse.json(
+          { ok: false, message: "매장 제어기도 온라인 Agent도 없어 종료할 장비를 확인할 수 없습니다." },
+          { status: 409 }
+        );
+      }
+
       return NextResponse.json({
         ok: true,
-        message: `타석 PC ${result.agentShutdown.queued + result.agentShutdown.reused}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`,
+        message: controllerEnabled
+          ? `타석 PC ${shutdownCount}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`
+          : `온라인 Agent가 있는 타석 PC ${shutdownCount}대에 정상 종료 명령을 전달했습니다. 매장 제어기가 없어 프로젝터·타석 장비·조명·냉난방 OFF는 실행하지 않았습니다.`,
         command: result.command,
-        agentShutdown: result.agentShutdown
+        agentShutdown: result.agentShutdown,
+        controllerEnabled
       });
+    }
+
+    if (!isStoreControllerEnabled()) {
+      return NextResponse.json(
+        { ok: false, message: "매장 제어기가 아직 활성화되지 않았습니다. 매장 노트북의 제어기 실행 상태를 확인해 주세요." },
+        { status: 409 }
+      );
     }
 
     // 조명·냉난방과 모든 타석 장비를 한 번에 켠다. 단체 예약이나 점검 준비용.

@@ -224,7 +224,12 @@ export async function enqueueStorePreparation(supabase: SupabaseClient, storeId:
   return { command, bayCount: bayScripts.length };
 }
 
-export async function enqueueStoreClosure(supabase: SupabaseClient, storeId: string, requestedFrom: string) {
+export async function enqueueStoreClosure(
+  supabase: SupabaseClient,
+  storeId: string,
+  requestedFrom: string,
+  options: { includeEquipment?: boolean } = {}
+) {
   const { count, error } = await supabase
     .from("access_sessions")
     .select("id", { count: "exact", head: true })
@@ -235,6 +240,16 @@ export async function enqueueStoreClosure(supabase: SupabaseClient, storeId: str
   if ((count ?? 0) > 0) return { blocked: true as const, activeSessionCount: count ?? 0 };
 
   const agentShutdown = await enqueueStoreAgentShutdowns(supabase, storeId);
+  if (options.includeEquipment === false) {
+    return {
+      blocked: false as const,
+      activeSessionCount: 0,
+      agentShutdown,
+      command: null,
+      bayCount: 0
+    };
+  }
+
   const bayScripts = await getStoreBayScripts(supabase, storeId, "off");
   const command = await enqueueManualAutomation(supabase, {
     storeId,
