@@ -1,6 +1,6 @@
 # VISTA Park Golf Connect 공용 작업 원장
 
-최종 갱신: 2026-07-25
+최종 갱신: 2026-09-23
 공용 기준 파일: 이 문서 하나를 Codex와 Claude Code가 함께 사용한다.
 
 ## 작업 규칙
@@ -17,6 +17,31 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·읽기 전용 현장 진단·2026-09-24 | 송도 HA `.91` 운영체제/Observer 응답과 Core 웹 포트 장애 구분 | 본 원장 |
+| Codex | 완료·배포 확인·2026-09-24 | 대시보드 비이용 타석 카드의 다음 예약/예약자·메모 칸 제거분만 분리 배포 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
+| Codex | 완료·배포 확인·2026-09-24 | 승인된 관리자 대시보드·무인제어 UI 변경을 다른 미커밋 서버 작업과 분리해 배포 | `src/app/admin/dashboard/dashboard-client.tsx`, `src/app/admin/automation/automation-client.tsx`, 본 원장 |
+| Codex | 완료·로컬 미리보기만·2026-09-24 | 무인제어 타석 연결 카드의 중복 상태 문구와 전원 스위치 오해 해소 | `src/app/admin/automation/automation-client.tsx`, 본 원장 |
+| Codex | 완료·로컬 미리보기만·2026-09-24 | 무인제어 운영 상태 요약 4개 카드를 모바일에서 2열로 정리 | `src/app/admin/automation/automation-client.tsx`, 본 원장 |
+| Codex | 완료·로컬 미리보기만·2026-09-24 | 매장 관리자 실시간 타석 카드에서 골프 A-01~A-07의 확인 불가 게임 행 및 표시 불필요한 고객·메모 칸 숨김 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
+| Codex | 완료·로컬 미리보기만·2026-09-24 | 아파트 매장 관리자 대시보드 조명 버튼 숨김, 전체 준비/매장 종료 모바일 한 줄 정리 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
+| Codex | 완료·로컬 미리보기만·2026-09-24 | 관리자 모바일 KPI 글자 쪼개짐 수정 및 사용자 요청의 입장 대기 카드 제거 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
+| Codex | 완료·2026-09-23 | 송도 Agent 현장 진행 상태를 Claude 인수인계 문서로 정리 | `docs/claude-handoff-songdo-agent-field-20260923.md`, 본 원장 |
+| Codex | 완료·현장 PC 식별 확인 대기·2026-09-23 | 송도 골프 1번 Agent 현장 설치 후 heartbeat·PC 식별 검증 | 운영 `agent_devices`·`bay_pc_registry` 읽기 전용, 관리자 화면, 본 원장 |
+| Codex | 완료·2026-09-23 | 송도 P-01 관리자 정상 종료→HA WOL→Agent 자동 연결 현장 시험 | 운영 관리자 화면·송도 HA·읽기 전용 DB 확인, 본 원장 |
+| Codex | 완료·현장 확대 대기·2026-09-23 | 송도 Agent 기존 토큰 9개 운영 DB 등록 및 P-01 heartbeat·대시보드 `PC 켜짐` 확인 | 운영 Supabase `agent_devices`, 본 원장 |
+| Codex | 완료·현장 재시험 대기·2026-09-23 | 송도 현장 BAT의 `'p'` 명령 오류 대응: ASCII 호출명·CRLF·설치 ZIP 재검증 | `windows-agent/songdo/Agent설치.bat`, `windows-agent/songdo/install-agent.ps1`, `windows-agent/songdo/README.md`, 새 설치 ZIP, 본 원장 |
+| Codex | 완료·현장 재시험 대기·2026-09-23 | 송도 Agent 설치 BAT 무반응 진단, 오류 표시를 위한 설치 패키지 수정 | `windows-agent/songdo/Agent설치.bat`, `windows-agent/songdo/README.md`, `windows-agent/dist/VISTA-Songdo-Agent-0.9.5-install-v2.zip`, 본 원장 |
+| Codex | 완료·현장 설치 대기·2026-09-23 | 송도 HA 파크 1번 WOL 현장 확인, 최신 monitorOnly Agent 검증·재빌드 및 토큰 없는 송도 설치 ZIP 생성 | `windows-agent/bays.config.json`, `windows-agent/agent-config.test.js`, `windows-agent/songdo/`, `windows-agent/dist/VISTA-Songdo-Agent-0.9.5-install.zip`, 본 원장 |
+| Claude Code | 완료·현장 설치 대기 | 송도파크자이 경량 Agent를 `monitorOnly` 설정으로 구현(별도 EXE 없음), 타석 9개 등록 SQL·설치 안내 | `windows-agent/electron-main.js`, `windows-agent/bays.config.json`, `windows-agent/README.md`, `supabase/agent-devices-songdo-template.sql` |
+| Claude Code | 완료·현장 동작 중 | 송도 HA 구축: 9타석 WOL·ping·nmap 등록, `타석 전원` 대시보드, 05:50 자동 기상 automation | 송도 HA 인스턴스(저장소 외부), `H:\HA세팅\` USB 산출물 |
+| Claude Code | 완료·배포됨 | PC 세팅 도구 등록 API의 하드코딩 공유 토큰 제거 → 등록 창구(enrollment window) 방식, 역할 테이블, WOL·MAC 수집 | `src/lib/pc-registry.ts`, `src/lib/pc-enrollment.ts`, `src/lib/pc-registry-payload.ts`, `src/app/api/pc-setup/*`, `src/app/admin/remote-access/*`, migration 4종 |
+| Claude Code | 확인 결과 보고 | 위 Codex 두 행에 대한 2026-09-23 대조 결과. Codex 행은 그대로 두었다. ① `docs/claude-songdo-unified-agent-implementation.md`는 저장소에 없고 git 이력에도 없다(작성 전 중단으로 보임). 그 설계서가 담았을 내용은 위 `monitorOnly` 구현이 대체한다. ② `docs/claude-review-bay-standby-control.md`는 읽었고 검토 결과는 아래 2026-09-23 항목에 적었다. 다만 이 파일은 아직 untracked 라 push 되지 않았다 | 본 원장 |
+| Codex | 완료·설계서만·2026-09-23 | Claude 검토 반영: 기존 monitorOnly 보완, 세션 없는 송도 1단계, 단일 EXE, 제어기·스케줄 전환 계획. 파일 생성 완료, 미커밋 | `docs/claude-songdo-unified-agent-implementation.md`, 본 원장 |
+| Codex | 완료·검토 대기 | PC 전원·타석 장비·게임 대기모드 UI 재설계에 대한 Claude 독립 검토 요청서 작성 | `docs/claude-review-bay-standby-control.md`, 본 원장 |
+| Codex | 완료·배포 대기 | 무인제어 매장 자동 시작·종료 시간의 시흥점 고정 기본값 제거 및 24시간 범위 자유 설정 명확화 | `src/app/admin/automation/automation-client.tsx`, 본 원장 |
+| Codex | 완료·배포 대기 | 대시보드 무인 장비 마지막 명령에서 실행 이력 없는 하드코딩 행 제거 및 빈 표 숨김 | `src/lib/supabase/automation-status.ts`, `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
+| Codex | 완료·배포 대기 | 관리자 대시보드 하단 본사 매장 현황·무인 운영 MVP 범위 제거 및 불필요 조회 정리 | `src/app/admin/dashboard/page.tsx`, `src/app/admin/dashboard/dashboard-client.tsx`, `src/lib/dashboard-data.ts`, 본 원장 |
+| Codex | 완료·배포 대기 | 관리자 대시보드 상단 소개 배너 제거 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
 | Codex | 완료·DB 적용/배포 대기 | 관리자 메뉴 단순화, 매장 관리자 전용 메뉴 제한, 무인제어 매장 시작·종료 시간 예약 기능 구현 | `src/lib/admin-context.ts`, `src/lib/dashboard-data.ts`, 관리자 셸·대시보드·무인제어 UI/API, 매장 제어기 스케줄 처리, `202609210001_store_automation_schedule.sql`, 본 원장 |
 | Codex | 중지·미커밋 보존 | 기존 Agent를 중단·백업하고 설정을 보존한 채 0.8.0 포터블 Agent를 설치하는 현장용 전체 패키지 제작 | `windows-agent/install-agent.ps1`, 설치 안내·패키지 산출물, 본 원장 |
 | Codex | 완료·현장 설치 대기 | Agent 0.8.0 통합 변경, 신규 DB migration, GitHub push 및 Vercel 운영 배포·검증 완료. A-02 Agent 교체와 HUD ROI 보정만 현장 작업으로 남음 | Agent 0.8.0 소스·테스트, heartbeat/telemetry/event 저장, 관리자 대시보드, 신규 migration, 본 원장 |
@@ -111,6 +136,9 @@
 7. 입장·종료에 보상 처리를 추가했지만 완전한 DB 원자성은 아니므로 장기적으로 Postgres RPC 트랜잭션 전환을 검토한다.
 8. 현재 관리자 인증은 Supabase 로그인 여부만 확인한다. 실 DB에 `public.users`/`store_users`가 없어 역할 검증을 바로 강제하면 기존 관리자도 잠길 수 있다. 관리자 역할 테이블 또는 `ADMIN_USER_IDS` 환경변수 도입 후 API·middleware 권한을 강화해야 한다.
 9. 2026-07-25 프로덕션 시흥점 A-02에 남아 있던 2026-07-21 키오스크 세션을 승인 후 `completed`로 정리했다. 재검증 결과 활성 세션 0건, A-01/A-02/A-03 모두 `available`이다.
+10. **무인제어의 매장 시작·종료 시간은 송도에서 실행되지 않는다.** `processStoreAutomationSchedule`의 호출 지점은 `src/app/api/store-controller/commands/route.ts:100` 하나뿐이고, 송도에는 매장 제어기가 없다. 저장은 되지만 그 시각에 아무 일도 일어나지 않는다. 같은 이유로 `/api/cron/close-expired-sessions`도 송도에서 돌지 않는다(`vercel.json`은 여전히 `{}`). 2026-09-23 확인.
+11. **송도 1단계 계획 기준(2026-09-23 갱신): 고객 이용 세션을 요구하지 않는 관찰 전용 운영.** 사용자의 무메시지·상태 보고·관리자 PC 종료 요구를 기준으로 `monitorOnly`를 보완한다. 과거 아파트 전체화면 대기 시나리오는 이번 범위에서 채택하지 않는다. 시설의 예약제/선착순 정책 자체는 별도다. 상세는 `docs/claude-songdo-unified-agent-implementation.md`를 따른다.
+12. 송도 타석 PC 한 대의 Windows 이름이 `RANGE2`인데 실제로는 파크골프 타석이다. Agent가 heartbeat로 `pc_name`을 채우므로 대시보드에 그대로 표시된다. Agent 설치 전에 이름을 바꾸는 편이 낫다.
 
 ## 작업 이력
 
@@ -518,6 +546,15 @@ Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 �
 
 ## Store Manager Menu + Operating Schedule (2026-09-21, Codex)
 
+- Claude 독립 검토용 `docs/claude-review-bay-standby-control.md`를 작성했다. 현재 PC ON과 장비 ON의 `bay_on` 중복, Agent의 세션 없음=`hidden` 동작, 종료 후 잠금·자동 종료, 물리 장비와 이용 권한의 차이, 아파트형 상시 대기와 시흥점형 세션별 절전 정책을 정리하고 최종 UI·상태 모델·API·예외·MVP에 대한 질문을 담았다. 문서 작성만 했으며 구현·DB·배포는 수행하지 않았다.
+- 무인제어 운영시간의 미설정 기본값을 시흥점 기준 `08:00/21:00`에서 송도 운영 기준 `06:00/23:00`으로 변경했다. 입력은 `00:00~23:59` 전체 범위를 분 단위로 선택할 수 있고, 저장 API의 매장별 시간 분리와 동일 날짜 내 시작<종료 검증은 유지한다. 기존 저장값은 덮어쓰지 않는다. typecheck, 대상 ESLint, diff 공백 검사를 통과했고 커밋·배포는 수행하지 않았다.
+- `무인 장비 마지막 명령`은 실제 완료된 ON/OFF 실행 이력이 있는 장비만 표시하도록 변경했다. 실행 이력이 없는 시흥점 기본 매핑 행은 다른 매장 대시보드에 노출하지 않으며, 유효한 기록이 0건이면 카드 전체를 숨기고 예약·입장 영역이 전체 폭을 사용한다. 운영 DB 기록은 삭제하지 않았다. typecheck, 대상 ESLint, diff 공백 검사를 통과했고 커밋·배포는 수행하지 않았다.
+- 관리자 대시보드 맨 아래의 `본사 매장 현황`과 `무인 운영 1차 MVP 범위`를 완전히 제거했다. 함께 불필요해진 전체 매장 목록 조회, 컴포넌트 전달 타입, MVP 설명용 정적 데이터도 정리했다. typecheck, 대상 ESLint, diff 공백 검사를 통과했고 커밋·배포는 수행하지 않았다.
+- 관리자 대시보드의 큰 제품 소개 배너와 출입문 2차 기능 안내를 제거해 주요 지표가 헤더 바로 아래에서 시작하도록 정리했다. 데이터 조회와 제어 동작은 변경하지 않았다. typecheck, 대상 ESLint, diff 공백 검사를 통과했고 커밋·배포는 수행하지 않았다.
+- 관리자 대시보드의 주요 지표 5개를 모바일에서도 한 줄에 보이도록 5열 압축 레이아웃으로 변경했다. 작은 화면에서는 카드 여백·아이콘·숫자를 줄이고 설명문을 접어 세로 길이를 줄였으며, 데스크톱 설명문은 유지했다. typecheck, 대상 ESLint, 프로덕션 build, diff 공백 검사를 통과했고 커밋·배포는 수행하지 않았다.
+- 대시보드의 작동하지 않던 모바일 햄버거 버튼을 제거하고, 대시보드·무인제어 양쪽에 공통 빠른 이동 버튼을 헤더 아래 항상 표시했다. 현재 화면은 활성 상태로 표시하며 실제 Next 링크로 이동한다. `npm run typecheck`, 대상 ESLint, 프로덕션 build, `git diff --check`를 통과했다. 커밋 `9766fe9`로 GitHub `main`에 push했으며 Vercel 자동 배포가 시작됐다.
+- 대시보드 `매장 종료`를 PC Agent 종료와 로컬 제어기 장비 OFF로 분리했다. 제어기가 없어도 온라인 Agent가 있는 PC에는 정상 종료 명령을 보낼 수 있고, 제어기가 있으면 프로젝터·타석 장비·공용 조명·냉난방 OFF 명령도 함께 큐에 넣는다. 이용 중 세션은 계속 차단하며, Agent와 제어기가 모두 없으면 실행하지 않는다. typecheck, 대상 ESLint, 프로덕션 build, diff 공백 검사를 통과했다. 아직 커밋·배포하지 않았다.
+- 운영 Supabase에 송도파크자이 전용 Auth 계정을 생성하고 `public.users.role=store_manager`, `store_users` 매장 배정을 확인했다. 이메일은 확인 완료 상태이며 실제 이메일과 비밀번호는 원장에 기록하지 않았다. 송도파크자이 매장은 코드 `VISTA-XII`, 타석 9개, 현재 `paused` 상태다.
 - 전체 관리자 메뉴에서 아직 운영하지 않는 `경기기록`, `랭킹`, `대회운영`을 숨겼다. 페이지 소스와 데이터는 삭제하지 않았다.
 - `public.users.role`과 `store_users` 배정을 우선 읽는 관리자 컨텍스트를 추가했다. `store_manager`와 `staff`는 배정된 매장의 `대시보드`, `무인제어`만 보며, 대시보드와 무인제어 API도 그 매장 ID로 조회·제어한다. 기존 본사 계정이나 구형 DB는 시흥점 기본값으로 호환된다.
 - 무인제어 화면에 자동제어 사용 여부, 매장 시작 시간, 종료 시간 입력과 저장 버튼을 추가했다. 시작 시 공용 장비와 해당 매장에서 장비 매핑이 확인된 모든 타석에 ON 명령을 보내고, 종료 시 진행/초과 세션이 없을 때만 Agent PC 정상 종료와 타석·공용 장비 OFF를 실행한다.
@@ -526,3 +563,269 @@ Codex 의 0.6.0 항목은 "not committed or deployed" 로 적혀 있으나 그 �
 - 아파트 매장에서 실제 PC·프로젝터를 켜려면 아파트 `stores`/`store_users` 등록, 타석 코드별 `device-map` 또는 HA 스크립트 매핑, 해당 매장 제어기의 `storeId` 설정이 추가로 필요하다. 현재 저장소에는 아파트의 실제 매장 ID와 9개 타석 장비 매핑이 없다.
 - 검증: `npm run typecheck`, `npm run lint`, 프로덕션 `npm run build`, 승인 실행의 `npm run verify:quick`(정적 검사 4종, HTTP 15종), `git diff --check` 통과. 로컬 관리자 로그인 화면 HTTP 200을 확인했다. 인증 계정별 실제 렌더, 운영 DB migration, 배포, 장비 제어는 수행하지 않았다.
 - 변경은 아직 미커밋이다. 다른 작업자의 문서·PC 세팅 API 변경과 중지된 Agent 설치 패키지 파일은 보존했으며 수정하지 않았다.
+
+## PC 세팅 도구 보안 수정 + 원격접속 (2026-09-19 ~ 09-22, Claude Code)
+
+### 배포한 것
+
+| commit | 내용 |
+| --- | --- |
+| `208d202` | 타석 PC 원격접속(AnyDesk) 등록 API 와 관리자 화면 |
+| `4a52ce7` | HH 골프 PC 세팅 도구 지시서 |
+| `7178ded` | `PC_SETUP_TOKEN` 환경변수 예시 |
+| `eeaab91` | `docs/store-ledger.md` 매장 원장 |
+| `3bfc132` | 원격접속 화면 수동 등록 |
+| `3be06bf` | 대시보드 `장비 OFF` → `이용 종료` 로 명칭·문구 수정 |
+| `69cd703` | Codex 의 매장 관리자 메뉴 제한·운영시간 자동 시작·종료 커밋 |
+| `da18e36` | **등록 창구 방식**. 아래 보안 항목 참조 |
+| `a261e86` | PC 등록에 WOL·MAC·네트워크 정보 수집 |
+
+### 막은 보안 사고
+
+Codex 의 미커밋 변경에 `AUTOMATIC_SETUP_TOKEN = "hh-golf-pc-auto-register-v1-20260920"` 가
+소스에 그대로 들어 있었다. `ting1052-boop/vista-park-golf-connect` 는 **public 저장소**라
+커밋했다면 누구나 타석 PC 를 등록할 수 있었다. 커밋 전에 제거했다.
+
+대체 설계는 **등록 창구(enrollment window)** 다. 배포되는 PC 에 고정 비밀값을 넣지 않는다.
+관리자가 원격접속 화면에서 창구를 열면 매장별로 기본 30분·10대 한도가 생기고, 그 안에서만
+토큰 없는 등록이 통과한다. 창구 소진은 `created` 일 때만 차감하며
+`.eq("pc_enrollment_remaining", remaining)` 조건부 갱신으로 동시 등록에도 음수가 되지 않는다.
+
+`src/lib/pc-enrollment.ts`(신규), `src/lib/pc-registry.ts`, `src/app/api/pc-setup/register`,
+`/api/pc-setup/catalog`. migration: `202609190001_bay_pc_registry`,
+`202609210002_admin_roles`, `202609210003_pc_enrollment_window`, `202609220001_pc_wol_fields`.
+전부 사용자가 적용 완료했다.
+
+`PC_SETUP_TOKEN` 은 사용자가 대화창에 실제 값을 붙여넣은 적이 있어 로테이션을 안내했고,
+새 값으로 `200` 을 확인했다. 원장에는 값을 적지 않는다.
+
+### 대시보드 `장비 OFF` 명칭 수정
+
+이 버튼은 PC 를 끄지 않는다. 세션 종료·타석 반납·장비 OFF 명령까지만 한다. 이름이
+`장비 OFF` 여서 전원을 내리는 줄 알게 되어 있었다. `이용 종료` 로 바꾸고, 확인창에 실제로
+하는 일 네 가지를 모두 적었다(`타석 PC 는 켜둡니다` 포함). 성공 표시도 `요청함` 으로 바꿨다.
+PC 종료는 무인제어 탭의 타석 토글(`shutdown_pc`)이 한다.
+
+## 송도파크자이 현장 구축 (2026-09-22 ~ 09-23, Claude Code)
+
+### 현장에서 한 것 — Home Assistant
+
+송도 HA(`192.168.0.91`)에 타석 9대를 붙였다. HA UI 좌표 클릭이 버튼을 자주 빗맞히고 이름이
+엉뚱하게 배정되어(`button.golpeu6beon_pc` 가 실제로는 골프4번), 중간에 **HA 의 config-flow REST
+와 WebSocket API 를 브라우저에서 직접 호출하는 방식**으로 바꿨다. MAC→타석 대응은 config entry
+제목에서 다시 뽑아 전부 이름을 고쳤다.
+
+- Wake-on-LAN 버튼 9개 (온보드 NIC MAC, broadcast `192.168.0.255`)
+- Ping 센서 9개, nmap ARP tracker 9개
+- 사이드바 대시보드 `타석 전원`(`/bays-dashboard/bays`) — 타석별 전원 + 켜기
+- automation `매장 오픈 - 타석 PC 켜기 (05:50)` — 버튼 9개 동시 누름, 상태 `on` 확인
+
+확정된 현장 값:
+
+```
+파크1번 .23 30:C5:99:AF:91:32    골프1번 .79 74:56:3C:23:84:D8
+파크2번 .88 30:C5:99:AD:17:25    골프2번 .80 30:56:0F:AF:C0:91
+                                 골프3번 .81 30:56:0F:A6:A9:98
+                                 골프4번 .82 30:56:0F:AF:C0:90
+                                 골프5번 .84 30:56:0F:A6:AB:15
+                                 골프6번 .89 30:56:0F:A6:A9:75
+                                 골프7번 .87 D8:5E:D3:A9:33:ED
+```
+
+### 현장에서 배운 것
+
+- **BIOS 설정은 SSD 복제로 따라오지 않는다.** 메인보드 NVRAM 에 있다. ASUS PRIME B860M-A 기준
+  `Advanced → APM Configuration` 에서 `ErP Ready` Disabled, `Power On By PCI-E` Enabled 를
+  9대 모두 개별로 넣어야 한다. 이 점을 처음에 틀리게 말했고 현장에서 정정했다.
+- **랜선은 보드 내장 2.5G 포트에 꽂혀 있어야 한다.** 확장 카드 포트는 꺼진 PC 를 깨우지 못한다.
+  자동 NIC 선택을 `InterfaceMetric` 정렬로 했다가 IP 없는 확장 포트를 골랐다. 실제 IPv4 가 있는
+  어댑터를 우선하도록 고쳤다.
+- **ping 으로는 켜짐을 못 본다.** Windows 방화벽이 ICMP 를 막는다. ARP(`nmap -PR`)는 통과한다.
+  HA 의 nmap tracker 로 해결했고, 개별 PC 방화벽은 건드리지 않아도 된다.
+- **PowerShell 5.1 은 한글이 든 .ps1 을 UTF-8 BOM 없이는 파싱하지 못한다.** BOM 필수.
+
+### USB 산출물 (`H:\HA세팅\`, 저장소 밖)
+
+`wol-prep.ps1`(UTF-8 BOM, 자기 승격), `WOL준비.bat`, `HA에-PC붙이기.md`,
+`송도파크자이-HA설치안내.md`, `ha-wol-파크.yaml`. 스크립트는 보드 확인 → BIOS 자동설정 시도 →
+빠른 시작 끄기 → NIC WOL → 방화벽 ICMP 허용 → **23:10 마감 종료 예약**을 하고
+`wol-<PC>.json` 과 `.log` 를 남긴다.
+
+### 운영시간 06:00~23:00 을 나눠서 구현한 이유
+
+사용자는 대시보드에서 시각을 저장하기로 했으나, 위 `확인된 남은 작업과 위험` 10번대로 송도에는
+실행 주체가 없다. 그래서 둘로 나눴다.
+
+| | 실행 주체 | 상태 |
+| --- | --- | --- |
+| 05:50 켜기 | HA automation | 현장 동작 중 |
+| 23:10 끄기 | 각 PC 작업 스케줄러 (`shutdown /s /f /t 300`, 5분 예고) | `WOL준비.bat` 재실행 필요 |
+
+끄기를 PC 가 스스로 하게 둔 것은 의도다. HA 가 죽거나 네트워크가 끊겨도 매장은 닫힌다.
+
+### 경량 Agent — 별도 EXE 를 만들지 않았다
+
+사용자 사양은 고객용 기능 1~3(남은시간 경고·잠금화면·자동 PC 종료)을 빼고 4~7(서버 세션 조회·
+heartbeat·게임 상태·관리자 종료 명령)만 남기는 것이었다. 4~7 은 이미 UI 와 분리되어 있어
+**타석 설정의 `"monitorOnly": true` 한 줄**로 끝났다. 별도 실행파일은 빌드·릴리스·설치 안내가
+두 벌이 되고 고친 내용이 한쪽에만 들어간다.
+
+`monitorOnly` 는 `autoShutdownAfterEndMinutes` 를 강제로 0 으로 만든다. 설정에 값을 깜빡
+남겨둬도 손님 이용 중에 PC 가 꺼지지 않게 하기 위한 것이다. 시흥 설정은 변경하지 않았다.
+
+- `windows-agent/electron-main.js` 3줄 + VERSION 0.9.5
+- `windows-agent/bays.config.json` 송도 9타석(`SD-R-01`~`SD-R-07`, `SD-P-01`, `SD-P-02`).
+  `bayCode` 는 서버가 쓰지 않는 로컬 키다(heartbeat 는 토큰으로만 매장·타석을 판별한다).
+  시흥 `A-01`~`A-03` 과 충돌하지 않게 접두사를 붙였다. `pcName` 은 적지 않아 호스트명을 따른다.
+- `supabase/agent-devices-songdo-template.sql`(신규) — UUID 를 붙여넣지 않고 매장 코드·타석
+  코드로 찾아 넣는다. 1단계로 실제 `bay_code` 를 확인한 뒤 2단계를 실행한다.
+- `windows-agent/README.md` — 아파트 매장 절차와 시흥 대비표
+
+트레이 아이콘은 넣지 않았다. Agent 가 죽으면 아이콘도 사라져 장애 확인 수단이 못 되고,
+대시보드 `PC 켜짐`(heartbeat)이 같은 일을 9대분 한 화면에서 한다.
+
+### 검증
+
+`node --check` 통과. 병합 설정 확인: 타석 12개, `bayCode` 중복 없음, 송도 9개 모두
+`monitorOnly=true`·`autoShutdown=0`·`sessionSource=server`. 시흥 3개는 값 변동 없음.
+실기기 설치와 실제 종료 명령은 수행하지 않았다.
+
+### 원장 대조에서 나온 것
+
+- `docs/claude-songdo-unified-agent-implementation.md` 는 존재하지 않는다. git 이력에도 없다.
+- `docs/claude-review-bay-standby-control.md` 는 untracked 다. 커밋해야 다른 작업자가 본다.
+- **Codex 의 미커밋 `store_close` 수정(제어기 없이도 Agent 종료)이 배포되지 않았다.**
+  운영은 아직 제어기가 없으면 `매장 종료`가 409 로 거부한다. 타석별 `PC 정상 종료` 는
+  운영에서도 동작한다. 송도에 필요한 코드이므로 검토 후 커밋 대상이다.
+- `docs/store-ledger.md` 송도 항목이 낡았다. HA 는 설치 완료이고, 타석 코드는 `R-01`~`R-07` 이
+  아니라 DB 확인이 필요하다. 아직 고치지 않았다.
+
+### commit/push/deploy
+
+`monitorOnly` 관련 변경(`electron-main.js`, `bays.config.json`, `README.md`,
+`agent-devices-songdo-template.sql`)과 본 원장 갱신은 **미커밋**이다. 운영 DB 쓰기·배포·
+기기 전원 제어는 수행하지 않았다. 다른 작업자의 미커밋 변경 4건
+(`dashboard-client.tsx`, `automation/route.ts`, `store-controller.ts`, 본 원장의 Codex 항목)은
+보존했다. 원장의 Codex 행 중 사실과 다른 것 하나는 지우지 않고 상태만 정정했다.
+
+### 남은 현장 작업
+
+1. 9대 모두 `WOL준비.bat` 재실행 (23:10 종료 예약이 아직 안 들어갔다)
+2. 송도 `bay_code` 확인 → 토큰 9개 발급 → SQL 2단계 → `bays.config.local.json`
+3. Agent 는 1대만 먼저 설치해 하루 관찰
+4. HA 의 잔여 항목 `Wake on LAN 88:c9:b3:b2:d2:03` 삭제(엔티티 없음, 무해)
+5. `RANGE2` 호스트명 변경
+
+## 송도 공용 Agent 재계획 (2026-09-23, Codex)
+
+- 누락됐던 `docs/claude-songdo-unified-agent-implementation.md`를 실제 생성했다. 위 Claude의 문서 부재 지적은 작성 전 시점의 유효한 기록이다. 현재는 파일이 있으며 미커밋이다.
+- 기존 `monitorOnly`와 현장 HA 구축을 재사용한다. 별도 EXE/새 프로필 체계를 만들지 않고 사용자 지정 골프 A-01~A-07, 파크 P-01/P-02와 로컬 선택 키/실제 DB 식별자를 구분한다.
+- 계획에 만료 세션의 `beginEndNotice`→`completeExpiredSession` 부작용 차단, 매장별 장비 매핑, 전역 제어기 enabled와 실제 송도 연결 상태 구분, 기존 HA/Windows 시간 예약의 중복 전환을 추가했다.
+- 순서: Agent 보완 및 관리자 PC 종료 → P-01 실증 → P-02 → 송도 제어기/스케줄 전환 → 골프 타석 확대. 게임 실행을 실제 이용 인원으로 세지 않는다.
+- 변경 파일: 신규 설계서와 본 원장뿐. 다른 작업자의 Agent·서버·패키지 변경 보존. 운영 코드 수정·빌드·DB·장비 조작·커밋·push·배포 없음.
+- 검증: preflight는 샌드박스 EPERM 후 승인된 재실행 통과. 원장 전체, git status, 관련 소스/미커밋 diff를 읽고 문서와 대조했다. 문서 공백 검사 수행. 현장 구축·운영 상태는 Claude 보고를 전제로 하며 이번에 직접 실증하지 않았다.
+
+## 송도 파크 1번 WOL 및 Agent 설치판 (2026-09-23, Codex)
+
+- Chrome의 송도 HA `파크1번 (내장랜)` 기기에서 WOL `누르기`를 실행했다. 로그북에 15:58:45 실행 기록이 생겼고, `타석 전원` 화면은 파크1번 `재실`을 표시했다. 실제 모니터 화면 부팅과 Agent 설치·대시보드 연결은 아직 현장 확인이 필요하다.
+- 기존 `windows-agent/songdo/VISTA-Bay-Agent.exe`가 monitorOnly 만료 세션 차단 수정 이전 빌드였으므로 최신 0.9.5 소스를 독립 출력 폴더에 재빌드했다. 최종 EXE를 송도 폴더에 반영했다.
+- 송도 9타석이 시흥 `ScreenGolf.exe`·로그 경로를 상속하지 않도록 `gameMonitoringEnabled`와 `gameLogDiagnosticsEnabled`를 타석 설정에서 false로 명시했다. 실제 송도 게임 감지 근거가 확인될 때까지 대시보드는 확인 불가로 표시한다. 시흥 3타석 설정은 유지했다.
+- 현장 README의 잘못된 `C:\VISTA` 실행 경로를 `%LOCALAPPDATA%\VISTA`로 바로잡고 토큰 생성 안내의 SQL USB 복사 문구를 수정했다.
+- 배포물 `windows-agent/dist/VISTA-Songdo-Agent-0.9.5-install.zip`에는 EXE, 설치 BAT/PS1, README 4개만 있다. 실제 토큰 파일과 SQL은 포함되지 않는다. EXE SHA-256: `5EFA0F34C3108E6234A0A8564B07568140C5AEC7F813663C65F4BB17392716C4`. ZIP SHA-256: `AEFD2775E6964CB9E6953B8350600AE73C0E9E4EDC365196D4C9F56321DC6B18`.
+- Agent check 전체 통과. 빌드된 asar에서 버전 0.9.5, 만료 세션 차단 코드, 송도 9타석 monitorOnly/게임 감지 off, 실제 local token 파일 미포함을 확인했다. 설치 스크립트 PowerShell 구문 오류 0·UTF-8 BOM 확인, 생성 토큰 9개/작성 SQL 토큰 자리표시자 0개(값 출력 없음), gitignore 적용 확인.
+- 남은 단계: 송도 실제 bay_code를 읽고 토큰 등록 SQL의 매장 코드 대응을 확인·운영 적용(별도 승인), P-01 설치 계정에서 ZIP 압축 해제 후 `songdo-tokens.json` 한 파일만 같은 폴더에 추가해 `Agent설치.bat` 실행, 대시보드 heartbeat/관리자 종료/재부팅 자동실행 확인. DB 쓰기·실제 PC 종료·Git commit/push/Vercel 배포는 수행하지 않았다.
+
+### 설치 BAT 무반응 후속 점검
+
+- 사용자가 P-01에서 설치 BAT를 실행했으나 아무 반응이 없다고 보고했다. 운영 대시보드 P-01은 16:20 KST 기준 `Agent 신호 없음`이었다. 실제 P-01 Windows 화면/오류 문구는 아직 보지 못했으므로 원인은 미확정이다.
+- 설치 BAT에 PowerShell 종료 코드와 `pause`를 추가해 초기 실패 때 검은 창이 닫히지 않게 했다. README에 ZIP 압축 해제, 설치 프롬프트와 Agent 무화면 실행의 차이, 주소창 `cmd` 진단 절차를 명시했다.
+- 새 배포물 `windows-agent/dist/VISTA-Songdo-Agent-0.9.5-install-v2.zip`에는 EXE·BAT·PS1·README 4개만 있다. ZIP SHA-256: `72147D3635638DF8009F1042A4D0FC14E8F2246E5CE08D98E40ADB683C0D2B57`. EXE 자체는 직전 검증한 0.9.5와 동일하다.
+- 현장 설치, 등록 SQL 실행, 타석 PC 종료는 수행하지 않았다. 다음 단계는 P-01에서 새 ZIP을 전부 압축 해제하고 토큰 파일을 같은 폴더에 놓은 뒤 BAT를 실행해 표시되는 오류/프롬프트를 확인하는 것이다.
+
+### 송도 설치 BAT의 명령 해석 오류 후속 수정
+
+- 현장 P-01에서 `'p'은 내부 또는 외부 명령이 아닙니다` 오류가 보고됐다. v2 BAT의 실제 바이트는 CRLF 0개, LF 단독 8개였으며 한글 PS1 파일명을 호출하고 있었다. 현장 오류와의 정확한 인과는 PC에서 아직 재검증하지 않았다.
+- BAT를 ASCII 명령과 CRLF 7줄로 정규화하고, 동일한 PowerShell 스크립트를 ASCII 이름 `install-agent.ps1`로 복사해 호출한다. README의 패키지 파일명도 갱신했다.
+- `windows-agent/dist/VISTA-Songdo-Agent-0.9.5-install-v3.zip`은 EXE·BAT·영문명 PS1·README 네 파일만 포함하며 토큰과 SQL은 없다. SHA-256: `8416FD74532310270117E71BF58CC9ACA5BAB539A7FB49AFB8EF218B24DB39DB`. EXE는 기존 0.9.5와 동일하다.
+- 검증: BAT LF 단독 0, PS1 UTF-8 BOM 확인·PowerShell parse 오류 0, ZIP 항목 4개, diff 공백 검사 통과. 현장 실행·운영 DB 쓰기·배포·커밋은 하지 않았다. 다음은 v3 ZIP을 새 폴더에 완전히 압축 해제하고 비밀 토큰 JSON을 같은 폴더에 둔 뒤 P-01 설치 재시험이다.
+
+### 송도 Agent 운영 등록 및 P-01 연결 복구
+
+- 사용자가 송도 Agent 9개 운영 등록을 명시 승인했다. 등록 전 송도 매장 `VISTA-XII`의 실제 타석 코드 `A-01`~`A-07`, `P-01`~`P-02` 9개와 `agent_devices` 0건을 읽기 전용으로 확인했다.
+- 로컬 설치 JSON·생성 SQL의 토큰 9개가 서로 일치하고, 현장 USB의 JSON이 같은 파일이며, 기존 DB에 같은 토큰 해시가 없음을 확인했다. 실제 토큰 값·해시는 원장에 기록하지 않는다.
+- 승인 범위대로 송도 타석 9개에 `agent_devices` 신규 행 9개를 등록했다. 다른 매장 및 기존 Agent 행은 변경하지 않았다. 재조회 결과 9개 등록·활성 상태 확인.
+- P-01에서 Agent `0.9.5`, PC 이름 `PARK01`의 `last_seen_at`이 새로 기록됐다. 운영 관리자 대시보드를 새로고침해 P-01 `PC 켜짐` 표시를 직접 확인했다. 앞선 401의 원인은 서버 측 Agent 등록 누락이었다.
+- 나머지 8대는 아직 Agent 설치/heartbeat가 확인되지 않았다. P-01의 재부팅 자동실행·관리자 PC 정상 종료는 현장 시험 전이다. Git commit/push 및 Vercel 배포 없음.
+
+### 송도 P-01 정상 종료·WOL·자동실행 현장 시험
+
+- 사용자 시험 승인 후 송도 P-01의 `bays.status=available`, 진행 중 세션 0건, Agent 온라인을 확인했다. 무인제어의 P-01 `PC 정상 종료`만 실행했고 매장 전체/다른 타석은 조작하지 않았다.
+- 관리자 화면은 종료 명령 전달 성공과 제어 로그를 표시했다. `store_controller_commands`의 P-01 `shutdown_pc`는 `succeeded`, 시도 1회, 오류 없음으로 확인됐다. Agent 마지막 heartbeat는 16:48:29 KST에서 멈췄다.
+- 사용자가 현장 PC의 실제 종료를 확인했다. HA 로그북 `파크1번 ping`은 16:49:37 연결 해제 기록. 16:52:38 HA `파크1번 켜기` WOL 실행 기록, 16:53:26 ping 재연결 기록을 확인했다.
+- 재기동 뒤 P-01 Agent 0.9.5의 새 heartbeat와 `PARK01` PC 이름이 기록됐고 무인제어 화면이 `PC 켜짐`으로 돌아왔다. 재부팅 후 자동연결은 확인됐으며 Windows 로그인 방식 자체는 관찰하지 않았다.
+- 관찰사항: HA 대시보드의 nmap 기반 `재실` 표시는 PC가 물리적으로 꺼지고 ping이 끊긴 동안에도 유지됐다. 실제 전원 확인에는 현재 ping/Agent 신호가 더 유효하며 HA 카드의 상태 기준은 후속 점검 대상이다. 나머지 8대 설치·검증은 별도. 코드 변경·Git commit/push·Vercel 배포 없음.
+
+### 송도 A-01 Agent 첫 연결
+
+- 사용자가 골프 1번에 설치했다고 보고했다. 운영 `agent_devices`에서 A-01 Agent 0.9.5의 새 heartbeat와 `pc_name=Range2`를 확인했다. 관리자 무인제어는 `PC Agent 연결 2/9`, A-01·P-01 모두 `PC 켜짐`으로 표시한다.
+- `bay_pc_registry`에는 A-01 컴퓨터명이 `RANGE01`, P-01 컴퓨터명이 `RANGE2`로 남아 있고, 과거 원장에는 `RANGE2`가 실제 파크 타석이라고 적혀 있다. 현재 Agent의 P-01 이름은 `PARK01`이므로 이 등록 정보는 오래됐을 가능성이 있다. A-01 Agent를 설치한 실제 물리 타석이 골프 1번인지 현장 확인 필요. 서버/설치 설정은 확인 전 변경하지 않는다.
+- 운영 DB·기기 변경, 코드 수정, Git commit/push, Vercel 배포 없음. `preflight` 통과.
+
+### 송도 현장 Agent Claude 인수인계
+
+- `docs/claude-handoff-songdo-agent-field-20260923.md`를 작성했다. 송도 9타석 Agent 등록 완료, P-01 종료/WOL/자동연결 실증, A-01 `Range2` 이름 불일치와 물리 설치 위치 확인 필요, 나머지 설치 순서, 토큰 비밀 유지·재발급 금지를 한 문서로 전달한다.
+- 문서 작성 외 코드·운영 DB·기기·배포 변경 없음. 커밋/push 없음. 다른 미커밋 변경 보존.
+
+### 관리자 모바일 대시보드 KPI 정리
+
+- 운영 사이트를 휴대폰 폭으로 확인했다. 이전 5개 KPI 카드가 한 줄에 배치되기는 했지만 긴 제목과 아이콘 때문에 글자가 세로로 쪼개지고 카드가 높아져 실제 사용성이 나빴다. 변경 누락이 아니라 반응형 표현 문제였다.
+- `src/app/admin/dashboard/dashboard-client.tsx`에서 사용자 요청대로 `입장 대기` KPI 카드를 제거했다. 남은 4개는 모바일에서 짧은 제목(`이용 중`, `빈 타석`, `알림`, `오늘`)과 한 줄 숫자를 사용하고 아이콘/설명은 숨긴다. 데스크톱의 원래 긴 제목·아이콘·설명은 유지한다. 이용 중 상세 버튼의 접근성 이름도 유지했다. 키오스크 대기 데이터·동작은 변경하지 않았다.
+- `npm run typecheck`, 대상 ESLint, diff 공백 검사를 통과했다. 로컬 Next dev 서버는 `http://localhost:3000`에서 실행 중이다. 인증되지 않은 로컬 브라우저는 `/admin/login`으로 이동하므로 로그인 후 시각 확인이 필요하다. dev 서버를 켠 채 production build는 실행하지 않았다.
+- 사용자가 **운영 배포는 하지 말고 로컬 미리보기만** 보기로 명시했다. Git commit/push/Vercel 배포, 운영 DB·기기 조작 없음. 기존 동일 파일의 다른 작업자 `store_close` 문구 변경은 보존했다.
+
+### 아파트 매장 관리자 대시보드 제어 버튼 정리
+
+- `src/app/admin/dashboard/dashboard-client.tsx`: `store_manager`/`staff`의 제한 메뉴 계정에서는 대시보드 `매장 조명 ON/OFF` 버튼을 숨긴다. 본사 계정의 조명 버튼과 API 기능은 유지한다. `매장 전체 준비 ON`·`매장 종료`는 모바일에서 한 줄 2열로 배치하고, 준비 버튼의 설명문을 제거했다. 작은 화면에서는 긴 종료 설명과 아이콘을 숨겨 버튼 높이를 줄인다.
+- 검증: `npm run typecheck`, 대상 ESLint 통과. 로컬 `http://localhost:3000/admin/dashboard`는 서버 응답 307로 로그인 화면에 이동하므로 로그인한 화면의 시각 확인은 사용자 몫이다.
+- 사용자의 이전 지시대로 로컬 미리보기만 유지한다. commit/push/Vercel 배포, 운영 DB·기기 제어 없음. 동일 파일의 기존 미커밋 `store_close` 문구 변경과 다른 작업자의 파일은 보존했다.
+
+### 매장 관리자 실시간 타석 카드 항목 정리
+
+- `src/app/admin/dashboard/dashboard-client.tsx`: 제한 메뉴 매장 관리자 화면의 골프 A-01~A-07 카드에서 `게임 상태 확인 불가` 또는 `게임 감지 미지원` 행만 숨긴다. 실제 감지된 게임 상태는 유지한다. 같은 계정의 이용 중 카드에서는 이미지에서 X 표시된 `이용 고객`과 `메모`만 숨기고 종료 예정·시작 시간·이용 종료·시간 조정은 유지한다. 본사/시흥점과 이용 중이 아닌 카드의 정보는 변경하지 않는다.
+- 검증: `npm run typecheck`, 대상 ESLint 통과. 로컬 미리보기 로그인 화면 뒤의 실제 계정별 시각 검증은 하지 못했다.
+- commit/push/Vercel 배포, 운영 DB·기기 제어 없음. 기존 미커밋 변경 보존.
+
+### 무인제어 모바일 상태 카드 2열
+
+- `src/app/admin/automation/automation-client.tsx`: 상단 운영 상태 요약 4개 카드(매장 제어기, 장비 명령 대기, PC Agent 연결, 현재 이용 세션)를 모바일에서 1행 2개씩 표시한다. 모바일 카드 패딩·문자 크기를 줄이고 아이콘만 숨긴다. 태블릿은 2열, 넓은 데스크톱은 기존 4열을 유지한다.
+- 검증: `npm run typecheck`, 대상 ESLint 통과. 로컬 로그인 화면 뒤의 계정별 실제 시각 검증은 하지 못했다.
+- 사용자의 이전 지시대로 로컬 미리보기만 유지한다. commit/push/Vercel 배포, 운영 DB·기기 제어 없음. 기존 미커밋 변경 보존.
+
+### 무인제어 타석 연결 카드 정보 정리
+
+- `src/app/admin/automation/automation-client.tsx`: PC 최근 신호는 상단 배지·마지막 신호 시각으로 한 번만 보여준다. 오프라인 이용 경고와 PC 제어 영역의 중복 Agent 문구를 제거했다. 실제 전원이 확인되지 않은 상태를 OFF로 오인시키던 스위치는 `PC 켜기`/`PC 정상 종료` 명령 버튼으로 바꿨다. 매핑이 없는 타석은 비활성 장비 버튼과 중복된 명령 기록 대신 `타석 장비 제어 미연결` 한 줄만 표시한다. 장비가 연결된 타석의 명령 기록과 ON/OFF 버튼은 유지한다.
+- 기존 API 호출, 확인 대화상자, 이용 중 강제 확인, 제어기/Agent 연결 검사 및 비활성 조건은 변경하지 않았다. 전원 실측을 새로 주장하지 않는다.
+- 검증: `npm run typecheck`, 대상 ESLint 통과. 인증된 로컬 화면의 실제 시각 검증은 하지 못했다. 사용자의 이전 지시대로 로컬 미리보기만 유지하며 commit/push/Vercel 배포, 운영 DB·기기 제어 없음.
+
+### 관리자 모바일 UI 운영 배포 (2026-09-24)
+
+- 사용자의 `배포` 승인에 따라 위 관리자 대시보드·무인제어 UI 변경만 `f264a31`로 커밋하고 `origin/main`에 푸시했다. Vercel의 해당 커밋 상태가 `success` (`Deployment has completed`)임을 확인했다.
+- 배포 파일: `src/app/admin/dashboard/dashboard-client.tsx`, `src/app/admin/automation/automation-client.tsx`. 대시보드 파일에 있던 다른 작업자의 미커밋 `store_close` 문구 변경 2곳은 인덱스에서만 제외해 작업트리에 보존했다. 미커밋 서버/Agent 변경과 본 원장의 다른 기록도 배포에 포함하지 않았다.
+- 검증: `npm run preflight`, `npm run typecheck`, 대상 ESLint, `npm run build`, staged diff 공백 검사 통과. 빌드 후 로컬 미리보기 서버를 `http://localhost:3000`으로 재시작했다. 운영 DB 쓰기·현장 장비 제어 없음.
+
+### 비이용 타석 카드의 보조 정보 제거 (2026-09-24)
+
+- `src/app/admin/dashboard/dashboard-client.tsx`의 이용 중이 아닌 카드에서 `다음 예약`/`예약자`와 `메모` 두 칸을 제거했다. 상태 문구와 관리 버튼은 유지한다. 데이터/API는 변경하지 않았다.
+- `npm run preflight`, `npm run typecheck`, 대상 ESLint 통과. 같은 파일의 다른 작업자 `store_close` 문구 변경 2곳은 보존했다. 이번 변경은 로컬 미리보기만이며 commit/push/Vercel 배포, 운영 DB·기기 조작 없음.
+
+### 비이용 타석 카드 변경 운영 배포 (2026-09-24)
+
+- 사용자의 배포 승인 후 위 UI 변경 4줄 삭제만 `ea5d200`으로 커밋하여 `origin/main`에 푸시했다. Vercel 커밋 상태 `success` (`Deployment has completed`) 확인. 같은 파일의 다른 작업자 `store_close` 문구 2곳과 기타 미커밋 서버/Agent 변경은 작업트리에 그대로 두고 배포에서 제외했다.
+- `npm run preflight`, `npm run typecheck`, 대상 ESLint, `npm run build`, staged diff 공백 검사 통과. 운영 DB 쓰기·현장 장비 명령 없음.
+- 별도 읽기 전용 연결 점검에서 이 컴퓨터의 `192.168.0.91:8123` TCP 연결이 실패했다. 현재 Wi-Fi가 송도 매장망과 동일한 물리 네트워크인지는 확인되지 않았으므로 HA 장애 판정은 보류한다.
+
+### 송도 HA 현장 연결 진단 (2026-09-24)
+
+- 사용자가 현재 송도 매장이라고 확인했다. 현장 PC `192.168.0.83/24`에서 HA `192.168.0.91`은 ICMP ping 응답(약 2ms), ARP 응답이 있었다.
+- HA Observer `http://192.168.0.91:4357/`는 HTTP 200이며 `Supervisor: Connected`, `Support: Supported`, `Health: Healthy`를 표시했다. 반면 HA Core 웹 포트 `8123`은 TCP 연결 실패. 따라서 HA OS/VM이 완전히 꺼진 상태는 아니며 Core 서비스 또는 해당 포트의 문제 가능성이 높다. Core 프로세스·로그는 아직 확인하지 않았다.
+- 읽기 전용 연결 확인만 했으며 Core 재시작, 호스트 재부팅, WOL 명령, 설정 변경은 하지 않았다. 다음 단계는 현장 HA 호스트/VM 콘솔에서 `ha core info`, `ha core logs`, 호스트 자원 사용량을 확인하고 백업 존재 여부를 점검하는 것이다.
