@@ -17,6 +17,7 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Claude Code | 완료·migration 적용 대기·2026-09-27 | PC 세팅 도구가 Agent 까지 설치: 등록 API 가 요청 시 타석 Agent 토큰·설정·다운로드 정보 반환, 매장별 monitor-only 컬럼, Agent 0.9.6 이 `C:\ProgramData\VISTA\agent` 설정 읽기, GitHub 릴리스 배포, 세팅 도구 지시서 | `src/lib/pc-registry*.ts`, `src/lib/agent-release.ts`, 신규 migration, `windows-agent/electron-main.js`, `windows-agent/agent-config*.js`, `docs/pc-setup-api.md`, 세팅 도구 지시서 |
 | Codex | 완료·읽기 전용 현장 진단·2026-09-24 | 송도 HA `.91` 운영체제/Observer 응답과 Core 웹 포트 장애 구분 | 본 원장 |
 | Codex | 완료·배포 확인·2026-09-24 | 대시보드 비이용 타석 카드의 다음 예약/예약자·메모 칸 제거분만 분리 배포 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
 | Codex | 완료·배포 확인·2026-09-24 | 승인된 관리자 대시보드·무인제어 UI 변경을 다른 미커밋 서버 작업과 분리해 배포 | `src/app/admin/dashboard/dashboard-client.tsx`, `src/app/admin/automation/automation-client.tsx`, 본 원장 |
@@ -829,3 +830,14 @@ heartbeat·게임 상태·관리자 종료 명령)만 남기는 것이었다. 4~
 - 사용자가 현재 송도 매장이라고 확인했다. 현장 PC `192.168.0.83/24`에서 HA `192.168.0.91`은 ICMP ping 응답(약 2ms), ARP 응답이 있었다.
 - HA Observer `http://192.168.0.91:4357/`는 HTTP 200이며 `Supervisor: Connected`, `Support: Supported`, `Health: Healthy`를 표시했다. 반면 HA Core 웹 포트 `8123`은 TCP 연결 실패. 따라서 HA OS/VM이 완전히 꺼진 상태는 아니며 Core 서비스 또는 해당 포트의 문제 가능성이 높다. Core 프로세스·로그는 아직 확인하지 않았다.
 - 읽기 전용 연결 확인만 했으며 Core 재시작, 호스트 재부팅, WOL 명령, 설정 변경은 하지 않았다. 다음 단계는 현장 HA 호스트/VM 콘솔에서 `ha core info`, `ha core logs`, 호스트 자원 사용량을 확인하고 백업 존재 여부를 점검하는 것이다.
+
+## PC 세팅 도구의 Agent 자동 설치 (2026-09-27, Claude Code)
+
+- 목적: 복제 PC 를 현장에서 초기화할 때 세팅 도구가 VISTA Bay Agent 까지 설치. 최신 Agent 파일 위치를 사람이 기억할 필요가 없게 서버가 알려준다.
+- 서버: `POST /api/pc-setup/register` 에 `installAgent: true`(정확히 boolean true)를 보내면, 등록 창구·전역 토큰 등록일 때 그 타석 Agent 토큰을 새로 발급(agent_devices upsert, 기존 토큰 무효)하고 `agent` 에 릴리스 정보(버전·URL·SHA-256)와 설정 파일 내용을 돌려준다. 실패는 등록 성공 + `agentError`. 요청할 때만 발급해 기존 세팅 도구의 재등록이 USB 로 깐 Agent 를 끊지 않는다.
+- 설정 형식은 서버가 만든다(`src/lib/agent-bay-config.ts`). 매장 동작은 신규 `stores.agent_monitor_only`(송도 VISTA-XII = true). bayCode 는 `매장코드:타석코드` 로 붙여 Agent 내장 시흥 A-01 과 섞이지 않게 했다(섞이면 pcName VISTA-BAY-01 이 새어 들어감).
+- Agent 0.9.6: `C:\ProgramData\VISTA\agent` 의 설정을 읽고 사용자 폴더보다 우선한다(세팅 도구가 관리자 계정으로 설치해도 어느 계정 로그인에서나 동작). 깨진 설정 파일은 무시하고 로그만 남긴다. BOM 붙은 JSON 도 읽는다(PS 5.1 Set-Content 대비).
+- 릴리스: GitHub `agent-v0.9.6`, SHA-256 `AA5E2866AEB6E3C86B1C24542DDE3EA0355C1FC2E83273B05B5E702A3E7D5DCB`. 서버 포인터는 `src/lib/agent-release.ts`. 새 버전은 빌드 → 릴리스 업로드 → 이 파일 세 값 변경 → 배포.
+- 검증: 서버 테스트 20개(서버가 만든 설정을 Agent 실제 병합·정책 코드에 넣는 계약 테스트 포함), Agent 테스트(`npm run check`) 통과, typecheck·eslint·build 통과. 패키지된 0.9.6 을 오프라인 모드·격리 폴더·가짜 토큰으로 실행해 ProgramData 설정(BOM 포함)으로 선택 화면 없이 기동하고 실제 호스트명을 보고함을 확인. exe 안 비밀값 검사(토큰 파일·송도 토큰·.env.local 값) 0건.
+- 세팅 도구 지시서: `docs/codex-prompt-pc-setup-agent-install.md`(v3.5). API 규격: `docs/pc-setup-api.md` 추가 절.
+- 남은 일: `supabase/migrations/202609270001_store_agent_monitor_only.sql` 운영 적용(미적용 시 installAgent 는 `agent_profile_unavailable` 로 안전하게 실패, 기존 등록은 영향 없음). 세팅 도구 측 구현·현장 시험.
