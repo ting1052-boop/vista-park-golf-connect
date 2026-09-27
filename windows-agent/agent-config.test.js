@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { mergeBaysConfig, resolveBayPolicy } = require("./agent-config");
+const { mergeBaysConfig, resolveBayPolicy, parseConfigText } = require("./agent-config");
 
 const baseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "bays.config.json"), "utf8"));
 
@@ -74,4 +74,25 @@ test("the installer's local config shape applies one token and nothing else", ()
   // 타석 수가 늘거나 코드가 겹치면 설치 화면의 번호가 어긋난다
   const codes = merged.bays.map((bay) => bay.bayCode);
   assert.equal(new Set(codes).size, codes.length, "bayCode 가 중복된다");
+});
+
+test("config files written with a UTF-8 BOM still parse", () => {
+  // PowerShell 5.1 의 Set-Content -Encoding UTF8 이 이렇게 쓴다. 실패하면 설정이 조용히 무시된다.
+  const withBom = "﻿" + JSON.stringify({ bayCode: "VISTA-XII:A-01" });
+  assert.deepEqual(parseConfigText(withBom), { bayCode: "VISTA-XII:A-01" });
+  assert.deepEqual(parseConfigText('{"a":1}'), { a: 1 });
+});
+
+test("the machine config from the PC setup tool beats an older per-user token", () => {
+  // electron-main 의 loadBaysConfig 와 같은 순서: 내장 → 사용자(USB 설치) → PC 공용(세팅 도구).
+  // 세팅 도구는 설치하면서 토큰을 새로 발급하므로, 같은 PC 에 남은 옛 사용자 토큰이 이기면 401 이 난다.
+  const userLayer = { bays: [{ bayCode: "VISTA-XII:A-01", agentToken: "oldUsbTokenExample1234567890abcdef" }] };
+  const machineLayer = {
+    bays: [{ bayCode: "VISTA-XII:A-01", label: "송도파크자이 · A-01", agentToken: "newSetupToolToken1234567890abcdef", monitorOnly: true }]
+  };
+  const merged = mergeBaysConfig(mergeBaysConfig(mergeBaysConfig(baseConfig), userLayer), machineLayer);
+  const bay = merged.bays.find((entry) => entry.bayCode === "VISTA-XII:A-01");
+
+  assert.equal(bay.agentToken, "newSetupToolToken1234567890abcdef");
+  assert.equal(resolveBayPolicy({ ...merged.shared, ...bay }).monitorOnly, true);
 });

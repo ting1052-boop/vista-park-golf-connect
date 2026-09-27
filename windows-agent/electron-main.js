@@ -6,7 +6,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { randomUUID } = require("node:crypto");
 const { execFile } = require("node:child_process");
-const { mergeBaysConfig, resolveBayPolicy } = require("./agent-config");
+const { mergeBaysConfig, resolveBayPolicy, parseConfigText } = require("./agent-config");
 const { createGameLogProbe } = require("./game-log-probe");
 const { createScreenGolfMonitor } = require("./screen-golf-monitor");
 const { createGameLogLocator } = require("./game-log-locator");
@@ -16,7 +16,11 @@ const { createRoundEventOutbox } = require("./round-event-outbox");
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
 const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
-const VERSION = "0.9.5";
+// Machine-wide config written by the PC setup tool (runs elevated). Any Windows
+// account that logs in reads the same bay and token, so an install done under an
+// admin account still works for the bay's everyday account.
+const MACHINE_CONFIG_DIR = path.join(process.env.ProgramData || "C:\\ProgramData", "VISTA", "agent");
+const VERSION = "0.9.6";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
@@ -123,15 +127,32 @@ async function startGameLogDiagnostics() {
 }
 
 function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  return parseConfigText(fs.readFileSync(filePath, "utf8"));
 }
 
+function readOptionalJson(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return readJson(filePath);
+  } catch (error) {
+    // A half-written file must not stop the agent; fall back to the other layers.
+    log("Ignoring unreadable config file", { file: path.basename(filePath), error: error.message });
+    return null;
+  }
+}
+
+// Layers, later wins: shipped defaults -> per-user file (USB installer) -> machine
+// file (PC setup tool). The setup tool rotates the bay token when it installs, so
+// its file must override an older per-user token on the same PC.
 function loadBaysConfig() {
-  const base = readJson(BAYS_CONFIG_PATH);
-  const userLocalPath = path.join(USER_DATA, "bays.config.local.json");
-  if (fs.existsSync(userLocalPath)) return mergeBaysConfig(base, readJson(userLocalPath));
-  if (!app.isPackaged && fs.existsSync(LOCAL_BAYS_CONFIG_PATH)) return mergeBaysConfig(base, readJson(LOCAL_BAYS_CONFIG_PATH));
-  return mergeBaysConfig(base);
+  let merged = mergeBaysConfig(readJson(BAYS_CONFIG_PATH));
+  const userLocal =
+    readOptionalJson(path.join(USER_DATA, "bays.config.local.json")) ??
+    (!app.isPackaged ? readOptionalJson(LOCAL_BAYS_CONFIG_PATH) : null);
+  if (userLocal) merged = mergeBaysConfig(merged, userLocal);
+  const machineLocal = readOptionalJson(path.join(MACHINE_CONFIG_DIR, "bays.config.local.json"));
+  if (machineLocal) merged = mergeBaysConfig(merged, machineLocal);
+  return merged;
 }
 
 function loadMonitorOverrides() {
@@ -155,17 +176,12 @@ function loadMonitorOverrides() {
 // settings + the matching bay preset at load time, so updating shared config
 // only requires a new build, never per-PC editing.
 function loadConfig() {
-  let selectedBayCode = null;
-
-  if (fs.existsSync(USER_CONFIG_PATH)) {
-    try {
-      selectedBayCode = readJson(USER_CONFIG_PATH).bayCode ?? null;
-    } catch (error) {
-      log("Failed to read selected bay, will ask again", { error: error.message });
-    }
-  }
-
-  const bay = baysConfig.bays.find((entry) => entry.bayCode === selectedBayCode);
+  // The machine selection (setup tool) wins; the per-user one (bay picker / USB
+  // installer) is the fallback. Take the first selection that names a known bay.
+  const bay = [path.join(MACHINE_CONFIG_DIR, "agent.config.json"), USER_CONFIG_PATH]
+    .map((file) => readOptionalJson(file)?.bayCode ?? null)
+    .map((code) => baysConfig.bays.find((entry) => entry.bayCode === code))
+    .find(Boolean);
   if (!bay) return null;
 
   const merged = { ...baysConfig.shared, ...bay, ...loadMonitorOverrides() };

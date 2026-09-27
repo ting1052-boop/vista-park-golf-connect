@@ -36,4 +36,10 @@ function resolveBayPolicy(merged = {}) {
   };
 }
 
-module.exports = { mergeBaysConfig, resolveBayPolicy };
+// Windows 도구(PowerShell 5.1 의 Set-Content -Encoding UTF8 등)는 JSON 앞에 BOM 을 붙인다.
+// JSON.parse 는 BOM 이 있으면 실패하고, 그러면 설정 파일이 조용히 무시된다.
+function parseConfigText(text) {
+  return JSON.parse(String(text).replace(/^﻿/, ""));
+}
+
+module.exports = { mergeBaysConfig, resolveBayPolicy, parseConfigText };
