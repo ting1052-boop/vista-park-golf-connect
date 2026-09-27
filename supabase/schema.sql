@@ -47,6 +47,8 @@ create table public.stores (
   bay_count integer not null default 0 check (bay_count between 0 and 99),
   status public.store_status not null default 'active',
   opened_on date,
+  -- 아파트 등 요금 없는 매장: Agent 가 고객 화면 없이 상태 보고·관리자 종료만 한다.
+  agent_monitor_only boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

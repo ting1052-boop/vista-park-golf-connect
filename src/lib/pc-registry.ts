@@ -1,5 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  AGENT_INSTALL_DIR,
+  AGENT_MACHINE_CONFIG_DIR,
+  buildAgentInstallFiles,
+  type AgentInstallFiles
+} from "@/lib/agent-bay-config";
+import { AGENT_RELEASE } from "@/lib/agent-release";
+import { hashAgentToken } from "@/lib/agent-server";
 import { consumeEnrollmentSlot, getEnrollmentState, type EnrollmentState } from "@/lib/pc-enrollment";
 import type { RegisterPayload } from "@/lib/pc-registry-payload";
 
@@ -59,6 +67,16 @@ export type RegisterSuccess = {
   warnings: Array<{ code: "computer_name_duplicate"; message: string; deviceIds: string[] }>;
   deviceToken: string | null;
   registeredAt: string;
+  // installAgent 요청이 있었을 때만 채운다. 토큰이 들어 있으므로 로그에 남기면 안 된다.
+  agent: AgentInstall | null;
+  agentError: { code: string; message: string } | null;
+};
+
+export type AgentInstall = {
+  release: typeof AGENT_RELEASE;
+  installDir: string;
+  configDir: string;
+  files: AgentInstallFiles;
 };
 
 export type RegisterResult = { ok: true; result: RegisterSuccess } | { ok: false; error: RegisterFailure };
@@ -297,6 +315,28 @@ export async function registerBayPc(
     });
   }
 
+  // Agent 설치 정보. PC 등록 자체는 이미 끝났으므로, 여기서 실패해도 등록은 성공으로
+  // 돌려주고 agentError 로 알린다. 세팅 도구는 "등록 성공, Agent 설치 실패"로 표시한다.
+  // 관리자 수동 입력은 그 PC 에서 도는 게 아니라 발급하지 않는다(issuedToken 없음).
+  let agent: RegisterSuccess["agent"] = null;
+  let agentError: RegisterSuccess["agentError"] = null;
+  if (payload.installAgent) {
+    if (!issuedToken) {
+      agentError = {
+        code: "agent_requires_setup_tool",
+        message: "Agent 설치 정보는 PC 세팅 도구의 등록에서만 발급합니다."
+      };
+    } else {
+      const issued = await issueAgentInstall(supabase, {
+        storeId: store.id,
+        bay,
+        computerName: payload.computerName
+      });
+      if (issued.ok) agent = issued.agent;
+      else agentError = issued.error;
+    }
+  }
+
   return {
     ok: true,
     result: {
@@ -308,7 +348,9 @@ export async function registerBayPc(
       replacedDeviceId,
       warnings,
       deviceToken: issuedToken,
-      registeredAt: nowIso
+      registeredAt: nowIso,
+      agent,
+      agentError
     }
   };
 }
@@ -322,11 +364,71 @@ async function findStore(supabase: SupabaseClient, payload: RegisterPayload) {
 }
 
 async function findBay(supabase: SupabaseClient, storeId: string, payload: RegisterPayload) {
-  const query = supabase.from("bays").select("id, bay_code").eq("store_id", storeId);
+  const query = supabase.from("bays").select("id, bay_code, display_name").eq("store_id", storeId);
   const { data } = payload.bayId
     ? await query.eq("id", payload.bayId).maybeSingle()
     : await query.eq("bay_code", payload.bayCode as string).maybeSingle();
-  return (data as { id: string; bay_code: string } | null) ?? null;
+  return (data as { id: string; bay_code: string; display_name: string | null } | null) ?? null;
+}
+
+// 이 타석의 Agent 토큰을 새로 발급(기존 토큰 무효)하고 설치 파일 내용을 만든다.
+// 매장별 동작(monitor-only)은 stores.agent_monitor_only 로 정한다.
+async function issueAgentInstall(
+  supabase: SupabaseClient,
+  args: { storeId: string; bay: { id: string; bay_code: string; display_name: string | null }; computerName: string }
+): Promise<{ ok: true; agent: AgentInstall } | { ok: false; error: { code: string; message: string } }> {
+  const { data: store, error: storeError } = await supabase
+    .from("stores")
+    .select("code, name, agent_monitor_only")
+    .eq("id", args.storeId)
+    .maybeSingle();
+
+  if (storeError || !store) {
+    return {
+      ok: false,
+      error: {
+        code: "agent_profile_unavailable",
+        message: "매장 Agent 설정을 읽지 못했습니다. 서버 migration 적용 여부를 확인해주세요."
+      }
+    };
+  }
+
+  const agentToken = randomBytes(32).toString("base64url");
+  const nowIso = new Date().toISOString();
+  const { error: upsertError } = await supabase.from("agent_devices").upsert(
+    {
+      store_id: args.storeId,
+      bay_id: args.bay.id,
+      label: `${args.bay.bay_code} Agent`,
+      pc_name: args.computerName,
+      token_hash: hashAgentToken(agentToken),
+      is_active: true,
+      updated_at: nowIso
+    },
+    { onConflict: "bay_id" }
+  );
+
+  if (upsertError) {
+    return { ok: false, error: { code: "agent_issue_failed", message: upsertError.message } };
+  }
+
+  const row = store as { code: string; name: string; agent_monitor_only: boolean | null };
+  return {
+    ok: true,
+    agent: {
+      release: AGENT_RELEASE,
+      installDir: AGENT_INSTALL_DIR,
+      configDir: AGENT_MACHINE_CONFIG_DIR,
+      files: buildAgentInstallFiles({
+        storeCode: row.code,
+        storeName: row.name,
+        bayCode: args.bay.bay_code,
+        bayDisplayName: args.bay.display_name,
+        monitorOnly: row.agent_monitor_only === true,
+        agentToken
+      })
+    }
+  };
 }
 
 async function writeHistory(

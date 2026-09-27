@@ -252,7 +252,9 @@ BIOS 의 WOL 항목은 프로그램이 못 켠다. 원본 PC 에서 켜고 복�
     { "code": "computer_name_duplicate", "message": "PC 이름 PARK01 이(가) 다른 장비에도 쓰이고 있습니다.", "deviceIds": ["…"] }
   ],
   "deviceToken": "…(전역 토큰으로 등록했을 때만, 한 번만)",
-  "registeredAt": "2026-09-19T05:12:00.000Z"
+  "registeredAt": "2026-09-19T05:12:00.000Z",
+  "agent": null,
+  "agentError": null
 }
 ```
 
@@ -265,6 +267,46 @@ BIOS 의 WOL 항목은 프로그램이 못 켠다. 원본 PC 에서 켜고 복�
 - 멱등키는 `deviceId` 다. 같은 내용을 여러 번 보내도 행은 하나다.
 - `anydeskChanged` 가 있으면 이력에 한 줄 남는다.
 - 모든 시각은 **서버 시각**으로 기록한다. 클라이언트 시계를 믿지 않는다.
+
+### Agent 설치 정보 (`installAgent`, 2026-09-27 추가)
+
+요청 본문에 `"installAgent": true` 를 넣으면, 등록이 끝난 뒤 그 타석의 VISTA Bay
+Agent 설치 정보를 `agent` 에 담아 준다. **값이 정확히 `true` 일 때만** 동작한다.
+
+- 그 타석의 Agent 토큰을 **새로 발급**한다. 같은 타석에 전에 깔린 Agent 의 토큰은
+  즉시 무효가 된다. 그래서 요청할 때만 준다(기존 세팅 도구의 재등록이 USB 로 설치한
+  Agent 를 끊지 않게).
+- 등록 창구 또는 전역 토큰으로 들어온 등록(= `deviceToken` 이 발급되는 등록)에서만
+  준다. 관리자 수동 입력에는 주지 않는다.
+- PC 등록은 이미 끝났으므로 Agent 쪽이 실패해도 `ok: true` 로 돌려주고 `agentError`
+  로 알린다.
+
+```json
+"agent": {
+  "release": {
+    "version": "0.9.6",
+    "url": "https://github.com/ting1052-boop/vista-park-golf-connect/releases/download/agent-v0.9.6/VISTA-Bay-Agent.exe",
+    "sha256": "AA5E2866…7D5DCB"
+  },
+  "installDir": "C:\\VISTA",
+  "configDir": "C:\\ProgramData\\VISTA\\agent",
+  "files": {
+    "bays.config.local.json": { "bays": [ { "bayCode": "VISTA-XII:A-01", "label": "…", "agentId": "vista-xii-a-01", "agentToken": "…", "monitorOnly": true, "gameMonitoringEnabled": false, "gameLogDiagnosticsEnabled": false } ] },
+    "agent.config.json": { "bayCode": "VISTA-XII:A-01" }
+  }
+}
+```
+
+- `files` 의 두 항목을 **내용 그대로** `configDir` 에 파일로 쓴다. 세팅 도구가 내용을
+  해석하거나 고치지 않는다. 형식의 주인은 서버다(`src/lib/agent-bay-config.ts`).
+- `monitorOnly` 등은 매장 설정 `stores.agent_monitor_only` 로 서버가 정한다.
+- `agentToken` 이 들어 있으므로 응답·파일 내용을 로그에 남기지 않는다.
+
+| `agentError.code` | 뜻 |
+|---|---|
+| `agent_requires_setup_tool` | 관리자 수동 입력 등 `deviceToken` 이 발급되지 않는 등록 |
+| `agent_profile_unavailable` | 매장 Agent 설정을 읽지 못함(서버 migration 미적용 등) |
+| `agent_issue_failed` | Agent 토큰 저장 실패 |
 
 ### 오류
 

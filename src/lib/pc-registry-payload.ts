@@ -26,6 +26,9 @@ export type RegisterPayload = {
   wakeOnLanStatus: "enabled" | "disabled" | "unknown";
   powerControlMethod: "wol_agent" | "wol_only" | "unknown";
   networkCollectedAt: string | null;
+  // true 면 이 타석의 Agent 토큰을 새로 발급하고 설치 정보를 함께 돌려준다.
+  // 요청할 때만 준다. 발급하면 그 타석의 기존 Agent 토큰이 무효가 되기 때문이다.
+  installAgent: boolean;
 };
 
 export type PayloadRejection = { code: "invalid_payload" | "forbidden_field"; field: string; message: string };
@@ -215,7 +218,8 @@ export function parseRegisterPayload(body: unknown): PayloadResult {
       wolBroadcastAddress,
       wakeOnLanStatus: wakeOnLanStatus as RegisterPayload["wakeOnLanStatus"],
       powerControlMethod: powerControlMethod as RegisterPayload["powerControlMethod"],
-      networkCollectedAt
+      networkCollectedAt,
+      installAgent: raw.installAgent === true
     }
   };
 }
