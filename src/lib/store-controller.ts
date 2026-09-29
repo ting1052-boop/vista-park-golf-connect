@@ -45,7 +45,7 @@ export async function enqueueBayPreparation(
   if (!bayData) throw new Error("타석 정보를 찾을 수 없습니다.");
 
   const bay = bayData as BayForController;
-  const mapping = getBayAutomationByCode(bay.bay_code);
+  const mapping = getBayAutomationByCode(bay.bay_code, bay.store_id);
   if (!mapping) throw new Error("이 타석의 장비 제어 연결 정보가 없습니다.");
 
   const { count, error: countError } = await supabase
@@ -149,7 +149,7 @@ export async function enqueueBayRelease(
   if (!bayData) throw new Error("타석 정보를 찾을 수 없습니다.");
 
   const bay = bayData as BayForController;
-  const mapping = getBayAutomationByCode(bay.bay_code);
+  const mapping = getBayAutomationByCode(bay.bay_code, bay.store_id);
   if (!mapping) throw new Error("이 타석의 장비 제어 연결 정보가 없습니다.");
 
   const { count, error: countError } = await supabase
@@ -206,7 +206,7 @@ async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, act
   if (error) throw new Error(error.message);
 
   return ((data ?? []) as Array<{ bay_code: string | null }>)
-    .map((row) => getBayAutomationByCode(row.bay_code))
+    .map((row) => getBayAutomationByCode(row.bay_code, storeId))
     .filter((mapping, index, mappings) => mapping && mappings.findIndex((candidate) => candidate?.key === mapping.key) === index)
     .map((mapping) => ({
       name: `${mapping!.label} 장비 ${action === "on" ? "ON" : "OFF"}`,
@@ -216,6 +216,9 @@ async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, act
 
 export async function enqueueStorePreparation(supabase: SupabaseClient, storeId: string, requestedFrom: string) {
   const bayScripts = await getStoreBayScripts(supabase, storeId, "on");
+  // 장비 연결표에 타석이 하나도 없는 매장(=매장 제어기가 없는 매장)에는 공용 조명·냉난방
+  // 명령만 단독으로 넣지 않는다. 가져갈 제어기가 없어 대기열에 쌓이기만 한다.
+  if (bayScripts.length === 0) return { command: null, bayCount: 0 };
   const command = await enqueueManualAutomation(supabase, {
     storeId,
     scripts: [{ name: "공용 조명·냉난방 ON", script: commonAutomationScripts.on }, ...bayScripts],
@@ -251,6 +254,10 @@ export async function enqueueStoreClosure(
   }
 
   const bayScripts = await getStoreBayScripts(supabase, storeId, "off");
+  // 위 enqueueStorePreparation 과 같은 이유로, 장비 연결이 없는 매장은 PC 종료만 한다.
+  if (bayScripts.length === 0) {
+    return { blocked: false as const, activeSessionCount: 0, agentShutdown, command: null, bayCount: 0 };
+  }
   const command = await enqueueManualAutomation(supabase, {
     storeId,
     scripts: [...bayScripts, { name: "공용 조명·냉난방 OFF", script: commonAutomationScripts.off }],

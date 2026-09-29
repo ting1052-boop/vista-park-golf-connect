@@ -183,7 +183,7 @@ export async function GET() {
     const bays = ((baysResult.data ?? []) as BayRow[]).map((bay) => {
       const agent = agentsByBayId.get(bay.id);
       const lastSeenMs = agent?.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0;
-      const mapping = getBayAutomationByCode(bay.bay_code);
+      const mapping = getBayAutomationByCode(bay.bay_code, storeId);
       const power = mapping
         ? getPowerState(latestRuns, mapping.enterScript, mapping.exitScript)
         : { on: null, failed: false, lastRunAt: null };
@@ -385,7 +385,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: false, message: "타석 정보를 찾을 수 없습니다." }, { status: 404 });
       }
 
-      const mapping = getBayAutomationByCode(bay.bay_code);
+      const mapping = getBayAutomationByCode(bay.bay_code, storeId);
       if (!mapping) {
         return NextResponse.json(
           { ok: false, message: `이 타석의 장비 ${turningOn ? "ON" : "OFF"} 연결 정보가 없습니다.` },
@@ -462,9 +462,12 @@ export async function POST(request: NextRequest) {
       }
 
       const shutdownCount = result.agentShutdown.queued + result.agentShutdown.reused;
-      if (!controllerEnabled && shutdownCount === 0) {
+      // 장비 OFF 명령이 실제로 큐에 들어갔는지는 매장 연결표가 정한다(제어기가 켜져 있어도
+      // 이 매장에 연결된 장비가 없으면 들어가지 않는다).
+      const equipmentQueued = result.command !== null;
+      if (!equipmentQueued && shutdownCount === 0) {
         return NextResponse.json(
-          { ok: false, message: "매장 제어기도 온라인 Agent도 없어 종료할 장비를 확인할 수 없습니다." },
+          { ok: false, message: "이 매장에는 제어할 장비 연결도, 온라인 Agent도 없어 종료할 장비를 확인할 수 없습니다." },
           { status: 409 }
         );
       }
@@ -472,9 +475,9 @@ export async function POST(request: NextRequest) {
       const forcedNote = forcedClosed > 0 ? ` 이용 중이던 ${forcedClosed}타석을 먼저 종료 처리했습니다.` : "";
       return NextResponse.json({
         ok: true,
-        message: (controllerEnabled
+        message: (equipmentQueued
           ? `타석 PC ${shutdownCount}대의 정상 종료와 모든 장비·조명·냉난방 OFF 명령을 전달했습니다.`
-          : `온라인 Agent가 있는 타석 PC ${shutdownCount}대에 정상 종료 명령을 전달했습니다. 매장 제어기가 없어 프로젝터·타석 장비·조명·냉난방 OFF는 실행하지 않았습니다.`) + forcedNote,
+          : `온라인 Agent가 있는 타석 PC ${shutdownCount}대에 정상 종료 명령을 전달했습니다. 이 매장에는 장비 제어 연결이 없어 프로젝터·타석 장비·조명·냉난방 OFF는 실행하지 않았습니다.`) + forcedNote,
         command: result.command,
         agentShutdown: result.agentShutdown,
         controllerEnabled,
@@ -493,6 +496,12 @@ export async function POST(request: NextRequest) {
     // 평소 영업은 손님이 입장할 때 해당 타석만 켜지므로 이 동작이 필요 없다.
     if (body.action === "store_prepare") {
       const result = await enqueueStorePreparation(supabase, storeId, "admin_store_prepare");
+      if (!result.command) {
+        return NextResponse.json(
+          { ok: false, message: "이 매장에는 제어할 장비 연결 정보가 없어 장비 ON 명령을 보내지 않았습니다." },
+          { status: 409 }
+        );
+      }
 
       return NextResponse.json({
         ok: true,

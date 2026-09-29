@@ -101,13 +101,13 @@ async function prepareOne(
 
   const { data: bay, error: bayError } = await supabase
     .from("bays")
-    .select("bay_code")
+    .select("bay_code, store_id")
     .eq("id", reservation.bay_id)
     .maybeSingle();
 
   if (bayError) throw new Error(bayError.message);
 
-  const mapping = getBayAutomationByCode(bay?.bay_code ?? null);
+  const mapping = getBayAutomationByCode(bay?.bay_code ?? null, bay?.store_id ?? null);
   if (!mapping) {
     await markDone("skipped_no_mapping");
     return { reservationId: reservation.id, status: "skipped", reason: "자동화 매핑 없음" };

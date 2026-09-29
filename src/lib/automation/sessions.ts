@@ -147,7 +147,7 @@ async function runStep(
 
 export async function runBayAutomation(args: RunBayAutomationArgs) {
   const bay = await getBay(args.supabase, args.bayId);
-  const bayAutomation = getBayAutomationByCode(bay.bay_code);
+  const bayAutomation = getBayAutomationByCode(bay.bay_code, bay.store_id);
 
   if (!bayAutomation) {
     throw new Error(`자동화 매핑이 없는 타석입니다: ${bay.bay_code ?? args.bayId}`);

@@ -89,8 +89,14 @@ export const automationTestScripts: Record<Exclude<AutomationTestTarget, "ping">
 
 export const allowedAutomationTestScripts = new Set<string>(Object.values(automationTestScripts));
 
-export function getBayAutomationByCode(bayCode: string | null | undefined) {
-  if (!bayCode) return null;
+// 위 장비표는 시흥점 전용이다. 타석 코드(A-01 등)는 매장마다 겹치므로 코드만 보고
+// 찾으면 다른 매장의 A-01 이 시흥 1번 타석 장비 명령을 받는다. 송도에서 매장 종료를
+// 누를 때마다 시흥 스크립트가 송도 매장 이름으로 쌓이던 원인이다.
+// storeId 를 필수로 받아, 호출하는 쪽이 매장을 빠뜨릴 수 없게 한다.
+export const SIHEUNG_STORE_ID = "11111111-1111-4111-8111-111111111111";
+
+export function getBayAutomationByCode(bayCode: string | null | undefined, storeId: string | null | undefined) {
+  if (!bayCode || storeId !== SIHEUNG_STORE_ID) return null;
   const normalized = bayCode.trim();
 
   return siheungBayAutomation.find((bay) => bay.bayCodes.includes(normalized)) ?? null;
