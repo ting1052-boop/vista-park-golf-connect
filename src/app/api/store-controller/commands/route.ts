@@ -1,6 +1,7 @@
-import { timingSafeEqual } from "crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { readBearerToken, resolveControllerAuth } from "@/lib/store-controller-auth";
 import type { StoreControllerCommandPayload, StoreControllerCommandStatus } from "@/lib/store-controller";
 import { prepareDueReservations } from "@/lib/reservation-prepare";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
@@ -32,15 +33,24 @@ function getControllerStoreId(request: NextRequest) {
   return value && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value) ? value : DEFAULT_STORE_ID;
 }
 
-function hasValidControllerToken(request: NextRequest) {
-  const expected = process.env.STORE_CONTROLLER_TOKEN;
-  const authorization = request.headers.get("authorization");
-  const received = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-  if (!expected || !received) return false;
-
-  const expectedBuffer = Buffer.from(expected);
-  const receivedBuffer = Buffer.from(received);
-  return expectedBuffer.length === receivedBuffer.length && timingSafeEqual(expectedBuffer, receivedBuffer);
+// 전역 토큰(시흥) 또는 매장 전용 토큰(store_controller_tokens)으로 인증한다.
+// 매장 토큰이면 매장은 토큰이 정하고 x-store-id 는 무시된다.
+function authenticateController(request: NextRequest, supabase: SupabaseClient) {
+  return resolveControllerAuth({
+    received: readBearerToken(request.headers.get("authorization")),
+    globalToken: process.env.STORE_CONTROLLER_TOKEN,
+    headerStoreId: getControllerStoreId(request),
+    lookupStoreByTokenHash: async (hash) => {
+      // 마이그레이션 전(테이블 없음)이나 조회 실패는 거부한다. 전역 토큰은 이 조회를 거치지 않는다.
+      const { data, error } = await supabase
+        .from("store_controller_tokens")
+        .select("store_id")
+        .eq("token_hash", hash)
+        .eq("is_active", true)
+        .maybeSingle();
+      return error || !data ? null : ((data as { store_id: string }).store_id ?? null);
+    }
+  });
 }
 
 function unauthorized() {
@@ -53,8 +63,6 @@ function parseLimit(value: string | null) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!hasValidControllerToken(request)) return unauthorized();
-
   let supabase;
   try {
     supabase = createSupabaseAdminClient();
@@ -62,11 +70,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "서버 설정 오류" }, { status: 500 });
   }
 
+  const auth = await authenticateController(request, supabase);
+  if (!auth.ok) return unauthorized();
+
   const now = new Date();
   const nowIso = now.toISOString();
   const staleBeforeIso = new Date(now.getTime() - COMMAND_MAX_AGE_MS).toISOString();
   const controllerId = getControllerId(request);
-  const storeId = getControllerStoreId(request);
+  const storeId = auth.storeId;
   const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
 
   // 매장 제어기가 상시 조회하는 이 엔드포인트를 종료·준비 스케줄러로 사용한다.
@@ -216,7 +227,15 @@ export async function GET(request: NextRequest) {
 type ResultBody = { commandId?: unknown; ok?: unknown; steps?: unknown; error?: unknown };
 
 export async function POST(request: NextRequest) {
-  if (!hasValidControllerToken(request)) return unauthorized();
+  let supabase;
+  try {
+    supabase = createSupabaseAdminClient();
+  } catch (error) {
+    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "서버 설정 오류" }, { status: 500 });
+  }
+
+  const auth = await authenticateController(request, supabase);
+  if (!auth.ok) return unauthorized();
 
   let body: ResultBody;
   try {
@@ -229,15 +248,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, message: "명령 ID 또는 실행 결과가 올바르지 않습니다." }, { status: 400 });
   }
 
-  let supabase;
-  try {
-    supabase = createSupabaseAdminClient();
-  } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "서버 설정 오류" }, { status: 500 });
-  }
-
   const controllerId = getControllerId(request);
-  const { data: completed, error: completeError } = await supabase
+  let completion = supabase
     .from("store_controller_commands")
     .update({
       status: body.ok ? "succeeded" : "failed",
@@ -248,7 +260,10 @@ export async function POST(request: NextRequest) {
     })
     .eq("id", body.commandId)
     .eq("status", "processing")
-    .eq("controller_id", controllerId)
+    .eq("controller_id", controllerId);
+  // 매장 토큰은 자기 매장 명령만 완료할 수 있다. (전역 토큰은 기존 동작 그대로)
+  if (auth.scoped) completion = completion.eq("store_id", auth.storeId);
+  const { data: completed, error: completeError } = await completion
     .select("store_id, access_session_id, reservation_id, payload")
     .maybeSingle();
 

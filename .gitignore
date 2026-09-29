@@ -11,6 +11,8 @@ windows-agent/agent.config.json
 windows-agent/agent-session.json
 windows-agent/bays.config.local.json
 store-controller/controller.config.json
+# 매장 제어기 토큰 원문과 등록 SQL(make-store-token.ps1 이 만든다). 절대 커밋 금지.
+store-controller/local/
 
 .env
 .env.*

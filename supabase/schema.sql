@@ -389,6 +389,21 @@ create index agent_round_events_bay_occurred_idx
 alter table public.agent_round_events enable row level security;
 revoke all on public.agent_round_events from anon, authenticated;
 
+-- 매장 제어기 전용 토큰(해시만 저장). 202609290001_store_controller_tokens.sql 과 같다.
+create table public.store_controller_tokens (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  label text not null default '매장 제어기',
+  token_hash text not null unique check (token_hash ~ '^[0-9a-f]{64}$'),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index store_controller_tokens_store_idx on public.store_controller_tokens (store_id);
+
+alter table public.store_controller_tokens enable row level security;
+revoke all on public.store_controller_tokens from anon, authenticated;
+
 create or replace function public.store_agent_game_telemetry_if_newer(
   p_agent_device_id uuid,
   p_telemetry jsonb,
