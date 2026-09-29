@@ -101,3 +101,34 @@ export function getBayAutomationByCode(bayCode: string | null | undefined, store
 
   return siheungBayAutomation.find((bay) => bay.bayCodes.includes(normalized)) ?? null;
 }
+
+export const SONGDO_STORE_ID = "b2f7192b-9472-4006-a58d-ffec3afc90ce";
+
+// 켜기 전용 매장. 프로젝터·공용 조명이 없어 장비표(위)는 쓰지 않고, PC 를 Wake-on-LAN 으로
+// 깨우는 HA 스크립트만 있다. 끄기는 각 PC 의 Agent 가 정상 종료로 한다.
+// 스크립트는 매장 HA 에 있어야 한다(송도: 2026-09-29 생성, button.<키>_wake 를 누른다).
+const wakeOnlyScripts: Record<string, Record<string, string>> = {
+  [SONGDO_STORE_ID]: {
+    "A-01": "script.golf_1_on",
+    "A-02": "script.golf_2_on",
+    "A-03": "script.golf_3_on",
+    "A-04": "script.golf_4_on",
+    "A-05": "script.golf_5_on",
+    "A-06": "script.golf_6_on",
+    "A-07": "script.golf_7_on",
+    "P-01": "script.park_1_on",
+    "P-02": "script.park_2_on"
+  }
+};
+
+// 장비표가 없는 매장의 켜기 스크립트. 장비표가 있는 매장(시흥)은 null — 그쪽은 장비표의
+// enterScript(프로젝터 → PC 순서)를 그대로 쓴다.
+export function getWakeOnlyScript(bayCode: string | null | undefined, storeId: string | null | undefined) {
+  if (!bayCode || !storeId) return null;
+  return wakeOnlyScripts[storeId]?.[bayCode.trim()] ?? null;
+}
+
+// 대시보드 "PC 켜기" 가 가능한가. 장비표 켜기 또는 켜기 전용 스크립트 중 하나가 있으면 된다.
+export function getBayWakeScript(bayCode: string | null | undefined, storeId: string | null | undefined) {
+  return getBayAutomationByCode(bayCode, storeId)?.enterScript ?? getWakeOnlyScript(bayCode, storeId);
+}

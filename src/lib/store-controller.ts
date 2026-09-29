@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { commonAutomationScripts, getBayAutomationByCode } from "@/lib/automation/device-map";
+import { commonAutomationScripts, getBayAutomationByCode, getWakeOnlyScript } from "@/lib/automation/device-map";
 
 export type StoreControllerCommandStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled";
 
@@ -214,17 +214,40 @@ async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, act
     }));
 }
 
+// 장비표가 없는 매장(송도)의 켜기: 타석별 Wake-on-LAN 스크립트만. 공용 장비는 없다.
+async function getStoreWakeOnlyScripts(supabase: SupabaseClient, storeId: string) {
+  const { data, error } = await supabase
+    .from("bays")
+    .select("bay_code")
+    .eq("store_id", storeId)
+    .order("bay_code", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as Array<{ bay_code: string | null }>)
+    .map((row) => ({ code: row.bay_code, script: getWakeOnlyScript(row.bay_code, storeId) }))
+    .filter((row): row is { code: string; script: string } => Boolean(row.code && row.script))
+    .map((row) => ({ name: `${row.code} PC 켜기`, script: row.script }));
+}
+
 export async function enqueueStorePreparation(supabase: SupabaseClient, storeId: string, requestedFrom: string) {
   const bayScripts = await getStoreBayScripts(supabase, storeId, "on");
-  // 장비 연결표에 타석이 하나도 없는 매장(=매장 제어기가 없는 매장)에는 공용 조명·냉난방
-  // 명령만 단독으로 넣지 않는다. 가져갈 제어기가 없어 대기열에 쌓이기만 한다.
-  if (bayScripts.length === 0) return { command: null, bayCount: 0 };
+
+  if (bayScripts.length === 0) {
+    // 장비표가 없으면 켜기 전용 스크립트(PC 만)를 본다. 그것도 없으면 아무 명령도 넣지 않는다.
+    // 공용 조명·냉난방 명령을 단독으로 넣으면 가져갈 제어기가 없어 대기열에 쌓이기만 한다.
+    const wakeScripts = await getStoreWakeOnlyScripts(supabase, storeId);
+    if (wakeScripts.length === 0) return { command: null, bayCount: 0, sharedEquipment: false };
+    const command = await enqueueManualAutomation(supabase, { storeId, scripts: wakeScripts, action: requestedFrom });
+    return { command, bayCount: wakeScripts.length, sharedEquipment: false };
+  }
+
   const command = await enqueueManualAutomation(supabase, {
     storeId,
     scripts: [{ name: "공용 조명·냉난방 ON", script: commonAutomationScripts.on }, ...bayScripts],
     action: requestedFrom
   });
-  return { command, bayCount: bayScripts.length };
+  return { command, bayCount: bayScripts.length, sharedEquipment: true };
 }
 
 export async function enqueueStoreClosure(

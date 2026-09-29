@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-context";
 import {
   commonAutomationScripts,
-  getBayAutomationByCode
+  getBayAutomationByCode,
+  getBayWakeScript,
+  getWakeOnlyScript
 } from "@/lib/automation/device-map";
 import {
   enqueueBayAgentShutdown,
@@ -197,6 +199,8 @@ export async function GET() {
           agent?.is_active !== false && lastSeenMs > 0 && Date.now() - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS,
         lastSeenAt: agent?.last_seen_at ?? null,
         hasAutomation: Boolean(mapping),
+        // PC 켜기 가능 여부. 장비표가 없는 매장(송도)도 켜기 전용 WOL 스크립트가 있으면 된다.
+        canWake: Boolean(getBayWakeScript(bay.bay_code, storeId)),
         powerOn: power.on,
         powerFailed: power.failed,
         powerLastRunAt: power.lastRunAt,
@@ -386,6 +390,24 @@ export async function POST(request: NextRequest) {
       }
 
       const mapping = getBayAutomationByCode(bay.bay_code, storeId);
+
+      // 장비표가 없는 매장(송도)의 PC 켜기: 켜기 전용 WOL 스크립트 하나만 보낸다.
+      if (!mapping && turningOn) {
+        const wakeScript = getWakeOnlyScript(bay.bay_code, storeId);
+        if (wakeScript) {
+          const command = await enqueueManualAutomation(supabase, {
+            storeId,
+            scripts: [{ name: `${bay.bay_code} PC 켜기`, script: wakeScript }],
+            action: `${body.action}:${bay.bay_code}`
+          });
+          return NextResponse.json({
+            ok: true,
+            message: `${bay.bay_code} PC 켜기 신호를 매장 제어기에 전달했습니다. 1~2분 안에 'PC 켜짐'으로 바뀝니다.`,
+            command
+          });
+        }
+      }
+
       if (!mapping) {
         return NextResponse.json(
           { ok: false, message: `이 타석의 장비 ${turningOn ? "ON" : "OFF"} 연결 정보가 없습니다.` },
@@ -505,7 +527,9 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: `공용 조명·냉난방과 타석 ${result.bayCount}곳의 장비 ON 명령을 전달했습니다.`,
+        message: result.sharedEquipment
+          ? `공용 조명·냉난방과 타석 ${result.bayCount}곳의 장비 ON 명령을 전달했습니다.`
+          : `타석 PC ${result.bayCount}대에 켜기 신호를 전달했습니다.`,
         command: result.command
       });
     }

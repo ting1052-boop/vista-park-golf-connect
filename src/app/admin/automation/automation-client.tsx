@@ -40,6 +40,8 @@ type BayControlRow = {
   agentOnline: boolean;
   lastSeenAt: string | null;
   hasAutomation: boolean;
+  /** PC 켜기 가능(장비표 또는 켜기 전용 WOL 스크립트). 송도처럼 장비 없이 PC 만 깨우는 매장도 true */
+  canWake: boolean;
   /** 제어기 실행 기록 기준 마지막 ON/OFF 명령. null 이면 실행 이력 없음 */
   powerOn: boolean | null;
   powerFailed: boolean;
@@ -112,7 +114,7 @@ function BayControls({
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-extrabold">PC 제어</p>
 
-        {!pcOn && !bay.hasAutomation ? (
+        {!pcOn && !bay.canWake ? (
           <span className="text-xs font-bold text-[#8a9488]">원격 켜기 미설정</span>
         ) : <button
           type="button"
@@ -165,7 +167,7 @@ function BayControls({
             장비 OFF
           </button>
         </div>
-      </div> : <p className="mt-3 text-xs font-bold text-[#8a9488]">타석 장비 제어 미연결</p>}
+      </div> : bay.canWake ? null : <p className="mt-3 text-xs font-bold text-[#8a9488]">타석 장비 제어 미연결</p>}
     </div>
   );
 }
@@ -541,7 +543,7 @@ export function AutomationClient() {
                 <BayControls
                   bay={bay}
                   pcDisabled={
-                    busy !== null || (!bay.agentOnline && (!controllerReady || !bay.hasAutomation))
+                    busy !== null || (!bay.agentOnline && (!controllerReady || !bay.canWake))
                   }
                   equipmentDisabled={busy !== null || !controllerReady || !bay.hasAutomation}
                   pcPending={busy === `pc:${bay.id}`}
@@ -550,8 +552,12 @@ export function AutomationClient() {
                     void run(
                       turnOn ? "bay_on" : "pc_shutdown",
                       turnOn
-                        ? `${bay.code} 프로젝터를 켜고 잠시 후 타석 PC를 부팅합니다. 진행할까요?`
-                        : `${bay.code} PC를 Windows 정상 종료합니다. 약 10초 후 종료되며 프로젝터는 별도 장비 OFF 버튼으로 끌 수 있습니다. 진행할까요?`,
+                        ? bay.hasAutomation
+                          ? `${bay.code} 프로젝터를 켜고 잠시 후 타석 PC를 부팅합니다. 진행할까요?`
+                          : `${bay.code} PC를 원격으로 켭니다(Wake-on-LAN). 1~2분 뒤 'PC 켜짐'으로 바뀝니다. 진행할까요?`
+                        : bay.hasAutomation
+                          ? `${bay.code} PC를 Windows 정상 종료합니다. 약 10초 후 종료되며 프로젝터는 별도 장비 OFF 버튼으로 끌 수 있습니다. 진행할까요?`
+                          : `${bay.code} PC를 Windows 정상 종료합니다. 약 10초 후 종료됩니다. 진행할까요?`,
                       bay.id,
                       `pc:${bay.id}`
                     )
