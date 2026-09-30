@@ -104,6 +104,16 @@ export function getBayAutomationByCode(bayCode: string | null | undefined, store
 
 export const SONGDO_STORE_ID = "b2f7192b-9472-4006-a58d-ffec3afc90ce";
 
+export type StoreAutomationGroup = "golf" | "park";
+
+export function getStoreAutomationGroup(bayCode: string | null | undefined): StoreAutomationGroup | null {
+  const code = bayCode?.trim().toUpperCase();
+  if (!code) return null;
+  if (/^A-0[1-6]$/.test(code)) return "golf";
+  if (/^P-0[12]$/.test(code)) return "park";
+  return null;
+}
+
 // 켜기 전용 매장. 프로젝터·공용 조명이 없어 장비표(위)는 쓰지 않고, PC 를 Wake-on-LAN 으로
 // 깨우는 HA 스크립트만 있다. 끄기는 각 PC 의 Agent 가 정상 종료로 한다.
 // 스크립트는 매장 HA 에 있어야 한다(송도: 2026-09-29 생성, button.<키>_wake 를 누른다).

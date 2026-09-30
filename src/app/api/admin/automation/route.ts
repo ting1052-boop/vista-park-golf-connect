@@ -231,7 +231,7 @@ export async function GET() {
       sessions,
       logs,
       bays,
-      schedule,
+      schedules: schedule,
       scheduleAvailable
     });
   } catch (error) {
@@ -249,6 +249,7 @@ type ActionBody = {
   enabled?: unknown;
   openTime?: unknown;
   closeTime?: unknown;
+  group?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -279,6 +280,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "save_schedule") {
+      const group = body.group === "park" ? "park" : body.group === "golf" ? "golf" : null;
+      if (!group) {
+        return NextResponse.json({ ok: false, message: "운영시간을 저장할 타석 구역을 선택해주세요." }, { status: 400 });
+      }
       const enabled = body.enabled === true;
       const openTime = typeof body.openTime === "string" ? body.openTime : "";
       const closeTime = typeof body.closeTime === "string" ? body.closeTime : "";
@@ -294,10 +299,10 @@ export async function POST(request: NextRequest) {
       const { error } = await supabase.from("store_settings").upsert(
         {
           store_id: storeId,
-          automation_schedule_enabled: enabled,
-          automation_open_time: openTime,
-          automation_close_time: closeTime,
-          automation_timezone: "Asia/Seoul"
+          automation_timezone: "Asia/Seoul",
+          [`${group}_schedule_enabled`]: enabled,
+          [`${group}_open_time`]: openTime,
+          [`${group}_close_time`]: closeTime
         },
         { onConflict: "store_id" }
       );
@@ -305,7 +310,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: enabled ? "매장 운영시간 자동제어를 저장했습니다." : "운영시간 자동제어를 껐습니다."
+        message: enabled ? `${group === "golf" ? "골프 타석" : "파크골프"} 운영시간 자동제어를 저장했습니다.` : `${group === "golf" ? "골프 타석" : "파크골프"} 자동제어를 껐습니다.`
       });
     }
 
@@ -364,7 +369,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "bay_off" || body.action === "bay_on") {
-      if (!isStoreControllerEnabled()) {
+  if (!isStoreControllerEnabled()) {
         return NextResponse.json(
           { ok: false, message: "매장 제어기가 아직 활성화되지 않았습니다. 매장 노트북의 제어기 실행 상태를 확인해 주세요." },
           { status: 409 }
@@ -405,8 +410,8 @@ export async function POST(request: NextRequest) {
             message: `${bay.bay_code} PC 켜기 신호를 매장 제어기에 전달했습니다. 1~2분 안에 'PC 켜짐'으로 바뀝니다.`,
             command
           });
-        }
-      }
+    }
+  }
 
       if (!mapping) {
         return NextResponse.json(
@@ -517,10 +522,14 @@ export async function POST(request: NextRequest) {
     // 조명·냉난방과 모든 타석 장비를 한 번에 켠다. 단체 예약이나 점검 준비용.
     // 평소 영업은 손님이 입장할 때 해당 타석만 켜지므로 이 동작이 필요 없다.
     if (body.action === "store_prepare") {
-      const result = await enqueueStorePreparation(supabase, storeId, "admin_store_prepare");
+      const group = body.group === "park" ? "park" : body.group === "golf" ? "golf" : null;
+      if (!group) {
+        return NextResponse.json({ ok: false, message: "준비할 타석 구역을 선택해주세요." }, { status: 400 });
+      }
+      const result = await enqueueStorePreparation(supabase, storeId, "admin_store_prepare", group);
       if (!result.command) {
         return NextResponse.json(
-          { ok: false, message: "이 매장에는 제어할 장비 연결 정보가 없어 장비 ON 명령을 보내지 않았습니다." },
+          { ok: false, message: "선택한 타석 구역에 제어할 장비 연결 정보가 없습니다." },
           { status: 409 }
         );
       }
@@ -528,8 +537,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         message: result.sharedEquipment
-          ? `공용 조명·냉난방과 타석 ${result.bayCount}곳의 장비 ON 명령을 전달했습니다.`
-          : `타석 PC ${result.bayCount}대에 켜기 신호를 전달했습니다.`,
+          ? `공용 조명·냉난방과 선택 구역 타석 ${result.bayCount}곳의 장비 ON 명령을 전달했습니다.`
+          : `선택 구역 타석 PC ${result.bayCount}대에 켜기 신호를 전달했습니다.`,
         command: result.command
       });
     }

@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { commonAutomationScripts, getBayAutomationByCode, getWakeOnlyScript } from "@/lib/automation/device-map";
+import {
+  commonAutomationScripts,
+  getBayAutomationByCode,
+  getStoreAutomationGroup,
+  getWakeOnlyScript,
+  type StoreAutomationGroup
+} from "@/lib/automation/device-map";
 
 export type StoreControllerCommandStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled";
 
@@ -26,6 +32,19 @@ type BayForController = {
   store_id: string;
   bay_code: string | null;
 };
+
+async function getStoreBayIdsByGroup(
+  supabase: SupabaseClient,
+  storeId: string,
+  group?: StoreAutomationGroup
+) {
+  if (!group) return null;
+  const { data, error } = await supabase.from("bays").select("id, bay_code").eq("store_id", storeId);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<{ id: string; bay_code: string | null }>)
+    .filter((bay) => getStoreAutomationGroup(bay.bay_code) === group)
+    .map((bay) => bay.id);
+}
 
 export function isStoreControllerEnabled() {
   return process.env.STORE_CONTROLLER_ENABLED === "true";
@@ -196,7 +215,12 @@ export async function enqueueManualAutomation(
   });
 }
 
-async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, action: "on" | "off") {
+async function getStoreBayScripts(
+  supabase: SupabaseClient,
+  storeId: string,
+  action: "on" | "off",
+  group?: StoreAutomationGroup
+) {
   const { data, error } = await supabase
     .from("bays")
     .select("bay_code")
@@ -206,6 +230,7 @@ async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, act
   if (error) throw new Error(error.message);
 
   return ((data ?? []) as Array<{ bay_code: string | null }>)
+    .filter((row) => !group || getStoreAutomationGroup(row.bay_code) === group)
     .map((row) => getBayAutomationByCode(row.bay_code, storeId))
     .filter((mapping, index, mappings) => mapping && mappings.findIndex((candidate) => candidate?.key === mapping.key) === index)
     .map((mapping) => ({
@@ -215,7 +240,7 @@ async function getStoreBayScripts(supabase: SupabaseClient, storeId: string, act
 }
 
 // 장비표가 없는 매장(송도)의 켜기: 타석별 Wake-on-LAN 스크립트만. 공용 장비는 없다.
-async function getStoreWakeOnlyScripts(supabase: SupabaseClient, storeId: string) {
+async function getStoreWakeOnlyScripts(supabase: SupabaseClient, storeId: string, group?: StoreAutomationGroup) {
   const { data, error } = await supabase
     .from("bays")
     .select("bay_code")
@@ -225,18 +250,24 @@ async function getStoreWakeOnlyScripts(supabase: SupabaseClient, storeId: string
   if (error) throw new Error(error.message);
 
   return ((data ?? []) as Array<{ bay_code: string | null }>)
+    .filter((row) => !group || getStoreAutomationGroup(row.bay_code) === group)
     .map((row) => ({ code: row.bay_code, script: getWakeOnlyScript(row.bay_code, storeId) }))
     .filter((row): row is { code: string; script: string } => Boolean(row.code && row.script))
     .map((row) => ({ name: `${row.code} PC 켜기`, script: row.script }));
 }
 
-export async function enqueueStorePreparation(supabase: SupabaseClient, storeId: string, requestedFrom: string) {
-  const bayScripts = await getStoreBayScripts(supabase, storeId, "on");
+export async function enqueueStorePreparation(
+  supabase: SupabaseClient,
+  storeId: string,
+  requestedFrom: string,
+  group?: StoreAutomationGroup
+) {
+  const bayScripts = await getStoreBayScripts(supabase, storeId, "on", group);
 
   if (bayScripts.length === 0) {
     // 장비표가 없으면 켜기 전용 스크립트(PC 만)를 본다. 그것도 없으면 아무 명령도 넣지 않는다.
     // 공용 조명·냉난방 명령을 단독으로 넣으면 가져갈 제어기가 없어 대기열에 쌓이기만 한다.
-    const wakeScripts = await getStoreWakeOnlyScripts(supabase, storeId);
+    const wakeScripts = await getStoreWakeOnlyScripts(supabase, storeId, group);
     if (wakeScripts.length === 0) return { command: null, bayCount: 0, sharedEquipment: false };
     const command = await enqueueManualAutomation(supabase, { storeId, scripts: wakeScripts, action: requestedFrom });
     return { command, bayCount: wakeScripts.length, sharedEquipment: false };
@@ -254,18 +285,21 @@ export async function enqueueStoreClosure(
   supabase: SupabaseClient,
   storeId: string,
   requestedFrom: string,
-  options: { includeEquipment?: boolean } = {}
+  options: { includeEquipment?: boolean; group?: StoreAutomationGroup } = {}
 ) {
-  const { count, error } = await supabase
+  const groupBayIds = await getStoreBayIdsByGroup(supabase, storeId, options.group);
+  const sessionQuery = supabase
     .from("access_sessions")
     .select("id", { count: "exact", head: true })
     .eq("store_id", storeId)
     .in("status", ["active", "extended", "overdue"]);
+  if (groupBayIds) sessionQuery.in("bay_id", groupBayIds);
+  const { count, error } = await sessionQuery;
 
   if (error) throw new Error(error.message);
   if ((count ?? 0) > 0) return { blocked: true as const, activeSessionCount: count ?? 0 };
 
-  const agentShutdown = await enqueueStoreAgentShutdowns(supabase, storeId);
+  const agentShutdown = await enqueueStoreAgentShutdowns(supabase, storeId, options.group);
   if (options.includeEquipment === false) {
     return {
       blocked: false as const,
@@ -276,7 +310,7 @@ export async function enqueueStoreClosure(
     };
   }
 
-  const bayScripts = await getStoreBayScripts(supabase, storeId, "off");
+  const bayScripts = await getStoreBayScripts(supabase, storeId, "off", options.group);
   // 위 enqueueStorePreparation 과 같은 이유로, 장비 연결이 없는 매장은 PC 종료만 한다.
   if (bayScripts.length === 0) {
     return { blocked: false as const, activeSessionCount: 0, agentShutdown, command: null, bayCount: 0 };
@@ -356,7 +390,11 @@ export async function enqueueBayAgentShutdown(supabase: SupabaseClient, storeId:
   return { ...result, agentOnline: true };
 }
 
-export async function enqueueStoreAgentShutdowns(supabase: SupabaseClient, storeId: string) {
+export async function enqueueStoreAgentShutdowns(
+  supabase: SupabaseClient,
+  storeId: string,
+  group?: StoreAutomationGroup
+) {
   const { data: agents, error: agentsError } = await supabase
     .from("agent_devices")
     .select("bay_id, last_seen_at")
@@ -366,10 +404,13 @@ export async function enqueueStoreAgentShutdowns(supabase: SupabaseClient, store
 
   if (agentsError) throw new Error(agentsError.message);
 
+  const groupBayIds = await getStoreBayIdsByGroup(supabase, storeId, group);
+  const allowedBayIds = groupBayIds ? new Set(groupBayIds) : null;
   const bayIds = Array.from(
     new Set(
       ((agents ?? []) as AgentForShutdown[])
         .filter((agent) => {
+          if (allowedBayIds && (!agent.bay_id || !allowedBayIds.has(agent.bay_id))) return false;
           const lastSeenMs = agent.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0;
           return lastSeenMs > 0 && Date.now() - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS;
         })
