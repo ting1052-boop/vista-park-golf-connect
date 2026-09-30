@@ -17,7 +17,7 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
-| Codex | 완료·DB migration/배포 대기·2026-09-30 | 송도 자동제어를 골프 A-01~A-06과 파크 P-01~P-02 섹션·대상으로 분리하고 송도 기본시간을 골프 05:50~23:20, 파크 09:50~21:30으로 migration에 반영. 타입검사·변경 파일 ESLint 통과. 전체 lint는 기존 Agent 테스트의 `require()` 규칙 오류 5건, production build는 실행 환경의 spawn EPERM으로 실패. `npm run preflight`도 git spawn EPERM으로 실패 | `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `src/lib/automation/device-map.ts`, `src/lib/store-automation-schedule.ts`, `src/lib/store-controller.ts`, `supabase/migrations/202609300001_split_store_automation_groups.sql` |
+| Codex | 완료·배포됨·2026-09-30 | 송도 자동제어를 골프 A-01~A-06과 파크 P-01~P-02 섹션·대상으로 분리하고 송도 기본시간을 골프 05:50~23:20, 파크 09:50~21:30으로 migration에 반영. 운영 DB 읽기 확인 완료. 타입검사·변경 파일 ESLint·production build 통과. 커밋 `c0eda6a` push 및 Vercel 배포 확인(`/api/admin/automation` 인증 401) | `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `src/lib/automation/device-map.ts`, `src/lib/store-automation-schedule.ts`, `src/lib/store-controller.ts`, `supabase/migrations/202609300001_split_store_automation_groups.sql` |
 | Claude Code | 완료·migration 적용 대기·2026-09-27 | PC 세팅 도구가 Agent 까지 설치: 등록 API 가 요청 시 타석 Agent 토큰·설정·다운로드 정보 반환, 매장별 monitor-only 컬럼, Agent 0.9.6 이 `C:\ProgramData\VISTA\agent` 설정 읽기, GitHub 릴리스 배포, 세팅 도구 지시서 | `src/lib/pc-registry*.ts`, `src/lib/agent-release.ts`, 신규 migration, `windows-agent/electron-main.js`, `windows-agent/agent-config*.js`, `docs/pc-setup-api.md`, 세팅 도구 지시서 |
 | Codex | 완료·읽기 전용 현장 진단·2026-09-24 | 송도 HA `.91` 운영체제/Observer 응답과 Core 웹 포트 장애 구분 | 본 원장 |
 | Codex | 완료·배포 확인·2026-09-24 | 대시보드 비이용 타석 카드의 다음 예약/예약자·메모 칸 제거분만 분리 배포 | `src/app/admin/dashboard/dashboard-client.tsx`, 본 원장 |
