@@ -36,13 +36,13 @@ type BayForController = {
 async function getStoreBayIdsByGroup(
   supabase: SupabaseClient,
   storeId: string,
-  group?: StoreAutomationGroup
+  group?: StoreAutomationGroup | string[]
 ) {
   if (!group) return null;
   const { data, error } = await supabase.from("bays").select("id, bay_code").eq("store_id", storeId);
   if (error) throw new Error(error.message);
   return ((data ?? []) as Array<{ id: string; bay_code: string | null }>)
-    .filter((bay) => getStoreAutomationGroup(bay.bay_code) === group)
+    .filter((bay) => Array.isArray(group) ? group.includes(bay.id) : getStoreAutomationGroup(bay.bay_code) === group)
     .map((bay) => bay.id);
 }
 
@@ -219,18 +219,18 @@ async function getStoreBayScripts(
   supabase: SupabaseClient,
   storeId: string,
   action: "on" | "off",
-  group?: StoreAutomationGroup
+  group?: StoreAutomationGroup | string[]
 ) {
   const { data, error } = await supabase
     .from("bays")
-    .select("bay_code")
+    .select("id, bay_code")
     .eq("store_id", storeId)
     .order("bay_code", { ascending: true });
 
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as Array<{ bay_code: string | null }>)
-    .filter((row) => !group || getStoreAutomationGroup(row.bay_code) === group)
+  return ((data ?? []) as Array<{ id: string; bay_code: string | null }>)
+    .filter((row) => !group || (Array.isArray(group) ? group.includes(row.id) : getStoreAutomationGroup(row.bay_code) === group))
     .map((row) => getBayAutomationByCode(row.bay_code, storeId))
     .filter((mapping, index, mappings) => mapping && mappings.findIndex((candidate) => candidate?.key === mapping.key) === index)
     .map((mapping) => ({
@@ -240,17 +240,17 @@ async function getStoreBayScripts(
 }
 
 // 장비표가 없는 매장(송도)의 켜기: 타석별 Wake-on-LAN 스크립트만. 공용 장비는 없다.
-async function getStoreWakeOnlyScripts(supabase: SupabaseClient, storeId: string, group?: StoreAutomationGroup) {
+async function getStoreWakeOnlyScripts(supabase: SupabaseClient, storeId: string, group?: StoreAutomationGroup | string[]) {
   const { data, error } = await supabase
     .from("bays")
-    .select("bay_code")
+    .select("id, bay_code")
     .eq("store_id", storeId)
     .order("bay_code", { ascending: true });
 
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as Array<{ bay_code: string | null }>)
-    .filter((row) => !group || getStoreAutomationGroup(row.bay_code) === group)
+  return ((data ?? []) as Array<{ id: string; bay_code: string | null }>)
+    .filter((row) => !group || (Array.isArray(group) ? group.includes(row.id) : getStoreAutomationGroup(row.bay_code) === group))
     .map((row) => ({ code: row.bay_code, script: getWakeOnlyScript(row.bay_code, storeId) }))
     .filter((row): row is { code: string; script: string } => Boolean(row.code && row.script))
     .map((row) => ({ name: `${row.code} PC 켜기`, script: row.script }));
@@ -260,7 +260,7 @@ export async function enqueueStorePreparation(
   supabase: SupabaseClient,
   storeId: string,
   requestedFrom: string,
-  group?: StoreAutomationGroup
+  group?: StoreAutomationGroup | string[]
 ) {
   const bayScripts = await getStoreBayScripts(supabase, storeId, "on", group);
 
@@ -285,7 +285,7 @@ export async function enqueueStoreClosure(
   supabase: SupabaseClient,
   storeId: string,
   requestedFrom: string,
-  options: { includeEquipment?: boolean; group?: StoreAutomationGroup } = {}
+  options: { includeEquipment?: boolean; group?: StoreAutomationGroup | string[] } = {}
 ) {
   const groupBayIds = await getStoreBayIdsByGroup(supabase, storeId, options.group);
   const sessionQuery = supabase
@@ -317,7 +317,7 @@ export async function enqueueStoreClosure(
   }
   const command = await enqueueManualAutomation(supabase, {
     storeId,
-    scripts: [...bayScripts, { name: "공용 조명·냉난방 OFF", script: commonAutomationScripts.off }],
+    scripts: [...bayScripts, ...(!options.group ? [{ name: "공용 조명·냉난방 OFF", script: commonAutomationScripts.off }] : [])],
     action: requestedFrom
   });
   return { blocked: false as const, activeSessionCount: 0, agentShutdown, command, bayCount: bayScripts.length };
@@ -393,7 +393,7 @@ export async function enqueueBayAgentShutdown(supabase: SupabaseClient, storeId:
 export async function enqueueStoreAgentShutdowns(
   supabase: SupabaseClient,
   storeId: string,
-  group?: StoreAutomationGroup
+  group?: StoreAutomationGroup | string[]
 ) {
   const { data: agents, error: agentsError } = await supabase
     .from("agent_devices")

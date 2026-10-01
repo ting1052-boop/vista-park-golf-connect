@@ -14,6 +14,7 @@ import {
   isStoreControllerEnabled
 } from "@/lib/store-controller";
 import { getStoreAutomationSchedule } from "@/lib/store-automation-schedule";
+import { validateScheduleConfig } from "@/lib/automation/schedule-config";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { getLatestScriptRuns, getPowerState } from "@/lib/supabase/automation-status";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -231,7 +232,7 @@ export async function GET() {
       sessions,
       logs,
       bays,
-      schedules: schedule,
+      automation: schedule?.config ?? null,
       scheduleAvailable
     });
   } catch (error) {
@@ -250,6 +251,8 @@ type ActionBody = {
   openTime?: unknown;
   closeTime?: unknown;
   group?: unknown;
+  bayIds?: unknown;
+  config?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -280,29 +283,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "save_schedule") {
-      const group = body.group === "park" ? "park" : body.group === "golf" ? "golf" : null;
-      if (!group) {
-        return NextResponse.json({ ok: false, message: "운영시간을 저장할 타석 구역을 선택해주세요." }, { status: 400 });
-      }
-      const enabled = body.enabled === true;
-      const openTime = typeof body.openTime === "string" ? body.openTime : "";
-      const closeTime = typeof body.closeTime === "string" ? body.closeTime : "";
-      const validClock = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-      if (!validClock.test(openTime) || !validClock.test(closeTime)) {
-        return NextResponse.json({ ok: false, message: "시작 시간과 종료 시간을 확인해주세요." }, { status: 400 });
-      }
-      if (openTime >= closeTime) {
-        return NextResponse.json({ ok: false, message: "종료 시간은 시작 시간보다 늦어야 합니다." }, { status: 400 });
-      }
+      const { data: bayRows, error: bayError } = await supabase.from("bays").select("id").eq("store_id", storeId);
+      if (bayError) throw new Error(bayError.message);
+      const config = validateScheduleConfig(body.config, new Set((bayRows ?? []).map((bay) => bay.id as string)));
 
       const { error } = await supabase.from("store_settings").upsert(
         {
           store_id: storeId,
           automation_timezone: "Asia/Seoul",
-          [`${group}_schedule_enabled`]: enabled,
-          [`${group}_open_time`]: openTime,
-          [`${group}_close_time`]: closeTime
+          automation_schedule_config: config
         },
         { onConflict: "store_id" }
       );
@@ -310,7 +299,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: enabled ? `${group === "golf" ? "골프 타석" : "파크골프"} 운영시간 자동제어를 저장했습니다.` : `${group === "golf" ? "골프 타석" : "파크골프"} 자동제어를 껐습니다.`
+        message: config.mode === "store" ? "매장 전체 운영시간을 저장했습니다." : "구역별 운영시간을 저장했습니다."
       });
     }
 
@@ -522,9 +511,17 @@ export async function POST(request: NextRequest) {
     // 조명·냉난방과 모든 타석 장비를 한 번에 켠다. 단체 예약이나 점검 준비용.
     // 평소 영업은 손님이 입장할 때 해당 타석만 켜지므로 이 동작이 필요 없다.
     if (body.action === "store_prepare") {
-      const group = body.group === "park" ? "park" : body.group === "golf" ? "golf" : null;
-      if (!group) {
-        return NextResponse.json({ ok: false, message: "준비할 타석 구역을 선택해주세요." }, { status: 400 });
+      let group: "golf" | "park" | string[] | undefined;
+      if (Array.isArray(body.bayIds)) {
+        const ids = body.bayIds.filter((id): id is string => typeof id === "string");
+        const { data: bays, error: bayError } = await supabase.from("bays").select("id").eq("store_id", storeId).in("id", ids);
+        if (bayError) throw new Error(bayError.message);
+        if (ids.length === 0 || (bays ?? []).length !== ids.length) {
+          return NextResponse.json({ ok: false, message: "준비할 타석을 확인해주세요." }, { status: 400 });
+        }
+        group = ids;
+      } else if (body.group === "park" || body.group === "golf") {
+        group = body.group;
       }
       const result = await enqueueStorePreparation(supabase, storeId, "admin_store_prepare", group);
       if (!result.command) {

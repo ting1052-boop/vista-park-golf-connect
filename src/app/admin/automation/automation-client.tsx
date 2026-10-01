@@ -58,14 +58,15 @@ type AutomationStatus = {
   sessions: SessionRow[];
   logs: LogRow[];
   bays: BayControlRow[];
-  schedules: {
-    golf: ScheduleForm;
-    park: ScheduleForm;
-  } | null;
+  automation: { mode: "store" | "zones"; schedules: ScheduleForm[] } | null;
   scheduleAvailable: boolean;
 };
 
 type ScheduleForm = {
+  id: string;
+  name: string;
+  bayIds: string[] | null;
+  closeBayIds?: string[] | null;
   enabled: boolean;
   openTime: string | null;
   closeTime: string | null;
@@ -183,10 +184,10 @@ export function AutomationClient() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [schedules, setSchedules] = useState<Record<"golf" | "park", ScheduleForm>>({
-    golf: { enabled: false, openTime: DEFAULT_OPEN_TIME, closeTime: DEFAULT_CLOSE_TIME, timezone: "Asia/Seoul", lastOpenedOn: null, lastClosedOn: null },
-    park: { enabled: false, openTime: DEFAULT_OPEN_TIME, closeTime: DEFAULT_CLOSE_TIME, timezone: "Asia/Seoul", lastOpenedOn: null, lastClosedOn: null }
-  });
+  const [automationMode, setAutomationMode] = useState<"store" | "zones">("store");
+  const [schedules, setSchedules] = useState<ScheduleForm[]>([
+    { id: "store", name: "매장 전체", bayIds: null, enabled: false, openTime: DEFAULT_OPEN_TIME, closeTime: DEFAULT_CLOSE_TIME, timezone: "Asia/Seoul", lastOpenedOn: null, lastClosedOn: null }
+  ]);
   const scheduleLoaded = useRef(false);
 
   const load = useCallback(async (showLoading = true) => {
@@ -197,11 +198,14 @@ export function AutomationClient() {
       const data = (await response.json()) as AutomationStatus & ApiResponse;
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "무인제어 현황을 불러오지 못했습니다.");
       setStatus(data);
-      if (!scheduleLoaded.current && data.schedules) {
-        setSchedules({
-          golf: { ...data.schedules.golf, openTime: data.schedules.golf.openTime ?? DEFAULT_OPEN_TIME, closeTime: data.schedules.golf.closeTime ?? DEFAULT_CLOSE_TIME },
-          park: { ...data.schedules.park, openTime: data.schedules.park.openTime ?? DEFAULT_OPEN_TIME, closeTime: data.schedules.park.closeTime ?? DEFAULT_CLOSE_TIME }
-        });
+      if (!scheduleLoaded.current && data.automation) {
+        setAutomationMode(data.automation.mode);
+        setSchedules(data.automation.schedules.map((schedule) => ({
+          ...schedule,
+          openTime: schedule.openTime ?? DEFAULT_OPEN_TIME,
+          closeTime: schedule.closeTime ?? DEFAULT_CLOSE_TIME,
+          timezone: "Asia/Seoul"
+        })));
         scheduleLoaded.current = true;
       }
     } catch (caught) {
@@ -222,7 +226,8 @@ export function AutomationClient() {
     confirmation: string,
     bayId?: string,
     busyKey?: string,
-    group?: "golf" | "park"
+    group?: "golf" | "park",
+    bayIds?: string[]
   ) {
     if (!window.confirm(confirmation)) return;
 
@@ -234,7 +239,7 @@ export function AutomationClient() {
         fetch("/api/admin/automation", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, bayId, force, group })
+          body: JSON.stringify({ action, bayId, force, group, bayIds })
         });
 
       let response = await send(false);
@@ -260,15 +265,15 @@ export function AutomationClient() {
     }
   }
 
-  async function saveSchedule(group: "golf" | "park") {
-    setBusy(`save_schedule:${group}`);
+  async function saveSchedule() {
+    setBusy("save_schedule");
     setMessage(null);
     setError(null);
     try {
       const response = await fetch("/api/admin/automation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save_schedule", group, ...schedules[group] })
+        body: JSON.stringify({ action: "save_schedule", config: { mode: automationMode, schedules } })
       });
       const data = (await response.json()) as ApiResponse;
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "운영시간을 저장하지 못했습니다.");
@@ -401,91 +406,39 @@ export function AutomationClient() {
           </div>
         )}
 
-        {(["golf", "park"] as const).map((group) => {
-          const label = group === "golf" ? "골프 타석" : "파크골프 타석";
-          const range = group === "golf" ? "A-01 ~ A-06" : "P-01 ~ P-02";
-          const schedule = schedules[group];
-          return <section key={group} className="mt-5 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
+        <section className="mt-5 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
           <div className="flex flex-col gap-4 border-b border-[#e5ece1] p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-md bg-vista-fairway text-vista-leaf">
-                <CalendarClock size={22} />
-              </span>
-              <div>
-                <p className="text-sm font-bold text-vista-leaf">{label}</p>
-                <h2 className="mt-1 text-xl font-extrabold">{range} 운영시간</h2>
-              </div>
+              <span className="grid size-11 shrink-0 place-items-center rounded-md bg-vista-fairway text-vista-leaf"><CalendarClock size={22} /></span>
+              <div><p className="text-sm font-bold text-vista-leaf">매장 운영시간</p><h2 className="mt-1 text-xl font-extrabold">자동 시작과 종료</h2></div>
             </div>
-            <label className="flex cursor-pointer items-center gap-3 text-sm font-extrabold">
-              <input
-                type="checkbox"
-                checked={schedule.enabled}
-                onChange={(event) => setSchedules((current) => ({ ...current, [group]: { ...current[group], enabled: event.target.checked } }))}
-                className="size-5 accent-vista-leaf"
-                disabled={busy !== null || status?.scheduleAvailable === false}
-              />
-              자동제어 사용
-            </label>
+            <div className="flex gap-2 text-sm font-extrabold">
+              <button type="button" onClick={() => { setAutomationMode("store"); setSchedules((current) => [{ ...current[0], id: "store", name: "매장 전체", bayIds: null }]); }} disabled={busy !== null} className={automationMode === "store" ? "rounded-md border border-vista-leaf bg-vista-leaf px-3 py-2 text-white" : "rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-[#697468]"}>매장 전체</button>
+              <button type="button" onClick={() => { setAutomationMode("zones"); setSchedules((current) => current.length === 1 && current[0].bayIds === null ? [{ ...current[0], id: "zone-1", name: "구역 1", bayIds: status?.bays.map((bay) => bay.id) ?? [] }] : current); }} disabled={busy !== null} className={automationMode === "zones" ? "rounded-md border border-vista-leaf bg-vista-leaf px-3 py-2 text-white" : "rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-[#697468]"}>구역별</button>
+            </div>
           </div>
-          <div className="grid gap-4 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <label className="grid gap-2 text-sm font-extrabold text-[#4f5b50]">
-              매장 시작 시간
-              <input
-                type="time"
-                value={schedule.openTime ?? DEFAULT_OPEN_TIME}
-                onChange={(event) => setSchedules((current) => ({ ...current, [group]: { ...current[group], openTime: event.target.value } }))}
-                min="00:00"
-                max="23:59"
-                step={60}
-                className="h-11 rounded-md border border-[#cad8c6] bg-white px-3 text-base font-bold text-vista-ink"
-                disabled={busy !== null || status?.scheduleAvailable === false}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-extrabold text-[#4f5b50]">
-              매장 종료 시간
-              <input
-                type="time"
-                value={schedule.closeTime ?? DEFAULT_CLOSE_TIME}
-                onChange={(event) => setSchedules((current) => ({ ...current, [group]: { ...current[group], closeTime: event.target.value } }))}
-                min="00:00"
-                max="23:59"
-                step={60}
-                className="h-11 rounded-md border border-[#cad8c6] bg-white px-3 text-base font-bold text-vista-ink"
-                disabled={busy !== null || status?.scheduleAvailable === false}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void saveSchedule(group)}
-              disabled={busy !== null || status?.scheduleAvailable === false}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-vista-leaf px-5 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy === `save_schedule:${group}` ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
-              저장
-            </button>
+          <div className="space-y-4 p-5">
+            {schedules.map((schedule, index) => (
+              <div key={schedule.id} className="rounded-md border border-[#e5ece1] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {automationMode === "zones" ? <input value={schedule.name} onChange={(event) => setSchedules((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, name: event.target.value } : row))} className="h-10 rounded-md border border-[#cad8c6] px-3 text-sm font-extrabold" aria-label="구역 이름" /> : <p className="font-extrabold">매장 전체</p>}
+                  <label className="flex items-center gap-2 text-sm font-extrabold"><input type="checkbox" checked={schedule.enabled} onChange={(event) => setSchedules((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, enabled: event.target.checked } : row))} className="size-5 accent-vista-leaf" disabled={busy !== null} /> 자동제어 사용</label>
+                </div>
+                {automationMode === "zones" && status ? <div className="mt-3 flex flex-wrap gap-2">{status.bays.map((bay) => <label key={bay.id} className="inline-flex items-center gap-1.5 rounded-md bg-[#f5f8f3] px-2.5 py-1.5 text-xs font-bold"><input type="checkbox" checked={schedule.bayIds?.includes(bay.id) ?? false} onChange={(event) => setSchedules((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, bayIds: event.target.checked ? [...(row.bayIds ?? []), bay.id] : (row.bayIds ?? []).filter((id) => id !== bay.id) } : row))} className="accent-vista-leaf" />{bay.code}</label>)}</div> : null}
+                <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                  <label className="grid gap-2 text-sm font-extrabold text-[#4f5b50]">매장 시작 시간<input type="time" value={schedule.openTime ?? DEFAULT_OPEN_TIME} onChange={(event) => setSchedules((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, openTime: event.target.value } : row))} className="h-11 rounded-md border border-[#cad8c6] px-3 text-base font-bold" disabled={busy !== null} /></label>
+                  <label className="grid gap-2 text-sm font-extrabold text-[#4f5b50]">매장 종료 시간<input type="time" value={schedule.closeTime ?? DEFAULT_CLOSE_TIME} onChange={(event) => setSchedules((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, closeTime: event.target.value } : row))} className="h-11 rounded-md border border-[#cad8c6] px-3 text-base font-bold" disabled={busy !== null} /></label>
+                  <button type="button" onClick={() => void run("store_prepare", schedule.name + " 전체 켜기 명령을 보냅니다. 진행할까요?", undefined, "prepare:" + schedule.id, undefined, automationMode === "zones" ? (schedule.bayIds ?? []) : undefined)} disabled={busy !== null || !controllerReady} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-vista-leaf bg-vista-fairway px-4 text-sm font-extrabold text-vista-leaf disabled:opacity-50">{busy === "prepare:" + schedule.id ? <Loader2 size={17} className="animate-spin" /> : <Zap size={17} />}{schedule.name} 켜기</button>
+                </div>
+                {schedule.enabled ? <p className="mt-3 text-xs font-semibold text-[#697468]">최근 자동 시작 {schedule.lastOpenedOn ?? "기록 없음"} · 최근 자동 종료 {schedule.lastClosedOn ?? "기록 없음"}</p> : null}
+                {automationMode === "zones" && schedules.length > 1 ? <button type="button" onClick={() => setSchedules((current) => current.filter((_, rowIndex) => rowIndex !== index))} className="mt-3 text-xs font-bold text-rose-700">이 구역 삭제</button> : null}
+              </div>
+            ))}
+            {automationMode === "zones" ? <button type="button" onClick={() => setSchedules((current) => [...current, { id: "zone-" + Date.now(), name: "구역 " + (current.length + 1), bayIds: [], enabled: false, openTime: DEFAULT_OPEN_TIME, closeTime: DEFAULT_CLOSE_TIME, timezone: "Asia/Seoul", lastOpenedOn: null, lastClosedOn: null }])} className="rounded-md border border-dashed border-[#cad8c6] px-4 py-3 text-sm font-extrabold text-vista-leaf">+ 구역 추가</button> : null}
+            <button type="button" onClick={() => void saveSchedule()} disabled={busy !== null || status?.scheduleAvailable === false} className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-vista-leaf px-5 text-sm font-extrabold text-white disabled:opacity-50">{busy === "save_schedule" ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} 운영시간 저장</button>
           </div>
-          <div className="border-t border-[#e5ece1] px-5 py-4">
-            <button
-              type="button"
-              disabled={busy !== null || !controllerReady}
-              onClick={() => void run("store_prepare", `${label} 전체 켜기 명령을 보냅니다. 진행할까요?`, undefined, `prepare:${group}`, group)}
-              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-vista-leaf bg-vista-fairway px-4 py-2 text-sm font-extrabold text-vista-leaf disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy === `prepare:${group}` ? <Loader2 size={17} className="animate-spin" /> : <Zap size={17} />}
-              {label} 전체 켜기
-            </button>
-          </div>
-          {status?.scheduleAvailable === false ? (
-            <p className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm font-bold text-amber-800">
-              운영시간 DB 설정이 아직 적용되지 않았습니다.
-            </p>
-          ) : schedule.enabled ? (
-            <p className="border-t border-[#e5ece1] px-5 py-3 text-xs font-semibold text-[#697468]">
-              최근 자동 시작 {schedule.lastOpenedOn ?? "기록 없음"} · 최근 자동 종료 {schedule.lastClosedOn ?? "기록 없음"}
-            </p>
-          ) : null}
-          </section>;
-        })}
+          {status?.scheduleAvailable === false ? <p className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm font-bold text-amber-800">운영시간 DB 설정이 아직 적용되지 않았습니다.</p> : null}
+        </section>
 
         <section className="mt-5 grid gap-4 md:grid-cols-3">
           <button
