@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { getAdminContext } from "@/lib/admin-context";
 import { startWalkInSession } from "@/lib/kiosk";
 import { ADMIN_MAX_HOURS, ADMIN_MIN_HOURS, isSupportedAdminDuration } from "@/lib/reservation-policy";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -12,8 +12,9 @@ type StartSessionBody = {
 };
 
 export async function POST(request: NextRequest) {
+  let context: Awaited<ReturnType<typeof getAdminContext>>;
   try {
-    await requireAdminUser();
+    context = await getAdminContext();
   } catch {
     return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
   }
@@ -27,6 +28,9 @@ export async function POST(request: NextRequest) {
 
   if (typeof body.storeId !== "string" || body.storeId.trim().length === 0) {
     return NextResponse.json({ ok: false, message: "storeId가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (body.storeId !== context.storeId) {
+    return NextResponse.json({ ok: false, message: "현재 선택된 매장만 입장 처리할 수 있습니다." }, { status: 403 });
   }
 
   if (typeof body.bayId !== "string" || body.bayId.trim().length === 0) {

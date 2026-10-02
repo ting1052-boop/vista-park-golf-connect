@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { getAdminContext } from "@/lib/admin-context";
 import { closeSingleSession } from "@/lib/session-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -16,11 +16,12 @@ type ActiveSessionRow = {
   ends_at: string | null;
 };
 
-async function findSessionByBayId(supabase: ReturnType<typeof createSupabaseAdminClient>, bayId: string) {
+async function findSessionByBayId(supabase: ReturnType<typeof createSupabaseAdminClient>, storeId: string, bayId: string) {
   const { data, error } = await supabase
     .from("access_sessions")
     .select("id, store_id, reservation_id, bay_id, ends_at")
     .eq("bay_id", bayId)
+    .eq("store_id", storeId)
     .in("status", ["active", "extended", "overdue"])
     .order("started_at", { ascending: false })
     .limit(1)
@@ -30,11 +31,12 @@ async function findSessionByBayId(supabase: ReturnType<typeof createSupabaseAdmi
   return (data as ActiveSessionRow | null) ?? null;
 }
 
-async function findSessionById(supabase: ReturnType<typeof createSupabaseAdminClient>, accessSessionId: string) {
+async function findSessionById(supabase: ReturnType<typeof createSupabaseAdminClient>, storeId: string, accessSessionId: string) {
   const { data, error } = await supabase
     .from("access_sessions")
     .select("id, store_id, reservation_id, bay_id, ends_at")
     .eq("id", accessSessionId)
+    .eq("store_id", storeId)
     .in("status", ["active", "extended", "overdue"])
     .maybeSingle();
 
@@ -43,8 +45,9 @@ async function findSessionById(supabase: ReturnType<typeof createSupabaseAdminCl
 }
 
 export async function POST(request: NextRequest) {
+  let context: Awaited<ReturnType<typeof getAdminContext>>;
   try {
-    await requireAdminUser();
+    context = await getAdminContext();
   } catch {
     return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
   }
@@ -65,7 +68,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const session = accessSessionId ? await findSessionById(supabase, accessSessionId) : await findSessionByBayId(supabase, bayId!);
+    const session = accessSessionId
+      ? await findSessionById(supabase, context.storeId, accessSessionId)
+      : await findSessionByBayId(supabase, context.storeId, bayId!);
 
     if (!session) {
       return NextResponse.json({ ok: false, message: "현재 이용 중인 세션을 찾지 못했습니다." }, { status: 404 });

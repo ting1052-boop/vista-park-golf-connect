@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { getAdminContext } from "@/lib/admin-context";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 // 관리자가 이용 중인 타석의 종료 시각을 실제로 조정한다.
@@ -32,8 +32,9 @@ const MAX_ADJUST_MINUTES = 240;
 const MIN_SESSION_MINUTES = 5;
 
 export async function POST(request: NextRequest) {
+  let context: Awaited<ReturnType<typeof getAdminContext>>;
   try {
-    await requireAdminUser();
+    context = await getAdminContext();
   } catch {
     return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
   }
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = createSupabaseAdminClient();
 
-    let query = supabase.from("access_sessions").select(SESSION_COLUMNS).in("status", ACTIVE_STATUSES);
+    let query = supabase.from("access_sessions").select(SESSION_COLUMNS).eq("store_id", context.storeId).in("status", ACTIVE_STATUSES);
     if (typeof body.accessSessionId === "string" && body.accessSessionId.length > 0) {
       query = query.eq("id", body.accessSessionId);
     } else if (typeof body.bayId === "string" && body.bayId.length > 0) {

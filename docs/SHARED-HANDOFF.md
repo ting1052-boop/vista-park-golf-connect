@@ -17,6 +17,8 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 완료·배포 대기·2026-10-02 | 관리자 입장·연장·종료 API의 매장 범위 제한 및 타 매장 요청 차단 검사 | `src/app/api/admin/session/`, `scripts/check-session-store-scope.mjs`, 본 원장 |
+| Codex | 완료·2026-09-30 | 매장 전체 기본 스케줄 및 선택형 구역 스케줄 일반화, 송도 시간/대상 보존 | 운영시간 계획서, automation UI/API, schedule/controller, 신규 migration |
 | Codex | 완료·배포됨·2026-09-30 | 송도 자동제어를 골프 A-01~A-06과 파크 P-01~P-02 섹션·대상으로 분리하고 송도 기본시간을 골프 05:50~23:20, 파크 09:50~21:30으로 migration에 반영. 운영 DB 읽기 확인 완료. 타입검사·변경 파일 ESLint·production build 통과. 커밋 `c0eda6a` push 및 Vercel 배포 확인(`/api/admin/automation` 인증 401) | `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `src/lib/automation/device-map.ts`, `src/lib/store-automation-schedule.ts`, `src/lib/store-controller.ts`, `supabase/migrations/202609300001_split_store_automation_groups.sql` |
 | Claude Code | 완료·migration 적용 대기·2026-09-27 | PC 세팅 도구가 Agent 까지 설치: 등록 API 가 요청 시 타석 Agent 토큰·설정·다운로드 정보 반환, 매장별 monitor-only 컬럼, Agent 0.9.6 이 `C:\ProgramData\VISTA\agent` 설정 읽기, GitHub 릴리스 배포, 세팅 도구 지시서 | `src/lib/pc-registry*.ts`, `src/lib/agent-release.ts`, 신규 migration, `windows-agent/electron-main.js`, `windows-agent/agent-config*.js`, `docs/pc-setup-api.md`, 세팅 도구 지시서 |
 | Codex | 완료·읽기 전용 현장 진단·2026-09-24 | 송도 HA `.91` 운영체제/Observer 응답과 Core 웹 포트 장애 구분 | 본 원장 |
@@ -842,3 +844,21 @@ heartbeat·게임 상태·관리자 종료 명령)만 남기는 것이었다. 4~
 - 검증: 서버 테스트 20개(서버가 만든 설정을 Agent 실제 병합·정책 코드에 넣는 계약 테스트 포함), Agent 테스트(`npm run check`) 통과, typecheck·eslint·build 통과. 패키지된 0.9.6 을 오프라인 모드·격리 폴더·가짜 토큰으로 실행해 ProgramData 설정(BOM 포함)으로 선택 화면 없이 기동하고 실제 호스트명을 보고함을 확인. exe 안 비밀값 검사(토큰 파일·송도 토큰·.env.local 값) 0건.
 - 세팅 도구 지시서: `docs/codex-prompt-pc-setup-agent-install.md`(v3.5). API 규격: `docs/pc-setup-api.md` 추가 절.
 - 남은 일: `supabase/migrations/202609270001_store_agent_monitor_only.sql` 운영 적용(미적용 시 installAgent 는 `agent_profile_unavailable` 로 안전하게 실패, 기존 등록은 영향 없음). 세팅 도구 측 구현·현장 시험.
+
+## Store Automation Schedule Generalization (2026-09-30, Codex)
+
+- 계획서: `docs/store-automation-zones-plan.md`. 기본은 매장 전체 운영시간 1개이며, 필요한 매장만 구역별 타석을 명시해 여러 시간표를 쓸 수 있도록 정리했다.
+- `src/lib/store-automation-schedule.ts`는 새 JSON 설정을 우선 읽고, 설정이 없으면 기존 단일 컬럼 또는 송도 골프·파크 컬럼을 읽는다. 따라서 기존 매장과 송도 시간값을 보존한다.
+- 관리자 운영시간 화면/API는 `store`/ `zones` 모드와 타석 ID 배정을 지원한다. 저장 API는 매장 소유 타석만 허용하고 중복 타석 배정·잘못된 시간·빈 구역을 거부한다.
+- 매장 준비/종료 스케줄과 수동 준비 명령은 선택된 타석 ID 목록을 전달할 수 있다. 구역 종료에서는 공용 조명·냉난방을 끄지 않고, 전체 매장 종료에서만 공용 장비를 끈다.
+- 신규 migration: `supabase/migrations/202609300002_store_automation_config.sql`. 기존 컬럼은 삭제하지 않고 새 JSON 컬럼과 최소 제약만 추가한다.
+- 검증: `npm run typecheck` 통과. `npm run lint`는 기존 `windows-agent/agent-config.test.js`의 require import 규칙 오류 5건으로 실패했고, `npm run build`는 환경의 `spawn EPERM`으로 시작하지 못했다. `npm run preflight`도 샌드박스의 git spawn EPERM으로 실패했다.
+- 운영 DB migration 적용, 운영 배포, 시간표 변경은 사용자 승인 전까지 수행하지 않았다.
+
+## Store-scoped Session Control (2026-10-02, Codex)
+
+- 관리자 세션 종료 API의 세션 ID·타석 ID 조회와 연장 API 조회에 `context.storeId` 필터를 추가했다. 타 매장 ID는 404로 거부하며 종료·장비 명령을 만들지 않는다. 입장 API도 본사 계정을 포함해 현재 선택된 매장과 요청 매장이 다르면 403으로 거부한다.
+- 변경 파일: `src/app/api/admin/session/{start,end,extend}/route.ts`, `scripts/check-session-store-scope.mjs`. 기존 제어기 명령의 매장별 전달 구조는 유지했다.
+- 검증: 승인 실행한 preflight 및 typecheck 통과. 타 매장 세션 ID·타석 ID의 종료/연장, 다른 매장의 입장 요청(본사 포함) 6개 mock 검사 통과. 실제 PC 종료 명령은 보내지 않았다.
+- 읽기 전용 시흥 A-02 점검에서는 최신 이용종료 `release_bay` 성공과 Agent 최근 신호를 확인했다. 해당 이용종료는 PC 정상종료 명령이 아니었다.
+- 이번 보호 조치는 미커밋·미배포 상태다. 운영 DB 변경이나 장비 조작 없음. 이전 스케줄 코드는 `dd8327d`로 배포됐으나 신규 JSON 설정 migration의 운영 적용은 확인되지 않았다.
