@@ -595,15 +595,24 @@ async function collectGameTelemetry() {
       confidence: "high"
     });
     const usageActive = usage?.state === "active";
-    const normalizedObservedState = observedState.gameState === "unknown"
+    const normalizedObservedState = usageActive &&
+      (observedState.gameState === "unknown" || observedState.gameState === "menu")
       ? {
           ...observedState,
-          gameState: usageActive ? "playing" : "menu",
-          gameMode: usageActive ? "regular" : "lobby",
-          roundStatus: usageActive ? "in_progress" : "not_started",
-          reasonCode: usageActive ? "source_stale" : "recognition_pending"
+          gameState: "playing",
+          gameMode: "regular",
+          roundStatus: "in_progress",
+          reasonCode: observedState.gameState === "unknown" ? "source_stale" : null
         }
-      : observedState;
+      : observedState.gameState === "unknown"
+        ? {
+            ...observedState,
+            gameState: "menu",
+            gameMode: "lobby",
+            roundStatus: "not_started",
+            reasonCode: "recognition_pending"
+          }
+        : observedState;
     return createGameTelemetry({
       gameRunning,
       ...normalizedObservedState,
