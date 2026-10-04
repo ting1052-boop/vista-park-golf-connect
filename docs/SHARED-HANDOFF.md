@@ -77,6 +77,13 @@
 | Claude Code | 완료·배포됨 | 관리자 이용시간 조정을 실제 DB 반영으로 수정(기존 버튼은 화면만 바꿨음) | `src/app/api/admin/session/extend/route.ts`(신규), `dashboard-client.tsx`; 커밋 `5823ec0` |
 | Claude Code | 미해결·결정 필요 | 카카오 KOE205 는 코드로 해결 불가(Supabase 가 scope 를 덧붙임). 카카오 콘솔 동의항목 설정 필요 | 시도 후 되돌림: 커밋 `126b532` → `3079aa1` |
 
+## Songdo Agent 0.9.8 운영 반영 (2026-10-04)
+
+- 구현 커밋 `1aab037`을 `main`에 push했고, PC 세팅 도구 릴리스 포인터 갱신 커밋 `6ea6225`도 push했다. 운영 URL은 HTTP 200으로 응답하며 Vercel Git 연동 배포가 진행된 상태다.
+- GitHub 릴리스 `agent-v0.9.8`을 게시했다. 실행파일 자산은 `VISTA-Bay-Agent.exe`, SHA-256은 문서에 비밀값 없이 기록하지 않으며 릴리스 자산과 `src/lib/agent-release.ts`의 공개 해시가 일치한다.
+- `supabase/migrations/202610040001_agent_usage_events.sql` 및 호환 migration `202610040002_agent_usage_clock_hour_compat.sql`은 저장소에 포함했지만, Supabase SQL Editor 로그인 세션이 없어 운영 DB에는 아직 실행하지 않았다.
+- 운영 DB migration 실행 후 `/api/agent/heartbeat`, 송도 P-01/A-01 감지, 관리자 대시보드 이용 상태를 확인해야 한다. 현장 PC 교체는 DB 확인 이후 순차 진행한다.
+
 ## 저장소와 배포 상태
 
 - 기본 브랜치: `main`
