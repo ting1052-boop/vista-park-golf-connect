@@ -17,7 +17,7 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
-| Codex | 운영 반영 중·2026-10-04 | 최종 검토서 기준 송도 Agent 구현의 운영 반영: migration, 웹 배포, 0.9.8 릴리스 연결. 현장 PC 교체는 별도 승인·검증 후 진행 | `windows-agent/`, usage telemetry/API/DB/dashboard, Agent 설정·릴리스 문서, 본 원장 |
+| Codex | 완료·현장 설치 대기·2026-10-04 | 최종 검토서 기준 송도 Agent 구현·운영 반영 완료. 현장 PC 교체와 P-01/A-01 실사용 검증만 남음 | `windows-agent/`, usage telemetry/API/DB/dashboard, Agent 설정·릴리스 문서, 본 원장 |
 | Codex | 검토 완료·출시 조건 미충족·2026-10-04 | 송도 Agent 최종 설계 확정. 시작 이벤트 미래시각 거부 재현, unknown→menu/playing 오판·정시 정책 불일치·매장 적용 범위·미추적 PS1 발견. 이전 로컬 완료는 현장 감지/최종 출시 완료를 의미하지 않음 | `docs/songdo-agent-release-review-20261004.md`, 기존 개발서의 최신 기준 안내, 본 원장 |
 | Codex | 완료·운영 반영 대기·2026-10-04 | 송도 개발서 구현: 공통 60분 이용창·재시작 복구·이용 이벤트/outbox, 서버 저장·집계, 송도 대시보드 사용 상태, 설치 설정과 무인제어 회귀 검증 완료 | `windows-agent/`, Agent heartbeat/telemetry·dashboard 계층, 신규 migration, `docs/songdo-agent-development-plan.md`, 본 원장 |
 | Codex | 조사 완료·HA 현장 확인 대기·2026-10-03 | 송도 VISTA 05:50은 A-01~A-06만 명령, 과거 HA 9대 전체 기상 자동화 중복 의심. HA 접속 실패로 활성 여부 미확정 | 운영 DB 조회, HA 연결 확인, 본 원장 |
@@ -81,8 +81,8 @@
 
 - 구현 커밋 `1aab037`을 `main`에 push했고, PC 세팅 도구 릴리스 포인터 갱신 커밋 `6ea6225`도 push했다. 운영 URL은 HTTP 200으로 응답하며 Vercel Git 연동 배포가 진행된 상태다.
 - GitHub 릴리스 `agent-v0.9.8`을 게시했다. 실행파일 자산은 `VISTA-Bay-Agent.exe`, SHA-256은 문서에 비밀값 없이 기록하지 않으며 릴리스 자산과 `src/lib/agent-release.ts`의 공개 해시가 일치한다.
-- `supabase/migrations/202610040001_agent_usage_events.sql` 및 호환 migration `202610040002_agent_usage_clock_hour_compat.sql`은 저장소에 포함했지만, Supabase SQL Editor 로그인 세션이 없어 운영 DB에는 아직 실행하지 않았다.
-- 운영 DB migration 실행 후 `/api/agent/heartbeat`, 송도 P-01/A-01 감지, 관리자 대시보드 이용 상태를 확인해야 한다. 현장 PC 교체는 DB 확인 이후 순차 진행한다.
+- `supabase/migrations/202610040001_agent_usage_events.sql` 및 호환 migration `202610040002_agent_usage_clock_hour_compat.sql`을 사용자가 Supabase SQL Editor에서 실행했다.
+- 운영 DB migration 적용 후 `/api/agent/heartbeat`, 송도 P-01/A-01 감지, 관리자 대시보드 이용 상태를 확인해야 한다. 현장 PC 교체는 순차 진행한다.
 
 ## 저장소와 배포 상태
 
