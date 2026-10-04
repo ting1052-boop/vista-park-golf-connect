@@ -32,6 +32,7 @@ export type LiveBay = {
   gameTelemetryStale?: boolean;
   agentVersion?: string;
   gameActivity?: GameActivitySummary;
+  observedUsage?: boolean;
 };
 
 export type GameRoundEventSummary = {
@@ -46,6 +47,7 @@ export type GameRoundEventSummary = {
 export type GameActivitySummary = {
   supported: boolean;
   todayReturnedToLobby?: number;
+  todayUsageStarts?: number;
   recentEvents: GameRoundEventSummary[];
 };
 

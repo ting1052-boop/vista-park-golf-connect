@@ -1,6 +1,6 @@
 # VISTA Park Golf Connect 공용 작업 원장
 
-최종 갱신: 2026-09-23
+최종 갱신: 2026-10-04
 공용 기준 파일: 이 문서 하나를 Codex와 Claude Code가 함께 사용한다.
 
 ## 작업 규칙
@@ -17,6 +17,9 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
+| Codex | 진행 중·2026-10-04 | 송도 Agent 이용 감지 기능의 운영 반영: 신규 usage event migration 적용 준비, 서버 배포 준비, 파크 PC 현장 Agent 교체 지원 | `supabase/migrations/202610040001_agent_usage_events.sql`, 송도 Agent portable 산출물, 배포 검증, 본 원장 |
+| Codex | 완료·운영 반영 대기·2026-10-04 | 송도 개발서 구현: 공통 60분 이용창·재시작 복구·이용 이벤트/outbox, 서버 저장·집계, 송도 대시보드 사용 상태, 설치 설정과 무인제어 회귀 검증 완료 | `windows-agent/`, Agent heartbeat/telemetry·dashboard 계층, 신규 migration, `docs/songdo-agent-development-plan.md`, 본 원장 |
+| Codex | 조사 완료·HA 현장 확인 대기·2026-10-03 | 송도 VISTA 05:50은 A-01~A-06만 명령, 과거 HA 9대 전체 기상 자동화 중복 의심. HA 접속 실패로 활성 여부 미확정 | 운영 DB 조회, HA 연결 확인, 본 원장 |
 | Codex | 완료·배포 대기·2026-10-02 | 관리자 입장·연장·종료 API의 매장 범위 제한 및 타 매장 요청 차단 검사 | `src/app/api/admin/session/`, `scripts/check-session-store-scope.mjs`, 본 원장 |
 | Codex | 완료·2026-09-30 | 매장 전체 기본 스케줄 및 선택형 구역 스케줄 일반화, 송도 시간/대상 보존 | 운영시간 계획서, automation UI/API, schedule/controller, 신규 migration |
 | Codex | 완료·배포됨·2026-09-30 | 송도 자동제어를 골프 A-01~A-06과 파크 P-01~P-02 섹션·대상으로 분리하고 송도 기본시간을 골프 05:50~23:20, 파크 09:50~21:30으로 migration에 반영. 운영 DB 읽기 확인 완료. 타입검사·변경 파일 ESLint·production build 통과. 커밋 `c0eda6a` push 및 Vercel 배포 확인(`/api/admin/automation` 인증 401) | `src/app/admin/automation/automation-client.tsx`, `src/app/api/admin/automation/route.ts`, `src/lib/automation/device-map.ts`, `src/lib/store-automation-schedule.ts`, `src/lib/store-controller.ts`, `supabase/migrations/202609300001_split_store_automation_groups.sql` |
@@ -141,13 +144,17 @@
 8. 현재 관리자 인증은 Supabase 로그인 여부만 확인한다. 실 DB에 `public.users`/`store_users`가 없어 역할 검증을 바로 강제하면 기존 관리자도 잠길 수 있다. 관리자 역할 테이블 또는 `ADMIN_USER_IDS` 환경변수 도입 후 API·middleware 권한을 강화해야 한다.
 9. 2026-07-25 프로덕션 시흥점 A-02에 남아 있던 2026-07-21 키오스크 세션을 승인 후 `completed`로 정리했다. 재검증 결과 활성 세션 0건, A-01/A-02/A-03 모두 `available`이다.
 10. **무인제어의 매장 시작·종료 시간은 송도에서 실행되지 않는다.** `processStoreAutomationSchedule`의 호출 지점은 `src/app/api/store-controller/commands/route.ts:100` 하나뿐이고, 송도에는 매장 제어기가 없다. 저장은 되지만 그 시각에 아무 일도 일어나지 않는다. 같은 이유로 `/api/cron/close-expired-sessions`도 송도에서 돌지 않는다(`vercel.json`은 여전히 `{}`). 2026-09-23 확인.
-11. **송도 1단계 계획 기준(2026-09-23 갱신): 고객 이용 세션을 요구하지 않는 관찰 전용 운영.** 사용자의 무메시지·상태 보고·관리자 PC 종료 요구를 기준으로 `monitorOnly`를 보완한다. 과거 아파트 전체화면 대기 시나리오는 이번 범위에서 채택하지 않는다. 시설의 예약제/선착순 정책 자체는 별도다. 상세는 `docs/claude-songdo-unified-agent-implementation.md`를 따른다.
+11. **송도 1단계 계획 기준(2026-10-04 갱신): 고객 이용 세션·예약·결제를 요구하지 않는 관찰형 운영이지만 관리자용 타석 무인제어는 유지한다.** Agent는 이용 상태를 보고하고 PC 정상 종료를 수행하며, HA/매장 제어기는 PC WOL, 프로젝터·장비 명령, 구역별 스케줄을 담당한다. 과거 아파트 전체화면 대기 시나리오는 이번 범위에서 채택하지 않는다. 시설의 예약제/선착순 정책 자체는 별도다. 상세는 `docs/songdo-agent-development-plan.md`를 따른다.
 12. 송도 타석 PC 한 대의 Windows 이름이 `RANGE2`인데 실제로는 파크골프 타석이다. Agent가 heartbeat로 `pc_name`을 채우므로 대시보드에 그대로 표시된다. Agent 설치 전에 이름을 바꾸는 편이 낫다.
 
 ## 작업 이력
 
 | 날짜 | 작업자 | 변경·검증 | 상태 |
 | --- | --- | --- | --- |
+| 2026-10-04 | Codex | 송도 아파트용 Agent·대시보드 구현. 골프 A-01~A-07은 UD7/ParOnGolfV5 전경 입력으로 첫 입력부터 고정 60분 이용창을 만들고, 파크 P-01/P-02는 ScreenGolf 실행·로그 상태 전환으로 고정 60분 이용창을 만든다. 이용창은 로컬에 보존·재시작 복구하며 `usage_started`/`usage_ended` outbox를 heartbeat로 서버에 멱등 저장한다. 대시보드는 예약 세션과 별개로 이용 중/대기 중/상태 확인 불가와 오늘 이용 시작 횟수를 표시하고 관찰용 이용창에는 세션 종료·시간 조정 버튼을 노출하지 않는다. 기존 Agent 정상 종료, HA/WOL, 프로젝터·장비 제어 경계와 송도 구역별 무인제어는 유지한다. `agent_usage_events` migration·schema 추가, 송도 설정·README·개발서 갱신. Agent check, 웹 typecheck, 변경 파일 ESLint, `git diff --check`, 웹 production build, portable Agent build 통과. | 로컬 코드·빌드 완료. 운영 migration 적용, Vercel 배포, 현장 Agent 교체·설치는 사용자 승인 및 별도 진행 필요 |
+| 2026-10-04 | Codex | `docs/songdo-agent-development-plan.md` 작성. 사용자 재확인: 송도는 예약 없이 사용 현황 보고와 타석 무인제어를 함께 제공해야 함. 골프/파크 공통 60분 이용창, 감지 차이, 역할 기반 limitedMenu 오적용·ProgramData 감지 비활성 설정·재시작 상태 소실·시작 횟수 미집계 보완, 타석/구역 제어와 HA/Agent 역할, 설치·롤백·수용 기준 정리. preflight 및 소스 대조, 문서 검사. | 문서만 작성·구현/빌드/DB/기기/커밋/배포 없음 |
+| 2026-10-03 | Codex | 송도 골프 Agent 0.9.7에 UD7/ParOnGolfV5 전경 입력 관찰을 추가. 게임 프로세스 실행 여부와 최근 입력을 분리해 새 입력 시 60분 고정 관찰창을 만들고, 서버 telemetry의 `usage`로 `사용 중 추정`/`사용 신호 대기`/`확인 불가`를 대시보드에 표시. 파크골프·기존 세션·화면 복귀·전원 제어는 변경하지 않음. Agent check·웹 typecheck·변경 파일 ESLint 통과, 포터블 빌드 생성. 산출물은 `windows-agent/dist/VISTA-Bay-Agent.exe`, SHA-256은 `944817B97C3388D98983949E81060F1AF90224903BBB3E26B3A5406618E1585E`. 전체 lint는 기존 `agent-config.test.js`의 require import 오류 5건으로 실패. | 로컬 완료·운영 배포/현장 설치 대기 |
+| 2026-10-03 | Codex | 송도 아파트 관리자 화면에서 골프·파크 타석의 상태를 `이용 중`/`대기 중` 중심으로 표시하도록 정리. 골프는 기존 전경 입력 기반 60분 이용 신호를 사용하고, 파크는 현장 확인된 `ScreenGolf.exe`와 로그 감지로 게임 시작을 이용 신호로 표시한다. 송도 파크 기본 설정·설치 테스트를 일치시키고, Agent 0.9.7을 재빌드해 `H:\agent\songdo\VISTA-Bay-Agent.exe`에 갱신했다. `npm run check`, 웹 `npm run typecheck`, 대시보드 ESLint 통과. 실행 파일 SHA-256은 `056B977980F21764D80D263ECB315495CAAE893B80AAEFA3394710B9E06231F8`. | 로컬·H 패키지 완료·Vercel 배포 및 현장 설치 대기 |
 | Codex | 진행 중 | HH 골프 PC 세팅 도구 즉시 자동등록: 토큰 입력 제거, 제한된 자동등록 인증과 현장 보호 유지 | `src/app/api/pc-setup/catalog/route.ts`, `src/app/api/pc-setup/register/route.ts`, `src/lib/pc-registry.ts`, PC 세팅 도구, 본 원장 |
 | 2026-07-25 | Codex | 공용 원장, `AGENTS.md`/`CLAUDE.md` 시작 규칙, `npm run preflight` 추가 및 실행 검증 | 완료 |
 | 2026-07-25 | Codex | typecheck, lint, Windows Agent check, production build 기준선 통과 | 완료 |
@@ -862,3 +869,12 @@ heartbeat·게임 상태·관리자 종료 명령)만 남기는 것이었다. 4~
 - 검증: 승인 실행한 preflight 및 typecheck 통과. 타 매장 세션 ID·타석 ID의 종료/연장, 다른 매장의 입장 요청(본사 포함) 6개 mock 검사 통과. 실제 PC 종료 명령은 보내지 않았다.
 - 읽기 전용 시흥 A-02 점검에서는 최신 이용종료 `release_bay` 성공과 Agent 최근 신호를 확인했다. 해당 이용종료는 PC 정상종료 명령이 아니었다.
 - 이번 보호 조치는 미커밋·미배포 상태다. 운영 DB 변경이나 장비 조작 없음. 이전 스케줄 코드는 `dd8327d`로 배포됐으나 신규 JSON 설정 migration의 운영 적용은 확인되지 않았다.
+
+## Songdo Wake Schedule Investigation (2026-10-03, Codex)
+
+- 운영 읽기 확인: 10월 3일 05:50:06 KST `scheduled_open:golf`는 `script.golf_1_on`~`script.golf_6_on` 6개만 요청했고 모두 HTTP 200으로 완료했다. 당일 조회 시점까지 파크 기상 명령은 없었다.
+- 약 08:45 KST에 A-01~A-07, P-01~P-02 Agent 최근 신호가 모두 확인됐다. 이는 프로그램이 동작 중인 증거이며 실제 부팅 시각이나 기상 원인의 증거는 아니다.
+- 기존 `docs/songdo-ha-migration-runbook.md`에는 HA `매장 오픈 - 타석 PC 켜기 (05:50)` 자동화가 9대 WOL을 실행하며 백업 복원으로 살아난다고 기록돼 있다. 현재도 활성 상태인지는 확인하지 못했다. HA 자동화, HA 스크립트의 실제 대상, BIOS RTC, 전날 미종료 여부가 후속 확인 대상이다.
+- 현재 운영 시간은 골프 05:50~23:20, 파크 09:50~21:20이다. 사용자 이전 요청의 파크 21:30과 다르지만 이번 조사에서는 변경하지 않았다. 신규 JSON 설정 컬럼은 조회 결과에 없으며 송도 기존 구역 컬럼을 사용하는 상태다.
+- HA `192.168.0.114`의 8123/4357 접속은 일반·승인 실행 모두 timeout. 브라우저에도 HA 탭이 없어 HA 현재 설정/실행 이력을 확인하지 못했다. 외부망/접근 경로 문제와 HA 장애는 구분할 수 없다.
+- preflight 통과. 운영 DB 쓰기, WOL/종료 명령, HA 설정 변경, 코드 수정, 커밋·배포 없음. 이전 보호 변경 `d666282`는 10월 2일 Vercel success로 배포 확인됐다(앞선 미배포 기록보다 이 기록이 최신).

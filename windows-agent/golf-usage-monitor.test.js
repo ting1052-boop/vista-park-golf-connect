@@ -1,0 +1,40 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+const assert = require("node:assert/strict");
+const { createGolfUsageMonitor, resolveGolfUsageConfig } = require("./golf-usage-monitor");
+async function main() {
+  let time = 1_000_000;
+  let snapshot = { inputTick: 100, foregroundProcess: "UD7" };
+  const monitor = createGolfUsageMonitor({ processNames: ["UD7.exe"], readSnapshot: async () => snapshot, now: () => time });
+  assert.equal((await monitor.observe(true)).state, "awaiting_input", "startup must not reuse old input");
+  snapshot.inputTick++;
+  const active = await monitor.observe(true);
+  assert.equal(active.state, "active");
+  time += 30 * 60_000;
+  assert.equal((await monitor.observe(true)).state, "active", "temporary absence does not end use");
+  snapshot.inputTick++;
+  assert.equal((await monitor.observe(true)).endsAt, active.endsAt, "input must not extend the fixed window");
+  time += 30 * 60_000;
+  assert.equal((await monitor.observe(true)).state, "awaiting_input");
+  snapshot = { inputTick: 103, foregroundProcess: "chrome" };
+  assert.equal((await monitor.observe(true)).state, "awaiting_input");
+  snapshot = { inputTick: 104, foregroundProcess: "UD7" };
+  assert.equal((await monitor.observe(true)).state, "active");
+  snapshot = null;
+  assert.equal((await monitor.observe(true)).state, "unknown");
+  snapshot = { inputTick: 105, foregroundProcess: "UD7" };
+  await monitor.observe(false);
+  assert.equal((await monitor.observe(true)).state, "awaiting_input");
+  snapshot.inputTick = 0;
+  assert.equal((await monitor.observe(true)).state, "active", "tick rollover is an input change");
+  snapshot.inputTick = 1;
+  assert.equal((await monitor.observe(true)).state, "active");
+  assert.equal(resolveGolfUsageConfig({ bayCode: "SD-R-01" }).enabled, true);
+  assert.equal(resolveGolfUsageConfig({ bayCode: "VISTA-XII:A-07" }).enabled, true);
+  assert.equal(resolveGolfUsageConfig({ bayCode: "VISTA-XII:SD-R-01" }).enabled, true);
+  assert.equal(resolveGolfUsageConfig({ bayCode: "SD-P-01", gameMonitoringEnabled: true }).enabled, true);
+  assert.equal(resolveGolfUsageConfig({ bayCode: "SD-P-01", gameMonitoringEnabled: true }).profile, "park_log");
+  assert.equal(resolveGolfUsageConfig({ bayCode: "A-02" }).enabled, false);
+  assert.equal(resolveGolfUsageConfig({ bayCode: "SD-R-01", golfUsageMonitoringEnabled: false }).enabled, false);
+  console.log("Golf usage monitor tests passed");
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

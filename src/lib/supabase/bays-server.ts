@@ -29,6 +29,18 @@ type RoundEventRow = {
   last_known_hole: number | null;
 };
 
+type UsageEventRow = {
+  event_id: string;
+  bay_id: string;
+  usage_id: string;
+  event_type: "usage_started" | "usage_ended";
+  occurred_at: string;
+  started_at: string;
+  ends_at: string;
+  end_reason: string | null;
+  source: "foreground_input" | "park_log";
+};
+
 type ActiveSessionRow = {
   id: string;
   bay_id: string | null;
@@ -135,7 +147,7 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   const now = new Date();
   const kstNow = new Date(now.getTime() + 9 * 60 * 60_000);
   const kstStartAsUtc = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate()) - 9 * 60 * 60_000;
-  const [bays, sessionResult, initialAgentResult, activityResult] = await Promise.all([
+  const [bays, sessionResult, initialAgentResult, activityResult, usageResult] = await Promise.all([
     getBays(storeId),
     admin
       .from("access_sessions")
@@ -156,7 +168,15 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       .eq("store_id", storeId)
       .gte("occurred_at", new Date(kstStartAsUtc).toISOString())
       .order("occurred_at", { ascending: false })
-      .limit(100)
+      .limit(100),
+    admin
+      .from("agent_usage_events")
+      .select("event_id, bay_id, usage_id, event_type, occurred_at, started_at, ends_at, end_reason, source")
+      .eq("store_id", storeId)
+      .eq("event_type", "usage_started")
+      .gte("occurred_at", new Date(kstStartAsUtc).toISOString())
+      .order("occurred_at", { ascending: false })
+      .limit(500)
   ]);
 
   if (sessionResult.error) {
@@ -178,12 +198,22 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   }
 
   const activitySupported = !activityResult.error;
+  const usageSupported = !usageResult.error;
   const activityByBayId = new Map<string, RoundEventRow[]>();
   if (activitySupported) {
     for (const event of (activityResult.data ?? []) as RoundEventRow[]) {
       const current = activityByBayId.get(event.bay_id) ?? [];
       current.push(event);
       activityByBayId.set(event.bay_id, current);
+    }
+  }
+
+  const usageStartsByBayId = new Map<string, UsageEventRow[]>();
+  if (usageSupported) {
+    for (const event of (usageResult.data ?? []) as UsageEventRow[]) {
+      const current = usageStartsByBayId.get(event.bay_id) ?? [];
+      current.push(event);
+      usageStartsByBayId.set(event.bay_id, current);
     }
   }
 
@@ -244,8 +274,32 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     const base = session ? applySessionToBay(bay, session, now) : clearStaleInUseBay(bay);
     const pc = pcByBayId.get(bay.id);
     const activity = activityByBayId.get(bay.id) ?? [];
+    const usageStarts = usageStartsByBayId.get(bay.id) ?? [];
+    const usage = pc?.gameTelemetry?.usage;
+    const usageActive = Boolean(
+      usage?.state === "active" &&
+      usage.endsAt &&
+      Date.parse(usage.endsAt) > now.getTime() &&
+      pc?.gameTelemetry &&
+      now.getTime() - Date.parse(pc.gameTelemetry.observedAt) <= GAME_TELEMETRY_STALE_MS
+    );
+    const activeUsage = usageActive ? usage : null;
+    const observedBase = activeUsage && !session
+      ? {
+          ...base,
+          status: "in_use" as const,
+          mode: "이용 중",
+          totalMinutes: 60,
+          remainingMinutes: Math.max(0, Math.ceil((Date.parse(activeUsage.endsAt!) - now.getTime()) / 60000)),
+          startedAt: formatKstTime(activeUsage.startedAt),
+          endsAt: formatKstTime(activeUsage.endsAt),
+          startedAtIso: activeUsage.startedAt ?? undefined,
+          endsAtIso: activeUsage.endsAt ?? undefined,
+          note: "Agent 사용 신호 기준 · 예약 세션과 별개"
+        }
+      : base;
     return {
-      ...base,
+      ...observedBase,
       pcOnline: pc?.online ?? false,
       pcLastSeenIso: pc?.lastSeenIso,
       gameTelemetry: pc?.gameTelemetry,
@@ -255,8 +309,9 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
         : undefined,
       agentVersion: pc?.agentVersion,
       gameActivity: {
-        supported: activitySupported,
+        supported: activitySupported || usageSupported,
         todayReturnedToLobby: activitySupported ? activity.length : undefined,
+        todayUsageStarts: usageSupported ? usageStarts.length : undefined,
         recentEvents: activity.slice(0, 10).map((event) => ({
           eventId: event.event_id,
           occurredAt: event.occurred_at,
@@ -265,7 +320,8 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
           receivedAt: event.received_at,
           delayed: Date.parse(event.received_at) - Date.parse(event.occurred_at) > 5 * 60_000
         }))
-      }
+      },
+      observedUsage: usageActive
     };
   });
 }

@@ -44,8 +44,16 @@ test("every Songdo bay in the shipped config is monitor-only", () => {
     assert.equal(policy.monitorOnly, true, `${bay.bayCode} 가 monitorOnly 가 아니다`);
     assert.equal(policy.mayEndServerSession, false, `${bay.bayCode} 가 서버 세션을 종료할 수 있다`);
     assert.equal(policy.autoShutdownAfterEndMinutes, 0, `${bay.bayCode} 가 스스로 PC 를 끈다`);
-    assert.equal(bay.gameMonitoringEnabled, false, `${bay.bayCode} 가 확인되지 않은 시흥 게임을 감지한다`);
-    assert.equal(bay.gameLogDiagnosticsEnabled, false, `${bay.bayCode} 가 시흥 로그 경로를 조사한다`);
+    assert.equal(
+      bay.gameMonitoringEnabled,
+      bay.bayCode.startsWith("SD-P-"),
+      `${bay.bayCode}의 게임 감지 기본값이 송도 유형과 맞지 않다`
+    );
+    assert.equal(
+      bay.gameLogDiagnosticsEnabled,
+      bay.bayCode.startsWith("SD-P-"),
+      `${bay.bayCode}의 로그 감지 기본값이 송도 유형과 맞지 않다`
+    );
   }
 });
 

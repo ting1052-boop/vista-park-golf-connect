@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAgentByToken, storeAgentGameTelemetry, touchAgent } from "@/lib/agent-server";
 import { normalizeAgentRoundEvents, storeAgentRoundEvents } from "@/lib/agent-round-events";
+import { normalizeAgentUsageEvents, storeAgentUsageEvents } from "@/lib/agent-usage-events";
 import { normalizeGameTelemetry } from "@/lib/game-telemetry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -19,6 +20,7 @@ type HeartbeatBody = {
   lastSeenAt?: unknown;
   gameTelemetry?: unknown;
   roundEvents?: unknown;
+  usageEvents?: unknown;
 };
 
 const MAX_HEARTBEAT_BYTES = 32 * 1024;
@@ -100,6 +102,32 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const usageEventAckIds: string[] = [];
+  let usageEventRejected: Array<{ eventId: string | null; code: string }> = [];
+  let usageEventRetryable = false;
+  if (body.usageEvents !== undefined) {
+    const normalizedEvents = normalizeAgentUsageEvents(body.usageEvents);
+    if (!normalizedEvents) {
+      usageEventRejected = [{ eventId: null, code: "invalid_batch" }];
+    } else {
+      const validEvents = normalizedEvents.filter((event): event is NonNullable<typeof event> => event !== null);
+      usageEventRejected = normalizedEvents
+        .map((event, index) => event ? null : { eventId: null, code: `invalid_event_${index}` })
+        .filter((event): event is { eventId: null; code: string } => event !== null);
+      if (validEvents.length > 0) {
+        try {
+          const stored = await storeAgentUsageEvents(supabase, agent, validEvents);
+          usageEventAckIds.push(...stored.acknowledgedIds);
+          usageEventRejected.push(...stored.rejected);
+          usageEventRetryable = stored.retryable;
+        } catch (error) {
+          console.warn("Agent usage events were not stored", { agentId: agent.id, error: error instanceof Error ? error.message : "unknown" });
+          usageEventRetryable = true;
+        }
+      }
+    }
+  }
+
   if (typeof body.accessSessionId === "string" && typeof body.remainingSeconds === "number") {
     const { data: matchingSession } = await supabase
       .from("access_sessions")
@@ -128,6 +156,9 @@ export async function POST(request: NextRequest) {
     acceptedGameTelemetrySchemaVersions: [1, 2],
     roundEventAckIds,
     roundEventRejected,
-    roundEventRetryable
+    roundEventRetryable,
+    usageEventAckIds,
+    usageEventRejected,
+    usageEventRetryable
   });
 }

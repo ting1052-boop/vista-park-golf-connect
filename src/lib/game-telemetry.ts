@@ -27,6 +27,17 @@ export type GameStateSource = (typeof GAME_STATE_SOURCES)[number];
 export type GameConfidence = (typeof GAME_CONFIDENCE_LEVELS)[number];
 export type GameReasonCode = (typeof GAME_REASON_CODES)[number];
 
+export type GolfUsageObservation = {
+  state: "active" | "awaiting_input" | "unknown";
+  usageId?: string | null;
+  source: "foreground_input" | "park_log";
+  confidence?: GameConfidence;
+  observedAt?: string;
+  startedAt: string | null;
+  endsAt: string | null;
+  lastInputAt: string | null;
+};
+
 export type GameTelemetry = {
   schemaVersion: 1 | 2;
   sampleSequence: number;
@@ -51,6 +62,7 @@ export type GameTelemetry = {
   lastKnownHole?: number | null;
   lastKnownHoleAt?: string | null;
   layoutVersion?: string | null;
+  usage?: GolfUsageObservation;
 };
 
 const MAX_MONITOR_ID_LENGTH = 80;
@@ -143,6 +155,41 @@ export function normalizeGameTelemetry(value: unknown, now = new Date()): GameTe
     holeSource === "ocr" && holeObservedAt !== null;
   if (currentHole !== null && !hasConfirmedHole) return null;
 
+  let usage: GolfUsageObservation | undefined;
+  if (raw.usage !== undefined) {
+    if (!raw.usage || typeof raw.usage !== "object" || Array.isArray(raw.usage)) return null;
+    const input = raw.usage as Record<string, unknown>;
+    const startedAt = nullableIso(input.startedAt, now);
+    // endsAt is a future deadline, not an observation timestamp.
+    const endsMs = typeof input.endsAt === "string" ? Date.parse(input.endsAt) : NaN;
+    const endsAt = input.endsAt === null ? null : Number.isFinite(endsMs) ? new Date(endsMs).toISOString() : undefined;
+    const lastInputAt = nullableIso(input.lastInputAt, now);
+    const usageId = input.usageId === null || input.usageId === undefined ? null : safeText(input.usageId, 80);
+    const usageObservedAt = nullableIso(input.observedAt, now) ?? new Date(observedMs).toISOString();
+    const usageConfidence = isOneOf(GAME_CONFIDENCE_LEVELS, input.confidence) ? input.confidence : "unknown";
+    if (!isOneOf(["active", "awaiting_input", "unknown"] as const, input.state) ||
+        !isOneOf(["foreground_input", "park_log"] as const, input.source) ||
+        startedAt === undefined || endsAt === undefined || lastInputAt === undefined ||
+        usageId === undefined || usageObservedAt === undefined) return null;
+    if (input.state === "active") {
+      if (gameRunning !== true || !startedAt || !endsAt || endsMs <= observedMs ||
+          endsMs - Date.parse(startedAt) !== 60 * 60_000) return null;
+      if (input.source === "foreground_input" && (!lastInputAt ||
+          Date.parse(startedAt) > observedMs || Date.parse(lastInputAt) < Date.parse(startedAt) ||
+          Date.parse(lastInputAt) > observedMs)) return null;
+    } else if (input.state === "awaiting_input" && (startedAt !== null || endsAt !== null)) return null;
+    usage = {
+      state: input.state,
+      usageId,
+      source: input.source,
+      confidence: usageConfidence,
+      observedAt: usageObservedAt,
+      startedAt,
+      endsAt,
+      lastInputAt
+    };
+  }
+
   return {
     ...base,
     schemaVersion: 2,
@@ -156,7 +203,8 @@ export function normalizeGameTelemetry(value: unknown, now = new Date()): GameTe
     holeObservedAt,
     lastKnownHole,
     lastKnownHoleAt,
-    layoutVersion
+    layoutVersion,
+    ...(usage ? { usage } : {})
   };
 }
 

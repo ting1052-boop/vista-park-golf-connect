@@ -13,8 +13,11 @@ export type AgentBayEntry = {
   agentId: string;
   agentToken: string;
   monitorOnly?: true;
-  gameMonitoringEnabled?: false;
-  gameLogDiagnosticsEnabled?: false;
+  gameMonitoringEnabled?: boolean;
+  gameProcessNames?: string[];
+  gameLogDiagnosticsEnabled?: boolean;
+  usageMonitoringEnabled?: boolean;
+  usageMonitoringProfile?: "golf_input" | "park_log";
 };
 
 export type AgentInstallFiles = {
@@ -42,11 +45,20 @@ export function buildAgentInstallFiles(args: {
   };
 
   if (args.monitorOnly) {
-    // 아파트 매장: 고객 화면·세션 종료·자동 PC 종료를 끈다(Agent 의 resolveBayPolicy).
-    // 현장 게임 프로그램이 검증되지 않아 게임 감지도 끈다.
+    // 아파트 매장: 고객 화면·세션 종료·자동 PC 종료는 끄지만, 사용 감지와 타석 제어는 유지한다.
     entry.monitorOnly = true;
-    entry.gameMonitoringEnabled = false;
-    entry.gameLogDiagnosticsEnabled = false;
+    if (args.storeCode.toUpperCase() === "VISTA-XII") {
+      if (/^P-0[12]$/i.test(args.bayCode)) {
+        entry.gameMonitoringEnabled = true;
+        entry.gameProcessNames = ["ScreenGolf.exe"];
+        entry.gameLogDiagnosticsEnabled = true;
+        entry.usageMonitoringEnabled = true;
+        entry.usageMonitoringProfile = "park_log";
+      } else if (/^A-0[1-7]$/i.test(args.bayCode)) {
+        entry.usageMonitoringEnabled = true;
+        entry.usageMonitoringProfile = "golf_input";
+      }
+    }
   }
 
   return {

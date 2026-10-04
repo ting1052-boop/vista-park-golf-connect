@@ -39,7 +39,8 @@ test("apartment store installs as monitor-only with the issued token", () => {
   assert.equal(policy.showsCustomerUi, false);
   assert.equal(policy.mayEndServerSession, false);
   assert.equal(policy.autoShutdownAfterEndMinutes, 0);
-  assert.equal(effective.gameMonitoringEnabled, false);
+  assert.equal(effective.usageMonitoringEnabled, true);
+  assert.equal(effective.usageMonitoringProfile, "golf_input");
   assert.equal(effective.sessionSource, "server");
 });
 
@@ -91,4 +92,7 @@ test("label falls back to the bay code when there is no display name", () => {
   });
   assert.equal(files["bays.config.local.json"].bays[0].label, "송도파크자이 · P-02");
   assert.equal(files["agent.config.json"].bayCode, "VISTA-XII:P-02");
+  assert.equal(files["bays.config.local.json"].bays[0].gameMonitoringEnabled, true);
+  assert.equal(files["bays.config.local.json"].bays[0].gameProcessNames?.[0], "ScreenGolf.exe");
+  assert.equal(files["bays.config.local.json"].bays[0].usageMonitoringProfile, "park_log");
 });

@@ -68,6 +68,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_01_AGENT_TOKEN"
     },
     {
@@ -77,6 +79,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_02_AGENT_TOKEN"
     },
     {
@@ -86,6 +90,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_03_AGENT_TOKEN"
     },
     {
@@ -95,6 +101,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_04_AGENT_TOKEN"
     },
     {
@@ -104,6 +112,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_05_AGENT_TOKEN"
     },
     {
@@ -113,6 +123,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_06_AGENT_TOKEN"
     },
     {
@@ -122,6 +134,8 @@
       "monitorOnly": true,
       "gameMonitoringEnabled": false,
       "gameLogDiagnosticsEnabled": false,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "golf_input",
       "agentToken": "REPLACE_WITH_SONGDO_RANGE_07_AGENT_TOKEN"
     },
     {
@@ -129,8 +143,11 @@
       "bayCode": "SD-P-01",
       "label": "송도 · 파크 1번",
       "monitorOnly": true,
-      "gameMonitoringEnabled": false,
-      "gameLogDiagnosticsEnabled": false,
+      "gameMonitoringEnabled": true,
+      "gameProcessNames": ["ScreenGolf.exe"],
+      "gameLogDiagnosticsEnabled": true,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "park_log",
       "agentToken": "REPLACE_WITH_SONGDO_PARK_01_AGENT_TOKEN"
     },
     {
@@ -138,8 +155,11 @@
       "bayCode": "SD-P-02",
       "label": "송도 · 파크 2번",
       "monitorOnly": true,
-      "gameMonitoringEnabled": false,
-      "gameLogDiagnosticsEnabled": false,
+      "gameMonitoringEnabled": true,
+      "gameProcessNames": ["ScreenGolf.exe"],
+      "gameLogDiagnosticsEnabled": true,
+      "usageMonitoringEnabled": true,
+      "usageMonitoringProfile": "park_log",
       "agentToken": "REPLACE_WITH_SONGDO_PARK_02_AGENT_TOKEN"
     }
   ]

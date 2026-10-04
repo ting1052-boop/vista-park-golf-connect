@@ -12,6 +12,8 @@ const { createScreenGolfMonitor } = require("./screen-golf-monitor");
 const { createGameLogLocator } = require("./game-log-locator");
 const { createScreenHoleDetector } = require("./screen-hole-detector");
 const { createRoundEventOutbox } = require("./round-event-outbox");
+const { resolveGolfUsageConfig, createGolfUsageMonitor, createWindowsInputReader } = require("./golf-usage-monitor");
+const { createUsageWindowMonitor } = require("./usage-window-monitor");
 
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
@@ -20,7 +22,7 @@ const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
 // account that logs in reads the same bay and token, so an install done under an
 // admin account still works for the bay's everyday account.
 const MACHINE_CONFIG_DIR = path.join(process.env.ProgramData || "C:\\ProgramData", "VISTA", "agent");
-const VERSION = "0.9.6";
+const VERSION = "0.9.7";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
@@ -55,6 +57,9 @@ let latestGameTelemetry = null;
 let gameLogProbeTimer = null;
 let gameTelemetryTimer = null;
 let screenGolfMonitor = null;
+let golfUsageMonitor = null;
+let usageWindowMonitor = null;
+let parkGameActiveBaseline = null;
 let screenHoleDetector = null;
 let roundEventOutbox = null;
 let lastHeartbeatIssueKey = null;
@@ -161,6 +166,7 @@ function loadMonitorOverrides() {
   try {
     const raw = readJson(monitorPath);
     const allowed = [
+      "golfUsageMonitoringEnabled", "golfUsageProcessNames",
       "gameTelemetryIntervalSeconds", "gameHoleDetectionEnabled", "gameCaptureSourceName",
       "gameHoleRoi", "gameHoleAllowDigitsOnlyInRoi", "gameHoleConfirmationCount",
       "gameHoleSampleWindow", "gameHoleSampleWindowSeconds", "gameHoleStaleSeconds", "gameHoleLayoutVersion"
@@ -185,6 +191,7 @@ function loadConfig() {
   if (!bay) return null;
 
   const merged = { ...baysConfig.shared, ...bay, ...loadMonitorOverrides() };
+  const golfUsage = resolveGolfUsageConfig(merged);
 
   return {
     ...merged,
@@ -199,8 +206,10 @@ function loadConfig() {
     extensionMinutes: Number(merged.extensionMinutes || 30),
     extensionPrice: Number(merged.extensionPrice || 6000),
     offlineMode: process.env.VISTA_AGENT_OFFLINE === "1",
-    gameMonitoringEnabled: merged.gameMonitoringEnabled === true,
-    gameProcessNames: Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
+    golfUsageMonitoringEnabled: golfUsage.enabled,
+    usageMonitoringProfile: merged.usageMonitoringProfile || golfUsage.profile,
+    gameMonitoringEnabled: golfUsage.enabled || merged.gameMonitoringEnabled === true,
+    gameProcessNames: golfUsage.enabled ? golfUsage.processNames : Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
     gameStateLogFile:
       typeof merged.gameStateLogFile === "string"
         ? merged.gameStateLogFile
@@ -215,7 +224,7 @@ function loadConfig() {
       ? merged.gameLogDirectories
       : ["C:\\PARK_260713-VISTA\\Launch\\Logs"],
     gameLogProbeIntervalSeconds: Math.max(5, Number(merged.gameLogProbeIntervalSeconds || 10)),
-    gameTelemetryIntervalSeconds: Math.max(1, Number(merged.gameTelemetryIntervalSeconds || 2)),
+    gameTelemetryIntervalSeconds: Math.max(golfUsage.enabled ? 5 : 1, Number(merged.gameTelemetryIntervalSeconds || 2)),
     gameHoleDetectionEnabled: merged.gameHoleDetectionEnabled === true,
     gameCaptureSourceName: String(merged.gameCaptureSourceName || ""),
     gameHoleRoi: merged.gameHoleRoi && typeof merged.gameHoleRoi === "object" ? merged.gameHoleRoi : null,
@@ -497,7 +506,8 @@ function createGameTelemetry({
     holeObservedAt: details.holeObservedAt ?? null,
     lastKnownHole: details.lastKnownHole ?? null,
     lastKnownHoleAt: details.lastKnownHoleAt ?? null,
-    layoutVersion: config?.gameHoleLayoutVersion ?? "unconfigured"
+    layoutVersion: config?.gameHoleLayoutVersion ?? "unconfigured",
+    ...(details.usage ? { usage: details.usage } : {})
   };
 }
 
@@ -544,6 +554,20 @@ async function collectGameTelemetry() {
     .filter(Boolean);
   const gameRunning = runningNames.some((name) => configuredNames.has(name));
 
+  if (golfUsageMonitor) {
+    const usage = await golfUsageMonitor.observe(gameRunning);
+    return createGameTelemetry({
+      gameRunning,
+      gameState: gameRunning ? "unknown" : "not_running",
+      roundStatus: gameRunning ? "unknown" : "not_started",
+      stateSource: "process",
+      confidence: "low",
+      reasonCode: gameRunning ? "process_only" : null,
+      usage,
+      detectorVersion: `golf-input-v1-agent-${VERSION}`
+    });
+  }
+
   let observedState = screenGolfMonitor ? await screenGolfMonitor.observe(gameRunning) : null;
   if (observedState && screenHoleDetector) {
     const observedEpoch = observedState.contextEpoch;
@@ -555,12 +579,26 @@ async function collectGameTelemetry() {
     }
   }
   if (observedState) {
+    const isParkActive = observedState.gameState === "playing" || observedState.gameState === "practice";
+    const parkStarted = parkGameActiveBaseline !== null && isParkActive && !parkGameActiveBaseline;
+    parkGameActiveBaseline = isParkActive;
+    const usage = usageWindowMonitor?.observe({
+      gameRunning,
+      trigger: parkStarted,
+      healthy: true,
+      source: "park_log",
+      confidence: "high"
+    });
     return createGameTelemetry({
       gameRunning,
       ...observedState,
+      ...(usage ? { usage } : {}),
       detectorVersion: `screen-golf-v2-agent-${VERSION}`
     });
   }
+
+  parkGameActiveBaseline = null;
+  const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: false });
 
   return createGameTelemetry({
     gameRunning,
@@ -568,7 +606,8 @@ async function collectGameTelemetry() {
     roundStatus: gameRunning ? "unknown" : "not_started",
     stateSource: "process",
     confidence: "high",
-    reasonCode: gameRunning ? "process_only" : null
+    reasonCode: gameRunning ? "process_only" : null,
+    ...(usage ? { usage } : {})
   });
 }
 
@@ -731,7 +770,9 @@ async function postHeartbeat(payload) {
       ? responseBody.acceptedGameTelemetrySchemaVersions
       : [],
     roundEventAckIds: Array.isArray(responseBody?.roundEventAckIds) ? responseBody.roundEventAckIds : [],
-    roundEventRejected: Array.isArray(responseBody?.roundEventRejected) ? responseBody.roundEventRejected : []
+    roundEventRejected: Array.isArray(responseBody?.roundEventRejected) ? responseBody.roundEventRejected : [],
+    usageEventAckIds: Array.isArray(responseBody?.usageEventAckIds) ? responseBody.usageEventAckIds : [],
+    usageEventRejected: Array.isArray(responseBody?.usageEventRejected) ? responseBody.usageEventRejected : []
   };
 }
 
@@ -862,11 +903,15 @@ async function tick() {
       gameAppRunning,
       ...(config.gameMonitoringEnabled ? { gameTelemetry } : {}),
       ...(roundEventOutbox ? { roundEvents: roundEventOutbox.list(20) } : {}),
+      ...(usageWindowMonitor ? { usageEvents: usageWindowMonitor.listEvents(20) } : {}),
       screenLocked: config.showsCustomerUi && mode === "lock",
       lastSeenAt: nowIso()
     });
     if (heartbeatResult.ok && roundEventOutbox) {
       roundEventOutbox.applyServerResult(heartbeatResult.roundEventAckIds, heartbeatResult.roundEventRejected);
+    }
+    if (heartbeatResult.ok && usageWindowMonitor) {
+      usageWindowMonitor.applyServerResult(heartbeatResult.usageEventAckIds, heartbeatResult.usageEventRejected);
     }
     recordHeartbeatResult(heartbeatResult);
   } catch (error) {
@@ -997,6 +1042,27 @@ ipcMain.handle("select-bay", (_event, bayCode) => {
 });
 
 async function startAgentLoop() {
+  golfUsageMonitor = null;
+  usageWindowMonitor = config.usageMonitoringProfile
+    ? createUsageWindowMonitor({
+        filePath: path.join(USER_DATA, "usage-window.json"),
+        bayCode: config.bayCode,
+        durationMs: 60 * 60_000,
+        agentVersion: VERSION
+      })
+    : null;
+  parkGameActiveBaseline = null;
+  if (config.usageMonitoringProfile === "golf_input") {
+    try {
+      golfUsageMonitor = createGolfUsageMonitor({
+        processNames: config.gameProcessNames,
+        usageWindow: usageWindowMonitor,
+        readSnapshot: createWindowsInputReader({ helperSourcePath: path.join(ROOT, "golf-input-snapshot.ps1"), userDataPath: USER_DATA })
+      });
+    } catch (error) {
+      log("Golf usage observer unavailable", { error: error.message });
+    }
+  }
   roundEventOutbox = createRoundEventOutbox({ filePath: ROUND_OUTBOX_PATH, bayCode: config.bayCode });
   screenGolfMonitor = createScreenGolfMonitor({
     logFile: config.gameStateLogFile,

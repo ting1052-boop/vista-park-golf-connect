@@ -1265,7 +1265,7 @@ function BayCard({
   const meta = statusMeta[bay.status];
   const StatusIcon = meta.icon;
   const usageText = getBayUsageText(bay);
-  const gameStatus = getGameStatusDisplay(bay);
+  const gameStatus = getGameStatusDisplay(bay, limitedMenu);
   const hideUnknownGameStatus = limitedMenu && /^A-0[1-7]$/i.test(bay.name) &&
     (gameStatus.label === "게임 상태 확인 불가" || gameStatus.label === "게임 감지 미지원");
 
@@ -1322,7 +1322,11 @@ function BayCard({
           <Activity size={20} aria-hidden="true" />
           <span className="min-w-0 flex-1">{gameStatus.label}</span>
           <span className="text-xs font-extrabold opacity-75">
-            {bay.gameActivity?.supported ? `오늘 ${bay.gameActivity.todayReturnedToLobby ?? 0}회` : "이력 미지원"}
+            {bay.gameActivity?.supported
+              ? bay.gameActivity.todayUsageStarts !== undefined
+                ? `오늘 이용 ${bay.gameActivity.todayUsageStarts}회`
+                : "오늘 이용 집계 미지원"
+              : "이력 미지원"}
           </span>
         </summary>
         <div className="mt-2 border-t border-current/15 pt-2 text-xs font-semibold leading-5 opacity-90">
@@ -1340,7 +1344,13 @@ function BayCard({
                   </li>
                 ))}
               </ul>
-            ) : <p className="mt-1">오늘 확인된 일반 코스의 로비 복귀 기록이 없습니다.</p>
+            ) : (
+              <p className="mt-1">
+                {bay.gameActivity.todayUsageStarts !== undefined
+                  ? `오늘 이용 시작 ${bay.gameActivity.todayUsageStarts}회가 확인되었습니다.`
+                  : "오늘 확인된 일반 코스의 로비 복귀 기록이 없습니다."}
+              </p>
+            )
           ) : <p className="mt-1">게임 이력 DB 적용 전이거나 조회할 수 없습니다.</p>}
           <p className="mt-1 opacity-75">로비 복귀는 18홀 완주·예약·결제 건수가 아닙니다.</p>
         </div>
@@ -1370,7 +1380,7 @@ function BayCard({
       )}
 
       <div className="mt-auto grid grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
-        {bay.status === "in_use" ? (
+        {bay.status === "in_use" && !bay.observedUsage ? (
           <>
             <button
               type="button"
@@ -1428,28 +1438,28 @@ function BayCard({
   );
 }
 
-function getGameStatusDisplay(bay: LiveBay) {
+function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
   const telemetry = bay.gameTelemetry;
   if (!telemetry) {
     return {
-      label: bay.pcOnline ? "게임 감지 미지원" : "게임 상태 확인 불가",
-      detail: "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.",
+      label: limitedMenu ? "상태 확인 불가" : bay.pcOnline ? "게임 감지 미지원" : "게임 상태 확인 불가",
+      detail: limitedMenu ? "이 타석의 이용 신호를 아직 받지 못했습니다." : "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.",
       tone: "unknown" as const
     };
   }
 
   if (bay.gameTelemetryStale) {
     return {
-      label: "게임 상태 확인 불가",
-      detail: `마지막 게임 관측: ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
+      label: limitedMenu ? "상태 확인 불가" : "게임 상태 확인 불가",
+      detail: limitedMenu ? `이용 신호가 오래되었습니다 · 마지막 확인 ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}` : `마지막 게임 관측: ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
       tone: "unknown" as const
     };
   }
 
   if (telemetry.gameRunning === false) {
     return {
-      label: "골프 프로그램 미실행",
-      detail: `프로세스 확인 · ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
+      label: limitedMenu ? "대기 중" : "골프 프로그램 미실행",
+      detail: limitedMenu ? "게임 시작 신호를 기다립니다." : `프로세스 확인 · ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
       tone: "idle" as const
     };
   }
@@ -1459,6 +1469,34 @@ function getGameStatusDisplay(bay: LiveBay) {
       label: "게임 상태 확인 불가",
       detail: `사유: ${telemetry.reasonCode ?? "unknown"}`,
       tone: "unknown" as const
+    };
+  }
+
+  if (telemetry.usage) {
+    const usage = telemetry.usage;
+    if (usage.state === "active" && usage.endsAt && Date.parse(usage.endsAt) > Date.now()) {
+      return {
+        label: "이용 중",
+        detail: limitedMenu
+          ? "골프 화면 사용 신호가 확인되었습니다."
+          : `골프 화면 입력 기준 · ${Math.max(1, Math.ceil((Date.parse(usage.endsAt) - Date.now()) / 60_000))}분 남음 · 실제 타구 여부는 확인하지 않습니다.`,
+        tone: "active" as const
+      };
+    }
+    return {
+      label: usage.state === "unknown" ? "상태 확인 불가" : "대기 중",
+      detail: usage.state === "unknown"
+        ? "사용 입력을 확인하지 못했습니다."
+        : "새 사용 신호를 기다립니다.",
+      tone: usage.state === "unknown" ? "unknown" as const : "idle" as const
+    };
+  }
+
+  if (limitedMenu && (telemetry.gameState === "playing" || telemetry.gameState === "practice")) {
+    return {
+      label: "이용 중",
+      detail: "게임 시작 신호가 확인되었습니다.",
+      tone: "active" as const
     };
   }
 
@@ -1493,14 +1531,18 @@ function getGameStatusDisplay(bay: LiveBay) {
 
   if (telemetry.gameState === "menu") {
     return {
-      label: "메뉴·대기 화면",
-      detail: telemetry.reasonCode === "returned_to_lobby" ? "일반 코스에서 로비로 돌아온 기록입니다. 완주 여부는 확인하지 않습니다." : `출처: ${telemetry.stateSource}`,
+      label: limitedMenu ? "대기 중" : "메뉴·대기 화면",
+      detail: limitedMenu ? "게임 시작 신호를 기다립니다." : telemetry.reasonCode === "returned_to_lobby" ? "일반 코스에서 로비로 돌아온 기록입니다. 완주 여부는 확인하지 않습니다." : `출처: ${telemetry.stateSource}`,
       tone: "idle" as const
     };
   }
 
   if (telemetry.roundStatus === "completed" || telemetry.gameState === "results") {
     return { label: "이전 Agent 종료 신호", detail: "정상 18홀 완주로 집계하지 않는 이전 형식의 신호입니다.", tone: "idle" as const };
+  }
+
+  if (limitedMenu) {
+    return { label: "상태 확인 불가", detail: "게임 실행은 확인했지만 이용 상태를 판정할 신호가 없습니다.", tone: "unknown" as const };
   }
 
   return {
