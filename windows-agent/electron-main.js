@@ -602,14 +602,16 @@ async function collectGameTelemetry() {
   // available waiting screen. Only a confirmed playing/practice transition
   // starts the 60-minute usage window.
   const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: gameRunning });
+  const usageActive = usage?.state === "active";
 
   return createGameTelemetry({
     gameRunning,
-    gameState: gameRunning ? "unknown" : "not_running",
-    roundStatus: gameRunning ? "unknown" : "not_started",
-    stateSource: "process",
-    confidence: "high",
-    reasonCode: gameRunning ? "process_only" : null,
+    gameState: usageActive ? "playing" : gameRunning ? "menu" : "not_running",
+    roundStatus: usageActive ? "in_progress" : "not_started",
+    stateSource: usageActive ? "log" : "process",
+    confidence: usageActive ? "medium" : "high",
+    reasonCode: gameRunning ? usageActive ? "source_stale" : "recognition_pending" : null,
+    gameMode: usageActive ? "regular" : gameRunning ? "lobby" : "none",
     ...(usage ? { usage } : {})
   });
 }

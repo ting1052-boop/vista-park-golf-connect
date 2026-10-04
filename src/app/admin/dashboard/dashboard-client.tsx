@@ -1509,6 +1509,14 @@ function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
   }
 
   if (telemetry.gameState === "playing") {
+    if (limitedMenu && telemetry.gameMode === "regular") {
+      return {
+        label: "일반 코스",
+        detail: "게임 진행 상태가 확인되었습니다.",
+        tone: "active" as const
+      };
+    }
+
     if (telemetry.schemaVersion === 1) {
       return {
         label: "라운드 진행 · 홀 확인 불가",
