@@ -18,6 +18,7 @@ export type AgentBayEntry = {
   gameLogDiagnosticsEnabled?: boolean;
   usageMonitoringEnabled?: boolean;
   usageMonitoringProfile?: "golf_input" | "park_log";
+  usageWindowPolicy?: "rolling_60" | "clock_hour";
 };
 
 export type AgentInstallFiles = {
@@ -54,9 +55,11 @@ export function buildAgentInstallFiles(args: {
         entry.gameLogDiagnosticsEnabled = true;
         entry.usageMonitoringEnabled = true;
         entry.usageMonitoringProfile = "park_log";
+        entry.usageWindowPolicy = "clock_hour";
       } else if (/^A-0[1-7]$/i.test(args.bayCode)) {
         entry.usageMonitoringEnabled = true;
         entry.usageMonitoringProfile = "golf_input";
+        entry.usageWindowPolicy = "clock_hour";
       }
     }
   }

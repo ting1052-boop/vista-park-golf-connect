@@ -1,7 +1,7 @@
 {
     "name":  "vista-windows-agent",
     "private":  true,
-    "version":  "0.9.7",
+    "version":  "0.9.8",
     "description":  "Windows bay agent for VISTA Park Golf Connect",
     "main":  "electron-main.js",
     "scripts":  {

@@ -6,6 +6,7 @@ export type AgentUsageEvent = {
   usageId: string;
   eventType: "usage_started" | "usage_ended";
   source: "foreground_input" | "park_log";
+  windowPolicy: "rolling_60" | "clock_hour";
   confidence: "unknown" | "low" | "medium" | "high";
   occurredAt: string;
   startedAt: string;
@@ -35,6 +36,13 @@ function iso(value: unknown, now: Date) {
   return new Date(parsed).toISOString();
 }
 
+function deadlineIso(value: unknown, now: Date) {
+  if (typeof value !== "string") return null;
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis) || millis > now.getTime() + 60 * 60_000) return null;
+  return new Date(millis).toISOString();
+}
+
 export function normalizeAgentUsageEvent(value: unknown, now = new Date()): AgentUsageEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
@@ -42,26 +50,28 @@ export function normalizeAgentUsageEvent(value: unknown, now = new Date()): Agen
   const usageId = text(raw.usageId, 80);
   const occurredAt = iso(raw.occurredAt, now);
   const startedAt = iso(raw.startedAt, now);
-  const endsAt = iso(raw.endsAt, now);
+  const endsAt = deadlineIso(raw.endsAt, now);
   const agentVersion = text(raw.agentVersion, 40);
   const confidence = raw.confidence === "low" || raw.confidence === "medium" || raw.confidence === "high" || raw.confidence === "unknown"
     ? raw.confidence : null;
+  const windowPolicy = raw.windowPolicy === undefined ? "rolling_60" : raw.windowPolicy;
   const endReason = raw.endReason === null || raw.endReason === undefined || raw.endReason === ""
     ? null : raw.endReason === "duration_elapsed" || raw.endReason === "process_exit" ? raw.endReason : undefined;
   if (
     !eventId || !usageId || !UUID_PATTERN.test(eventId) || !UUID_PATTERN.test(usageId) ||
     !occurredAt || !startedAt || !endsAt || !agentVersion || !confidence || endReason === undefined ||
+    (windowPolicy !== "rolling_60" && windowPolicy !== "clock_hour") ||
     (raw.eventType !== "usage_started" && raw.eventType !== "usage_ended") ||
     (raw.source !== "foreground_input" && raw.source !== "park_log")
   ) return null;
   const startedMs = Date.parse(startedAt);
   const endsMs = Date.parse(endsAt);
   const occurredMs = Date.parse(occurredAt);
-  if (endsMs - startedMs !== 60 * 60_000 || occurredMs < startedMs || now.getTime() - occurredMs > MAX_EVENT_AGE_MS) return null;
+  if (endsMs - startedMs <= 0 || endsMs - startedMs > 60 * 60_000 || occurredMs < startedMs || now.getTime() - occurredMs > MAX_EVENT_AGE_MS) return null;
   if (raw.eventType === "usage_started" && endReason !== null) return null;
   if (raw.eventType === "usage_ended" && endReason === null) return null;
   return {
-    eventId, usageId, eventType: raw.eventType, source: raw.source, confidence,
+    eventId, usageId, eventType: raw.eventType, source: raw.source, windowPolicy, confidence,
     occurredAt, startedAt, endsAt, endReason, agentVersion
   };
 }
@@ -86,6 +96,7 @@ export async function storeAgentUsageEvents(
       usage_id: event.usageId,
       event_type: event.eventType,
       source: event.source,
+      window_policy: event.windowPolicy,
       confidence: event.confidence,
       occurred_at: event.occurredAt,
       started_at: event.startedAt,

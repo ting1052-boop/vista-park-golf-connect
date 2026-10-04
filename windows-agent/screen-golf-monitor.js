@@ -238,6 +238,7 @@ function createScreenGolfMonitor(options = {}) {
 
     if (!logFile) return null;
 
+    let usageStartSignal = false;
     try {
       const stat = await fs.stat(logFile);
       if (!stat.isFile()) return null;
@@ -270,6 +271,14 @@ function createScreenGolfMonitor(options = {}) {
         const usable = backfilling ? selectRecentLines(complete) : complete;
         const events = parseScreenGolfEvents(usable);
         const observedAt = new Date().toISOString();
+        const stateBeforeEvents = state;
+        if (!backfilling) {
+          usageStartSignal = events.some((event) =>
+            (event.type === "lobby_entered" && stateBeforeEvents === null) ||
+            (event.type === "course_entered" &&
+              (stateBeforeEvents === null || stateBeforeEvents.gameState === "menu"))
+          );
+        }
         applyEvents(events, observedAt);
         if (events.length > 0 || truncated) {
           onDiagnostic({ event: "screen_golf_state_scan", detectedEvents: events.map((item) => item.type), truncated, observedAt });
@@ -285,7 +294,7 @@ function createScreenGolfMonitor(options = {}) {
       }
       return null;
     }
-    return state;
+    return state ? { ...state, usageStartSignal } : state;
   }
 
   return { observe, reset: resetRuntime, applyHoleObservation, getState: () => state };

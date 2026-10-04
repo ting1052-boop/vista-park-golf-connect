@@ -31,6 +31,7 @@ export type GolfUsageObservation = {
   state: "active" | "awaiting_input" | "unknown";
   usageId?: string | null;
   source: "foreground_input" | "park_log";
+  windowPolicy?: "rolling_60" | "clock_hour";
   confidence?: GameConfidence;
   observedAt?: string;
   startedAt: string | null;
@@ -167,13 +168,15 @@ export function normalizeGameTelemetry(value: unknown, now = new Date()): GameTe
     const usageId = input.usageId === null || input.usageId === undefined ? null : safeText(input.usageId, 80);
     const usageObservedAt = nullableIso(input.observedAt, now) ?? new Date(observedMs).toISOString();
     const usageConfidence = isOneOf(GAME_CONFIDENCE_LEVELS, input.confidence) ? input.confidence : "unknown";
+    const windowPolicy = input.windowPolicy === undefined ? "rolling_60" : input.windowPolicy;
     if (!isOneOf(["active", "awaiting_input", "unknown"] as const, input.state) ||
         !isOneOf(["foreground_input", "park_log"] as const, input.source) ||
         startedAt === undefined || endsAt === undefined || lastInputAt === undefined ||
-        usageId === undefined || usageObservedAt === undefined) return null;
+        usageId === undefined || usageObservedAt === undefined ||
+        !isOneOf(["rolling_60", "clock_hour"] as const, windowPolicy)) return null;
     if (input.state === "active") {
       if (gameRunning !== true || !startedAt || !endsAt || endsMs <= observedMs ||
-          endsMs - Date.parse(startedAt) !== 60 * 60_000) return null;
+          endsMs - Date.parse(startedAt) <= 0 || endsMs - Date.parse(startedAt) > 60 * 60_000) return null;
       if (input.source === "foreground_input" && (!lastInputAt ||
           Date.parse(startedAt) > observedMs || Date.parse(lastInputAt) < Date.parse(startedAt) ||
           Date.parse(lastInputAt) > observedMs)) return null;
@@ -182,6 +185,7 @@ export function normalizeGameTelemetry(value: unknown, now = new Date()): GameTe
       state: input.state,
       usageId,
       source: input.source,
+      windowPolicy,
       confidence: usageConfidence,
       observedAt: usageObservedAt,
       startedAt,

@@ -13,12 +13,13 @@ export type AdminContext = {
   storeName: string;
   roleLabel: string;
   limitedMenu: boolean;
+  storeMonitorOnly: boolean;
   isHeadAdmin: boolean;
 };
 
 type UserRoleRow = { role: string | null };
 type StoreAssignmentRow = { store_id: string; role: string | null };
-type StoreRow = { id: string; name: string };
+type StoreRow = { id: string; name: string; agent_monitor_only?: boolean | null };
 
 type AdminRole = "head_admin" | "store_manager" | "staff";
 
@@ -96,7 +97,15 @@ export async function getAdminContext(): Promise<AdminContext> {
     }
   }
 
-  const { data: store } = await supabase.from("stores").select("id, name").eq("id", storeId).maybeSingle();
+  const detailedStore = await supabase
+    .from("stores")
+    .select("id, name, agent_monitor_only")
+    .eq("id", storeId)
+    .maybeSingle();
+  const storeResult = detailedStore.error
+    ? await supabase.from("stores").select("id, name").eq("id", storeId).maybeSingle()
+    : detailedStore;
+  const store = storeResult.data;
   const storeName = (store as StoreRow | null)?.name ?? metadataString(user, "store_name");
 
   return {
@@ -105,6 +114,7 @@ export async function getAdminContext(): Promise<AdminContext> {
     storeName: storeName ?? "비스타파크골프 시흥점",
     roleLabel: limitedMenu ? "매장관리자" : "본사관리자",
     limitedMenu,
+    storeMonitorOnly: (store as StoreRow | null)?.agent_monitor_only === true,
     isHeadAdmin
   };
 }

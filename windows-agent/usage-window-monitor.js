@@ -5,27 +5,36 @@ const { randomUUID } = require("node:crypto");
 
 const SOURCES = new Set(["foreground_input", "park_log"]);
 const CONFIDENCE = new Set(["low", "medium", "high"]);
+const WINDOW_POLICIES = new Set(["rolling_60", "clock_hour"]);
 
 function createUsageWindowMonitor(options) {
   const filePath = options.filePath || null;
   const bayCode = String(options.bayCode || "");
   const durationMs = Math.max(60_000, Number(options.durationMs || 60 * 60_000));
+  const windowPolicy = WINDOW_POLICIES.has(options.windowPolicy) ? options.windowPolicy : "rolling_60";
+  const timezoneOffsetMinutes = Number.isFinite(options.timezoneOffsetMinutes)
+    ? Number(options.timezoneOffsetMinutes)
+    : 9 * 60;
   const now = options.now || Date.now;
   const createId = options.createId || randomUUID;
   const agentVersion = String(options.agentVersion || "unknown");
   const maxPending = Math.max(20, Number(options.maxPending || 500));
-  let state = { version: 1, bayCode, active: null, pending: [], rejected: [] };
+  let state = { version: 2, bayCode, windowPolicy, active: null, pending: [], rejected: [] };
   let loadFailed = false;
 
   function load() {
     if (!filePath || !fs.existsSync(filePath)) return;
     try {
       const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      if (parsed?.version !== 1 || parsed?.bayCode !== bayCode || !Array.isArray(parsed.pending)) return;
+      if ((parsed?.version !== 1 && parsed?.version !== 2) || parsed?.bayCode !== bayCode || !Array.isArray(parsed.pending)) return;
+      const storedPolicy = parsed.windowPolicy || "rolling_60";
       state = {
-        version: 1,
+        version: 2,
         bayCode,
-        active: parsed.active && typeof parsed.active === "object" ? parsed.active : null,
+        windowPolicy,
+        active: storedPolicy === windowPolicy && parsed.active && typeof parsed.active === "object"
+          ? parsed.active
+          : null,
         pending: parsed.pending.slice(-maxPending),
         rejected: Array.isArray(parsed.rejected) ? parsed.rejected.slice(-100) : []
       };
@@ -53,6 +62,7 @@ function createUsageWindowMonitor(options) {
       eventId: createId(),
       usageId: active.usageId,
       eventType,
+      windowPolicy,
       source: active.source,
       confidence: active.confidence,
       occurredAt,
@@ -73,12 +83,16 @@ function createUsageWindowMonitor(options) {
     if (!SOURCES.has(source) || !CONFIDENCE.has(confidence)) return false;
     const startedMs = Date.parse(occurredAt);
     if (!Number.isFinite(startedMs)) return false;
+    const shiftedMs = startedMs + timezoneOffsetMinutes * 60_000;
+    const endsMs = windowPolicy === "clock_hour"
+      ? Math.floor(shiftedMs / 3_600_000) * 3_600_000 + 3_600_000 - timezoneOffsetMinutes * 60_000
+      : startedMs + durationMs;
     const active = {
       usageId: createId(),
       source,
       confidence,
       startedAt: new Date(startedMs).toISOString(),
-      endsAt: new Date(startedMs + durationMs).toISOString(),
+      endsAt: new Date(endsMs).toISOString(),
       lastInputAt: source === "foreground_input" ? lastInputAt || occurredAt : null
     };
     state.active = active;
@@ -90,6 +104,7 @@ function createUsageWindowMonitor(options) {
     if (!healthy || gameRunning === null) {
       return {
         state: "unknown",
+        windowPolicy,
         usageId: state.active?.usageId ?? null,
         source: state.active?.source ?? "foreground_input",
         confidence: "unknown",
@@ -102,6 +117,7 @@ function createUsageWindowMonitor(options) {
     if (!state.active) {
       return {
         state: "awaiting_input",
+        windowPolicy,
         usageId: null,
         source: "foreground_input",
         confidence: "unknown",
@@ -111,7 +127,7 @@ function createUsageWindowMonitor(options) {
         lastInputAt: null
       };
     }
-    return { state: "active", ...state.active, observedAt };
+    return { state: "active", windowPolicy, ...state.active, observedAt };
   }
 
   function observe(args) {
@@ -125,7 +141,7 @@ function createUsageWindowMonitor(options) {
     }
     if (args.gameRunning === false) {
       changed = endActive("process_exit", observedAt) || changed;
-    } else if (args.trigger === true && !state.active) {
+    } else if (args.trigger === true && args.gameRunning === true && args.healthy !== false && !state.active) {
       changed = startActive(
         args.source,
         args.confidence,

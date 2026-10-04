@@ -125,6 +125,37 @@ test("a fresh start ignores events already in the log", async () => {
   });
 });
 
+test("only a fresh lobby or course transition emits a usage start signal", async () => {
+  await withLog("", async (monitor, append) => {
+    await append("Game class is 'BP_LobbyModebase_C'\n");
+    let state = await monitor.observe(true);
+    assert.equal(state.gameState, "menu");
+    assert.equal(state.usageStartSignal, true, "START 이후 신규 모드 선택 전이는 이용 시작 신호다");
+
+    state = await monitor.observe(true);
+    assert.equal(state.usageStartSignal, false, "같은 상태를 반복 보고해 이용을 다시 시작하면 안 된다");
+
+    await append("Browse: /Game/Golf/Course/Yecheon_CD/Yecheon_CD?Name=P\n");
+    state = await monitor.observe(true);
+    assert.equal(state.gameState, "playing");
+    assert.equal(state.usageStartSignal, true, "모드 선택 뒤 신규 코스 진입도 시작 fallback으로 쓸 수 있다");
+  });
+});
+
+test("startup backfill restores state without creating a usage start signal", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "vista-backfill-usage-"));
+  const logFile = path.join(directory, "ScreenGolf.log");
+  try {
+    await fs.writeFile(logFile, logLine(1, "LogLoad: Game class is 'BP_LobbyModebase_C'"), "utf8");
+    const monitor = createScreenGolfMonitor({ logFile });
+    const state = await monitor.observe(true);
+    assert.equal(state.gameState, "menu");
+    assert.equal(state.usageStartSignal, false, "Agent 시작 전 로그는 새 고객 입장이 아니다");
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 function logLine(minutesAgo, body) {
   const at = new Date(Date.now() - minutesAgo * 60_000);
   const p = (n, w = 2) => String(n).padStart(w, "0");

@@ -83,5 +83,37 @@ time += 1_000;
 assert.equal(park.observe({ gameRunning: false, trigger: false, healthy: true }).state, "awaiting_input");
 assert.equal(park.listEvents()[1].endReason, "process_exit");
 
+const clockFile = path.join(root, "clock.json");
+time = Date.parse("2026-10-04T01:12:00.000Z"); // KST 10:12
+const clock = createUsageWindowMonitor({
+  ...options,
+  filePath: clockFile,
+  bayCode: "SD-R-02",
+  windowPolicy: "clock_hour",
+  timezoneOffsetMinutes: 540,
+  createId: createIds()
+});
+const clockStarted = clock.observe({
+  gameRunning: true,
+  trigger: true,
+  healthy: true,
+  source: "foreground_input",
+  confidence: "medium",
+  lastInputAt: time
+});
+assert.equal(clockStarted.windowPolicy, "clock_hour");
+assert.equal(clockStarted.startedAt, "2026-10-04T01:12:00.000Z");
+assert.equal(clockStarted.endsAt, "2026-10-04T02:00:00.000Z", "송도 이용창은 다음 정시에 끝난다");
+assert.equal(clock.listEvents()[0].windowPolicy, "clock_hour");
+
+const unhealthy = createUsageWindowMonitor({ ...options, filePath: path.join(root, "unhealthy.json"), createId: createIds() });
+assert.equal(unhealthy.observe({
+  gameRunning: true,
+  trigger: true,
+  healthy: false,
+  source: "foreground_input",
+  confidence: "medium"
+}).state, "unknown", "감지 실패를 이용 시작으로 바꾸지 않는다");
+
 fs.rmSync(root, { recursive: true, force: true });
 console.log("Usage window monitor tests passed");

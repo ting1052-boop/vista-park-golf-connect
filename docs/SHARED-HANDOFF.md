@@ -17,7 +17,8 @@
 
 | 작업자 | 상태 | 작업 내용 | 담당 파일 |
 | --- | --- | --- | --- |
-| Codex | 진행 중·2026-10-04 | 송도 Agent 이용 감지 기능의 운영 반영: migration·서버 배포 준비, 파크 로그 공백 중 이용상태 유지, 홀 미확인 문구 숨김, 골프 유효 화면 감지 보완 | Agent·dashboard, 신규 usage event migration, portable 산출물, 배포 검증, 본 원장 |
+| Codex | 운영 반영 중·2026-10-04 | 최종 검토서 기준 송도 Agent 구현의 운영 반영: migration, 웹 배포, 0.9.8 릴리스 연결. 현장 PC 교체는 별도 승인·검증 후 진행 | `windows-agent/`, usage telemetry/API/DB/dashboard, Agent 설정·릴리스 문서, 본 원장 |
+| Codex | 검토 완료·출시 조건 미충족·2026-10-04 | 송도 Agent 최종 설계 확정. 시작 이벤트 미래시각 거부 재현, unknown→menu/playing 오판·정시 정책 불일치·매장 적용 범위·미추적 PS1 발견. 이전 로컬 완료는 현장 감지/최종 출시 완료를 의미하지 않음 | `docs/songdo-agent-release-review-20261004.md`, 기존 개발서의 최신 기준 안내, 본 원장 |
 | Codex | 완료·운영 반영 대기·2026-10-04 | 송도 개발서 구현: 공통 60분 이용창·재시작 복구·이용 이벤트/outbox, 서버 저장·집계, 송도 대시보드 사용 상태, 설치 설정과 무인제어 회귀 검증 완료 | `windows-agent/`, Agent heartbeat/telemetry·dashboard 계층, 신규 migration, `docs/songdo-agent-development-plan.md`, 본 원장 |
 | Codex | 조사 완료·HA 현장 확인 대기·2026-10-03 | 송도 VISTA 05:50은 A-01~A-06만 명령, 과거 HA 9대 전체 기상 자동화 중복 의심. HA 접속 실패로 활성 여부 미확정 | 운영 DB 조회, HA 연결 확인, 본 원장 |
 | Codex | 완료·배포 대기·2026-10-02 | 관리자 입장·연장·종료 API의 매장 범위 제한 및 타 매장 요청 차단 검사 | `src/app/api/admin/session/`, `scripts/check-session-store-scope.mjs`, 본 원장 |
@@ -151,6 +152,8 @@
 
 | 날짜 | 작업자 | 변경·검증 | 상태 |
 | --- | --- | --- | --- |
+| 2026-10-04 | Codex | 최종 재검토 문서 작성. 아래 같은 날짜 기록의 START 화면과 로그 전이 대응은 실증 완료가 아니며 unknown을 menu 또는 playing으로 바꾸는 구현은 제거 대상. 최신 요구는 정시 구간이므로 고정 시작+60분 계획을 대체. 실제 이벤트 정규화 함수에 합성 60분 이벤트를 입력하여 즉시 거부/55분 후 수용 재현. preflight 및 Agent check 통과, 문서 diff 검사. | 문서만 수정. 실행 코드·EXE·DB·기기·커밋·push·배포 변경 없음. 결함 수정 및 P-01/A-01 현장 검증 후 출시 |
+| 2026-10-04 | Codex | 최종 구성 구현. Agent 0.9.8에 파크 신규 로그 전이 기반 시작 신호와 관측/usage 분리, 송도 `clock_hour` 이용창, 재시작 정책, 정시 이벤트 계약을 적용. 서버 이벤트 `window_policy`·정시 종료 범위와 매장 `agent_monitor_only` 기반 dashboard 표시를 보완. Agent check(기존+추가 테스트), 웹 typecheck, 대상 ESLint, production build, diff 검사, 포터블 빌드·asar 파일 포함 검증 통과. | 로컬 구현·시험판 완료. EXE SHA-256 `4D02BE6C1C4EAC2D64709B9B8C6116A577949052E5769084824827F761DF0765`. 운영 migration·Vercel/GitHub 배포·PC 세팅 도구 릴리스 포인터·현장 설치는 미실행 |
 | 2026-10-04 | Codex | 송도 P-01 화면 실증을 반영해 파크 이용 시작 기준을 수정. 최초 START 화면은 `대기 중`, START 클릭 후 모드 선택 화면 진입은 고객 입장으로 보고 고정 60분 이용창을 시작한다. 모드 선택 이후 스트로크·자유연습·게임 이동과 일시적인 로그 공백에도 같은 이용창을 유지하며, 60분 종료 뒤 최초 화면으로 돌아왔다가 다시 START→모드 선택 전환이 생기면 새 이용으로 집계한다. Agent check 및 portable 재빌드 통과. | 로컬 Agent 완료. 최신 실행 파일 현장 재교체와 서버 배포·migration 적용 대기 |
 | 2026-10-04 | Codex | 송도 P-01 현장 시험 반영. 파크 게임 중 상태 로그가 잠시 비어도 이미 시작된 60분 이용창이 활성 상태면 `playing/regular`를 유지하고, 게임 실행 중 이용 시작 전에는 `menu/lobby`로 보낸다. 아파트 관리자 대시보드에서는 일반 코스의 홀 번호가 확인되지 않아도 `홀 확인 불가`를 붙이지 않고 `일반 코스`만 표시한다. Agent check, 웹 typecheck, 대상 ESLint, diff 검사 및 portable Agent 재빌드 통과. | 로컬 코드·실행 파일 완료. 서버 배포·migration 적용 전이며 P-01에 최신 재빌드 파일 재교체 필요 |
 | 2026-10-04 | Codex | 송도 아파트용 Agent·대시보드 구현. 골프 A-01~A-07은 UD7/ParOnGolfV5 전경 입력으로 첫 입력부터 고정 60분 이용창을 만들고, 파크 P-01/P-02는 ScreenGolf 실행·로그 상태 전환으로 고정 60분 이용창을 만든다. 이용창은 로컬에 보존·재시작 복구하며 `usage_started`/`usage_ended` outbox를 heartbeat로 서버에 멱등 저장한다. 대시보드는 예약 세션과 별개로 이용 중/대기 중/상태 확인 불가와 오늘 이용 시작 횟수를 표시하고 관찰용 이용창에는 세션 종료·시간 조정 버튼을 노출하지 않는다. 기존 Agent 정상 종료, HA/WOL, 프로젝터·장비 제어 경계와 송도 구역별 무인제어는 유지한다. `agent_usage_events` migration·schema 추가, 송도 설정·README·개발서 갱신. Agent check, 웹 typecheck, 변경 파일 ESLint, `git diff --check`, 웹 production build, portable Agent build 통과. | 로컬 코드·빌드 완료. 운영 migration 적용, Vercel 배포, 현장 Agent 교체·설치는 사용자 승인 및 별도 진행 필요 |

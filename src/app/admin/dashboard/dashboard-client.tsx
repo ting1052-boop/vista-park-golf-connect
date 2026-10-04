@@ -969,6 +969,7 @@ export function DashboardClient({
                         key={bay.id}
                         bay={bay}
                         limitedMenu={adminContext.limitedMenu}
+                        storeMonitorOnly={adminContext.storeMonitorOnly}
                         onEndSession={handleEndSession}
                         onExtendTime={handleExtendTime}
                         onCheckIn={handleCheckIn}
@@ -1250,6 +1251,7 @@ function WarningItem({
 function BayCard({
   bay,
   limitedMenu,
+  storeMonitorOnly,
   onEndSession,
   onExtendTime,
   onCheckIn,
@@ -1257,6 +1259,7 @@ function BayCard({
 }: {
   bay: LiveBay;
   limitedMenu: boolean;
+  storeMonitorOnly: boolean;
   onEndSession: (bay: LiveBay) => void | Promise<void>;
   onExtendTime: (bay: LiveBay) => void | Promise<void>;
   onCheckIn: (bay: LiveBay) => void | Promise<void>;
@@ -1265,8 +1268,8 @@ function BayCard({
   const meta = statusMeta[bay.status];
   const StatusIcon = meta.icon;
   const usageText = getBayUsageText(bay);
-  const gameStatus = getGameStatusDisplay(bay, limitedMenu);
-  const hideUnknownGameStatus = limitedMenu && /^A-0[1-7]$/i.test(bay.name) &&
+  const gameStatus = getGameStatusDisplay(bay, storeMonitorOnly);
+  const hideUnknownGameStatus = storeMonitorOnly && /^A-0[1-7]$/i.test(bay.name) &&
     (gameStatus.label === "게임 상태 확인 불가" || gameStatus.label === "게임 감지 미지원");
 
   return (
@@ -1438,28 +1441,29 @@ function BayCard({
   );
 }
 
-function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
+function getGameStatusDisplay(bay: LiveBay, storeMonitorOnly = false) {
+  const compactUsage = storeMonitorOnly;
   const telemetry = bay.gameTelemetry;
   if (!telemetry) {
     return {
-      label: limitedMenu ? "상태 확인 불가" : bay.pcOnline ? "게임 감지 미지원" : "게임 상태 확인 불가",
-      detail: limitedMenu ? "이 타석의 이용 신호를 아직 받지 못했습니다." : "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.",
+      label: compactUsage ? "상태 확인 불가" : bay.pcOnline ? "게임 감지 미지원" : "게임 상태 확인 불가",
+      detail: compactUsage ? "이 타석의 이용 신호를 아직 받지 못했습니다." : "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.",
       tone: "unknown" as const
     };
   }
 
   if (bay.gameTelemetryStale) {
     return {
-      label: limitedMenu ? "상태 확인 불가" : "게임 상태 확인 불가",
-      detail: limitedMenu ? `이용 신호가 오래되었습니다 · 마지막 확인 ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}` : `마지막 게임 관측: ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
+      label: compactUsage ? "상태 확인 불가" : "게임 상태 확인 불가",
+      detail: compactUsage ? `이용 신호가 오래되었습니다 · 마지막 확인 ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}` : `마지막 게임 관측: ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
       tone: "unknown" as const
     };
   }
 
   if (telemetry.gameRunning === false) {
     return {
-      label: limitedMenu ? "대기 중" : "골프 프로그램 미실행",
-      detail: limitedMenu ? "게임 시작 신호를 기다립니다." : `프로세스 확인 · ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
+      label: compactUsage ? "대기 중" : "골프 프로그램 미실행",
+      detail: compactUsage ? "게임 시작 신호를 기다립니다." : `프로세스 확인 · ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
       tone: "idle" as const
     };
   }
@@ -1477,7 +1481,7 @@ function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
     if (usage.state === "active" && usage.endsAt && Date.parse(usage.endsAt) > Date.now()) {
       return {
         label: "이용 중",
-        detail: limitedMenu
+        detail: compactUsage
           ? "골프 화면 사용 신호가 확인되었습니다."
           : `골프 화면 입력 기준 · ${Math.max(1, Math.ceil((Date.parse(usage.endsAt) - Date.now()) / 60_000))}분 남음 · 실제 타구 여부는 확인하지 않습니다.`,
         tone: "active" as const
@@ -1492,7 +1496,7 @@ function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
     };
   }
 
-  if (limitedMenu && (telemetry.gameState === "playing" || telemetry.gameState === "practice")) {
+  if (compactUsage && (telemetry.gameState === "playing" || telemetry.gameState === "practice")) {
     return {
       label: "이용 중",
       detail: "게임 시작 신호가 확인되었습니다.",
@@ -1509,7 +1513,7 @@ function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
   }
 
   if (telemetry.gameState === "playing") {
-    if (limitedMenu && telemetry.gameMode === "regular") {
+    if (compactUsage && telemetry.gameMode === "regular") {
       return {
         label: "일반 코스",
         detail: "게임 진행 상태가 확인되었습니다.",
@@ -1539,8 +1543,8 @@ function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
 
   if (telemetry.gameState === "menu") {
     return {
-      label: limitedMenu ? "대기 중" : "메뉴·대기 화면",
-      detail: limitedMenu ? "게임 시작 신호를 기다립니다." : telemetry.reasonCode === "returned_to_lobby" ? "일반 코스에서 로비로 돌아온 기록입니다. 완주 여부는 확인하지 않습니다." : `출처: ${telemetry.stateSource}`,
+      label: compactUsage ? "대기 중" : "메뉴·대기 화면",
+      detail: compactUsage ? "게임 시작 신호를 기다립니다." : telemetry.reasonCode === "returned_to_lobby" ? "일반 코스에서 로비로 돌아온 기록입니다. 완주 여부는 확인하지 않습니다." : `출처: ${telemetry.stateSource}`,
       tone: "idle" as const
     };
   }
@@ -1549,7 +1553,7 @@ function getGameStatusDisplay(bay: LiveBay, limitedMenu = false) {
     return { label: "이전 Agent 종료 신호", detail: "정상 18홀 완주로 집계하지 않는 이전 형식의 신호입니다.", tone: "idle" as const };
   }
 
-  if (limitedMenu) {
+  if (compactUsage) {
     return { label: "상태 확인 불가", detail: "게임 실행은 확인했지만 이용 상태를 판정할 신호가 없습니다.", tone: "unknown" as const };
   }
 

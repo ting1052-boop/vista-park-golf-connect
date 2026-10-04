@@ -22,7 +22,7 @@ const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
 // account that logs in reads the same bay and token, so an install done under an
 // admin account still works for the bay's everyday account.
 const MACHINE_CONFIG_DIR = path.join(process.env.ProgramData || "C:\\ProgramData", "VISTA", "agent");
-const VERSION = "0.9.7";
+const VERSION = "0.9.8";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
@@ -59,8 +59,6 @@ let gameTelemetryTimer = null;
 let screenGolfMonitor = null;
 let golfUsageMonitor = null;
 let usageWindowMonitor = null;
-let parkGameActiveBaseline = null;
-let parkObservedStateBaseline = null;
 let screenHoleDetector = null;
 let roundEventOutbox = null;
 let lastHeartbeatIssueKey = null;
@@ -168,6 +166,7 @@ function loadMonitorOverrides() {
     const raw = readJson(monitorPath);
     const allowed = [
       "golfUsageMonitoringEnabled", "golfUsageProcessNames",
+      "usageWindowPolicy",
       "gameTelemetryIntervalSeconds", "gameHoleDetectionEnabled", "gameCaptureSourceName",
       "gameHoleRoi", "gameHoleAllowDigitsOnlyInRoi", "gameHoleConfirmationCount",
       "gameHoleSampleWindow", "gameHoleSampleWindowSeconds", "gameHoleStaleSeconds", "gameHoleLayoutVersion"
@@ -209,6 +208,7 @@ function loadConfig() {
     offlineMode: process.env.VISTA_AGENT_OFFLINE === "1",
     golfUsageMonitoringEnabled: golfUsage.enabled,
     usageMonitoringProfile: merged.usageMonitoringProfile || golfUsage.profile,
+    usageWindowPolicy: merged.usageWindowPolicy === "clock_hour" ? "clock_hour" : "rolling_60",
     gameMonitoringEnabled: golfUsage.enabled || merged.gameMonitoringEnabled === true,
     gameProcessNames: golfUsage.enabled ? golfUsage.processNames : Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
     gameStateLogFile:
@@ -580,63 +580,31 @@ async function collectGameTelemetry() {
     }
   }
   if (observedState) {
-    const isParkActive = observedState.gameState === "playing" || observedState.gameState === "practice";
-    const enteredModeSelection = observedState.gameState === "menu" &&
-      (parkObservedStateBaseline === "unknown" || parkObservedStateBaseline === "unrecognized");
-    const parkStarted = enteredModeSelection ||
-      (parkGameActiveBaseline !== null && isParkActive && !parkGameActiveBaseline);
-    parkGameActiveBaseline = isParkActive;
-    parkObservedStateBaseline = observedState.gameState;
     const usage = usageWindowMonitor?.observe({
       gameRunning,
-      trigger: parkStarted,
+      trigger: observedState.usageStartSignal === true,
       healthy: true,
       source: "park_log",
       confidence: "high"
     });
-    const usageActive = usage?.state === "active";
-    const normalizedObservedState = usageActive &&
-      (observedState.gameState === "unknown" || observedState.gameState === "menu")
-      ? {
-          ...observedState,
-          gameState: "playing",
-          gameMode: "regular",
-          roundStatus: "in_progress",
-          reasonCode: observedState.gameState === "unknown" ? "source_stale" : null
-        }
-      : observedState.gameState === "unknown"
-        ? {
-            ...observedState,
-            gameState: "menu",
-            gameMode: "lobby",
-            roundStatus: "not_started",
-            reasonCode: "recognition_pending"
-          }
-        : observedState;
     return createGameTelemetry({
       gameRunning,
-      ...normalizedObservedState,
+      ...observedState,
       ...(usage ? { usage } : {}),
       detectorVersion: `screen-golf-v2-agent-${VERSION}`
     });
   }
 
-  parkGameActiveBaseline = null;
-  parkObservedStateBaseline = gameRunning ? "unrecognized" : null;
-  // A running ParkGolf process without a readable state log is still an
-  // available waiting screen. Entering the recognized mode-selection screen
-  // from this initial START screen begins the fixed 60-minute usage window.
-  const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: gameRunning });
-  const usageActive = usage?.state === "active";
+  const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: false });
 
   return createGameTelemetry({
     gameRunning,
-    gameState: usageActive ? "playing" : gameRunning ? "menu" : "not_running",
-    roundStatus: usageActive ? "in_progress" : "not_started",
-    stateSource: usageActive ? "log" : "process",
-    confidence: usageActive ? "medium" : "high",
-    reasonCode: gameRunning ? usageActive ? "source_stale" : "recognition_pending" : null,
-    gameMode: usageActive ? "regular" : gameRunning ? "lobby" : "none",
+    gameState: gameRunning ? "unknown" : "not_running",
+    roundStatus: gameRunning ? "unknown" : "not_started",
+    stateSource: "process",
+    confidence: gameRunning ? "low" : "high",
+    reasonCode: gameRunning ? "recognition_pending" : null,
+    gameMode: gameRunning ? "unknown" : "none",
     ...(usage ? { usage } : {})
   });
 }
@@ -1078,11 +1046,11 @@ async function startAgentLoop() {
         filePath: path.join(USER_DATA, "usage-window.json"),
         bayCode: config.bayCode,
         durationMs: 60 * 60_000,
+        windowPolicy: config.usageWindowPolicy,
+        timezoneOffsetMinutes: 9 * 60,
         agentVersion: VERSION
       })
     : null;
-  parkGameActiveBaseline = null;
-  parkObservedStateBaseline = null;
   if (config.usageMonitoringProfile === "golf_input") {
     try {
       golfUsageMonitor = createGolfUsageMonitor({
