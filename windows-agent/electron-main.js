@@ -598,7 +598,10 @@ async function collectGameTelemetry() {
   }
 
   parkGameActiveBaseline = null;
-  const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: false });
+  // A running ParkGolf process without a readable state log is still an
+  // available waiting screen. Only a confirmed playing/practice transition
+  // starts the 60-minute usage window.
+  const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: gameRunning });
 
   return createGameTelemetry({
     gameRunning,
