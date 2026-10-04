@@ -60,6 +60,7 @@ let screenGolfMonitor = null;
 let golfUsageMonitor = null;
 let usageWindowMonitor = null;
 let parkGameActiveBaseline = null;
+let parkObservedStateBaseline = null;
 let screenHoleDetector = null;
 let roundEventOutbox = null;
 let lastHeartbeatIssueKey = null;
@@ -580,8 +581,12 @@ async function collectGameTelemetry() {
   }
   if (observedState) {
     const isParkActive = observedState.gameState === "playing" || observedState.gameState === "practice";
-    const parkStarted = parkGameActiveBaseline !== null && isParkActive && !parkGameActiveBaseline;
+    const enteredModeSelection = observedState.gameState === "menu" &&
+      (parkObservedStateBaseline === "unknown" || parkObservedStateBaseline === "unrecognized");
+    const parkStarted = enteredModeSelection ||
+      (parkGameActiveBaseline !== null && isParkActive && !parkGameActiveBaseline);
     parkGameActiveBaseline = isParkActive;
+    parkObservedStateBaseline = observedState.gameState;
     const usage = usageWindowMonitor?.observe({
       gameRunning,
       trigger: parkStarted,
@@ -589,18 +594,29 @@ async function collectGameTelemetry() {
       source: "park_log",
       confidence: "high"
     });
+    const usageActive = usage?.state === "active";
+    const normalizedObservedState = observedState.gameState === "unknown"
+      ? {
+          ...observedState,
+          gameState: usageActive ? "playing" : "menu",
+          gameMode: usageActive ? "regular" : "lobby",
+          roundStatus: usageActive ? "in_progress" : "not_started",
+          reasonCode: usageActive ? "source_stale" : "recognition_pending"
+        }
+      : observedState;
     return createGameTelemetry({
       gameRunning,
-      ...observedState,
+      ...normalizedObservedState,
       ...(usage ? { usage } : {}),
       detectorVersion: `screen-golf-v2-agent-${VERSION}`
     });
   }
 
   parkGameActiveBaseline = null;
+  parkObservedStateBaseline = gameRunning ? "unrecognized" : null;
   // A running ParkGolf process without a readable state log is still an
-  // available waiting screen. Only a confirmed playing/practice transition
-  // starts the 60-minute usage window.
+  // available waiting screen. Entering the recognized mode-selection screen
+  // from this initial START screen begins the fixed 60-minute usage window.
   const usage = usageWindowMonitor?.observe({ gameRunning, trigger: false, healthy: gameRunning });
   const usageActive = usage?.state === "active";
 
@@ -1057,6 +1073,7 @@ async function startAgentLoop() {
       })
     : null;
   parkGameActiveBaseline = null;
+  parkObservedStateBaseline = null;
   if (config.usageMonitoringProfile === "golf_input") {
     try {
       golfUsageMonitor = createGolfUsageMonitor({
