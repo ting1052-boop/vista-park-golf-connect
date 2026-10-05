@@ -86,7 +86,6 @@ export const adminNavItems = [
   { label: "타석관리", href: "/admin/bays", active: false },
   { label: "장비관리", href: "/admin/devices", active: false },
   { label: "회원관리", href: "/admin/members", active: false },
-  { label: "조인모집", href: "/admin/join", active: false },
   { label: "리포트", href: "/admin/reports", active: false }
 ] as const;
 

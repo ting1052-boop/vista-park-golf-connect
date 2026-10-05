@@ -36,7 +36,6 @@ const navIconMap = {
   "/admin/bays": LayoutDashboard,
   "/admin/devices": PackageCheck,
   "/admin/members": Users,
-  "/admin/join": Users,
   "/admin/reports": FileText
 } as const;
 
