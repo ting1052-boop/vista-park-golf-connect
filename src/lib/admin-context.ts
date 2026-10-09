@@ -62,7 +62,7 @@ export async function getAdminContext(): Promise<AdminContext> {
   let assignedStoreId: string | null = null;
 
   if (role === "store_manager" || role === "staff") {
-    const { data: assignment } = await supabase
+    const { data: assignment, error: assignmentError } = await supabase
       .from("store_users")
       .select("store_id, role")
       .eq("user_id", user.id)
@@ -70,8 +70,14 @@ export async function getAdminContext(): Promise<AdminContext> {
       .limit(1)
       .maybeSingle();
 
+    if (assignmentError) {
+      throw new Error("배정된 매장을 확인하지 못했습니다.");
+    }
     const assigned = assignment as StoreAssignmentRow | null;
     assignedStoreId = assigned?.store_id ?? null;
+    if (!assignedStoreId) {
+      throw new Error("배정된 매장이 없습니다. 본사에 문의해주세요.");
+    }
     role = assigned?.role ?? role;
   }
 
@@ -106,12 +112,15 @@ export async function getAdminContext(): Promise<AdminContext> {
     ? await supabase.from("stores").select("id, name").eq("id", storeId).maybeSingle()
     : detailedStore;
   const store = storeResult.data;
+  if (storeResult.error || !store) {
+    throw new Error("배정된 매장 정보를 확인하지 못했습니다.");
+  }
   const storeName = (store as StoreRow | null)?.name ?? metadataString(user, "store_name");
 
   return {
     userId: user.id,
     storeId,
-    storeName: storeName ?? "비스타파크골프 시흥점",
+    storeName: storeName ?? "매장",
     roleLabel: limitedMenu ? "매장관리자" : "본사관리자",
     limitedMenu,
     storeMonitorOnly: (store as StoreRow | null)?.agent_monitor_only === true,

@@ -54,10 +54,14 @@ export function AdminShell({
   const navItems = useMemo(() => getAdminNavItems(limitedMenu), [limitedMenu]);
 
   useEffect(() => {
+    if (!adminContext && pathname !== "/admin/login") {
+      router.replace("/admin/login");
+      return;
+    }
     if (limitedMenu && !navItems.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))) {
       router.replace("/admin/dashboard");
     }
-  }, [limitedMenu, navItems, pathname, router]);
+  }, [adminContext, limitedMenu, navItems, pathname, router]);
 
   const handleLogout = async () => {
     const supabase = createBrowserSupabaseClient();
@@ -65,6 +69,8 @@ export function AdminShell({
     router.replace("/admin/login");
     router.refresh();
   };
+
+  if (pathname !== "/admin/login" && !adminContext) return null;
 
   if (pathname === "/admin/login" || pathname === "/admin/dashboard") {
     return children;
