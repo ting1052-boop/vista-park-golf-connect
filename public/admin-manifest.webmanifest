@@ -1,0 +1,21 @@
+{
+  "id": "/admin/dashboard",
+  "name": "VISTA 매장관리",
+  "short_name": "VISTA 관리",
+  "description": "매장 운영 현황과 무인제어",
+  "start_url": "/admin/dashboard",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#eef2ec",
+  "theme_color": "#4E8969",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "대시보드", "url": "/admin/dashboard" },
+    { "name": "무인제어", "url": "/admin/automation" }
+  ]
+}

@@ -3,6 +3,7 @@ import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  manifest: "/manifest.webmanifest",
   title: "VISTA Park Golf Connect",
   description: "HH Square 스크린파크골프 타석예약 및 매장관리 프로그램",
   applicationName: "VISTA Park Golf Connect",
