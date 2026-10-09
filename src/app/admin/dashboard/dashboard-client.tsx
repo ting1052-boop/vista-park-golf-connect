@@ -232,8 +232,15 @@ export function DashboardClient({
   }, [currentStoreId, router]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => router.refresh(), 15_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [router]);
 
   useEffect(() => {

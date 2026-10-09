@@ -217,8 +217,15 @@ export function AutomationClient() {
 
   useEffect(() => {
     void load();
-    const interval = window.setInterval(() => void load(false), 15_000);
-    return () => window.clearInterval(interval);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load(false);
+    };
+    const interval = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [load]);
 
   async function run(

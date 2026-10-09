@@ -6,6 +6,7 @@ import type { StoreControllerCommandPayload, StoreControllerCommandStatus } from
 import { prepareDueReservations } from "@/lib/reservation-prepare";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { processStoreAutomationSchedule } from "@/lib/store-automation-schedule";
+import { runPollMaintenance } from "@/lib/poll-maintenance";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -84,8 +85,8 @@ export async function GET(request: NextRequest) {
   // 종료를 먼저 처리해야 같은 타석에 OFF와 ON이 함께 생길 때 최종 순서가 ON이 된다.
   // 각 확인 실패는 격리해 기존 장비 명령 수령을 막지 않는다.
   try {
-    const cleanup = await closeExpiredSessions(supabase, now, { storeId });
-    if (cleanup.failed > 0) {
+    const cleanup = await runPollMaintenance(`${storeId}:expiry`, () => closeExpiredSessions(supabase, now, { storeId }));
+    if (cleanup && cleanup.failed > 0) {
       console.warn("만료 세션 일부 정리 실패", {
         scanned: cleanup.scanned,
         completed: cleanup.completed,
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
 
   // 곧 시작하는 예약의 타석을 미리 켠다.
   try {
-    await prepareDueReservations(supabase, storeId, now);
+    await runPollMaintenance(`${storeId}:prepare`, () => prepareDueReservations(supabase, storeId, now));
   } catch (error) {
     console.warn("예약 사전 준비 확인 실패", {
       error: error instanceof Error ? error.message : "unknown"
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await processStoreAutomationSchedule(supabase, storeId, now);
+    await runPollMaintenance(`${storeId}:schedule`, () => processStoreAutomationSchedule(supabase, storeId, now));
   } catch (error) {
     console.warn("매장 운영시간 자동제어 확인 실패", {
       error: error instanceof Error ? error.message : "unknown"
