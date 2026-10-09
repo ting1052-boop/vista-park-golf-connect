@@ -48,6 +48,7 @@ import {
 import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
 import { AdminQuickNav } from "@/components/admin-quick-nav";
+import { SONGDO_STORE_ID } from "@/lib/automation/device-map";
 
 const VISTA_GREEN = "#4E8969";
 const RING_SIZE = 104;
@@ -266,11 +267,12 @@ export function DashboardClient({
     () =>
       bays.filter(
         (bay) =>
+          currentStoreId !== SONGDO_STORE_ID &&
           bay.status === "in_use" &&
           (bay.remainingMinutes ?? 999) > 0 &&
           (bay.remainingMinutes ?? 999) <= 10
       ),
-    [bays]
+    [bays, currentStoreId]
   );
 
   const overtimeBays = useMemo(
@@ -812,7 +814,7 @@ export function DashboardClient({
                     <AlertTriangle className="text-amber-700" size={24} aria-hidden="true" />
                     <div>
                       <h3 className="text-lg font-extrabold text-amber-900">확인 필요한 운영 알림</h3>
-                      <p className="text-sm font-semibold text-amber-800">미퇴장, 종료 임박, 노쇼, 장비 이상을 한 번에 확인합니다.</p>
+                      <p className="text-sm font-semibold text-amber-800">{currentStoreId === SONGDO_STORE_ID ? "미퇴장, 노쇼, 장비 이상을 한 번에 확인합니다." : "미퇴장, 종료 임박, 노쇼, 장비 이상을 한 번에 확인합니다."}</p>
                     </div>
                   </div>
                   <span className="rounded-md bg-white px-3 py-1 text-sm font-extrabold text-amber-800">
