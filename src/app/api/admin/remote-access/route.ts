@@ -96,6 +96,7 @@ export async function GET(request: NextRequest) {
     const bay = bayById.get(row.bay_id);
     return {
       deviceId: row.device_id,
+      storeId: row.store_id,
       bayId: row.bay_id,
       storeName: store?.name ?? "알 수 없는 매장",
       storeCode: store?.code ?? null,

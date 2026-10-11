@@ -5,6 +5,7 @@ import { AlertTriangle, Check, Copy, DoorOpen, History, Loader2, MonitorSmartpho
 
 type Device = {
   deviceId: string;
+  storeId: string;
   storeName: string;
   storeCode: string | null;
   bayCode: string;
@@ -95,6 +96,20 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+type DeviceSort = "bay" | "recent" | "pc";
+const deviceCollator = new Intl.Collator("ko", { numeric: true, sensitivity: "base" });
+
+function getVisibleDevices(devices: Device[], storeId: string, sort: DeviceSort) {
+  return devices.filter((device) => !storeId || device.storeId === storeId).sort((a, b) => {
+    const primary = sort === "recent"
+      ? (Date.parse(b.registeredAt) || 0) - (Date.parse(a.registeredAt) || 0)
+      : sort === "pc" ? deviceCollator.compare(a.computerName, b.computerName) : 0;
+    return primary || deviceCollator.compare(a.storeName, b.storeName) ||
+      deviceCollator.compare(a.storeId, b.storeId) || deviceCollator.compare(a.bayCode, b.bayCode) ||
+      deviceCollator.compare(a.computerName, b.computerName) || deviceCollator.compare(a.deviceId, b.deviceId);
+  });
+}
+
 export function RemoteAccessClient() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -108,6 +123,9 @@ export function RemoteAccessClient() {
   const [draft, setDraft] = useState(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [listStoreId, setListStoreId] = useState("");
+  const [listSort, setListSort] = useState<DeviceSort>("bay");
+  const visibleDevices = getVisibleDevices(devices, listStoreId, listSort);
 
   const load = useCallback(async (deviceId?: string) => {
     setLoading(true);
@@ -417,6 +435,33 @@ export function RemoteAccessClient() {
       ) : null}
 
       <div className="rounded-md border border-[#dfe8dc] bg-white">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#dfe8dc] p-4">
+          <div>
+            <h2 className="font-extrabold">등록된 PC</h2>
+            <p aria-live="polite" className="mt-1 text-xs font-semibold text-[#697468]">
+              {loading ? "불러오는 중" : `${visibleDevices.length}대 / 전체 ${devices.length}대`}
+            </p>
+          </div>
+          <div className="grid w-full grid-cols-2 gap-3 sm:w-auto">
+            <label className="grid min-w-0 gap-1 text-xs font-bold text-[#4f5b50]">
+              목록 매장
+              <select aria-label="목록 매장" value={listStoreId} onChange={(event) => setListStoreId(event.target.value)}
+                className="min-h-11 w-full min-w-0 rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf">
+                <option value="">전체 매장</option>
+                {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+              </select>
+            </label>
+            <label className="grid min-w-0 gap-1 text-xs font-bold text-[#4f5b50]">
+              정렬
+              <select aria-label="정렬" value={listSort} onChange={(event) => setListSort(event.target.value as DeviceSort)}
+                className="min-h-11 w-full min-w-0 rounded-md border border-[#cad8c6] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-vista-leaf">
+                <option value="bay">매장 · 타석순</option>
+                <option value="recent">최근 등록순</option>
+                <option value="pc">PC 이름순</option>
+              </select>
+            </label>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-[1040px] text-left text-sm">
             <thead className="bg-vista-fairway text-[#566153]">
@@ -429,12 +474,12 @@ export function RemoteAccessClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf2ea]">
-              {devices.map((device) => (
+              {visibleDevices.map((device) => (
                 <tr key={device.deviceId} className="align-top hover:bg-[#fbfcfa]">
-                  <td className="px-4 py-4 font-semibold">{device.storeName}</td>
-                  <td className="px-4 py-4 font-extrabold">{device.bayCode}</td>
-                  <td className="px-4 py-4 font-semibold">{pcTypeLabel[device.pcType] ?? device.pcType}</td>
-                  <td className="px-4 py-4 font-semibold">{device.computerName}</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-semibold">{device.storeName}</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-extrabold">{device.bayCode}</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-semibold">{pcTypeLabel[device.pcType] ?? device.pcType}</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-semibold">{device.computerName}</td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold tabular-nums">{device.anydeskId}</span>
@@ -513,9 +558,9 @@ export function RemoteAccessClient() {
           </table>
         </div>
 
-        {!loading && devices.length === 0 ? (
+        {!loading && visibleDevices.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm font-bold text-[#697468]">
-            등록된 PC 가 없습니다. 세팅 도구에서 등록하면 여기에 표시됩니다.
+            {listStoreId ? "선택한 매장에 등록된 PC가 없습니다." : "등록된 PC가 없습니다."}
           </p>
         ) : null}
       </div>
