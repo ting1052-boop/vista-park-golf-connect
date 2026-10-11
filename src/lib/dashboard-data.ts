@@ -1,4 +1,5 @@
 import type { GameTelemetry } from "@/lib/game-telemetry";
+import type { PcConnectionState, UsageState } from "@/lib/bay-operating-state";
 
 export type LiveBayStatus = "in_use" | "available" | "waiting" | "maintenance";
 export type LogTone = "success" | "control" | "warning" | "danger";
@@ -26,6 +27,8 @@ export type LiveBay = {
   mode: string;
   note: string;
   pcOnline?: boolean;
+  pcConnectionState?: PcConnectionState;
+  usageState?: UsageState;
   pcLastSeenIso?: string;
   gameTelemetry?: GameTelemetry;
   gameTelemetryReceivedAt?: string;

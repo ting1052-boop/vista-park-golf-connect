@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { pcConnectionLabels, usageStateLabels, type PcConnectionState, type UsageState } from "@/lib/bay-operating-state";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -38,6 +39,8 @@ type BayControlRow = {
   name: string;
   pcName: string | null;
   agentOnline: boolean;
+  pcConnectionState: PcConnectionState;
+  usageState: UsageState;
   lastSeenAt: string | null;
   hasAutomation: boolean;
   /** PC 켜기 가능(장비표 또는 켜기 전용 WOL 스크립트). 송도처럼 장비 없이 PC 만 깨우는 매장도 true */
@@ -45,6 +48,7 @@ type BayControlRow = {
   /** 제어기 실행 기록 기준 마지막 ON/OFF 명령. null 이면 실행 이력 없음 */
   powerOn: boolean | null;
   powerFailed: boolean;
+  powerPending: boolean;
   powerLastRunAt: string | null;
   inUse: boolean;
 };
@@ -105,15 +109,17 @@ function BayControls({
 }) {
   const pcOn = bay.agentOnline;
   const lastEquipmentCommandOn = bay.powerOn === true;
-  const stateLabel = bay.powerFailed
+  const stateLabel = bay.powerPending
+    ? `${lastEquipmentCommandOn ? "ON" : "OFF"} 명령 요청 중`
+    : bay.powerFailed
     ? lastEquipmentCommandOn
       ? "마지막 ON 명령 실패"
       : "마지막 OFF 명령 실패"
     : bay.powerOn === null
       ? "마지막 명령 없음"
       : lastEquipmentCommandOn
-        ? "마지막 명령 ON"
-        : "마지막 명령 OFF";
+        ? "ON 명령 실행 완료"
+        : "OFF 명령 실행 완료";
 
   return (
     <div className="mt-4 border-t border-[#e5ece1] pt-4">
@@ -143,7 +149,7 @@ function BayControls({
       {bay.hasAutomation ? <div className="mt-4 rounded-md bg-white p-3 ring-1 ring-[#e5ece1]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-bold text-[#697468]">타석 장비</p>
+            <p className="text-xs font-bold text-[#697468]">장비 명령</p>
             <p className={`text-xs font-extrabold ${bay.powerFailed ? "text-rose-700" : "text-[#697468]"}`}>
               {stateLabel}
             </p>
@@ -490,10 +496,7 @@ export function AutomationClient() {
         <section className="mt-6 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line">
           <div className="border-b border-[#e5ece1] p-5">
             <p className="text-sm font-bold text-vista-leaf">타석 PC 연결 상태</p>
-            <h2 className="mt-1 text-xl font-extrabold">PC 실제 연결과 장비 마지막 명령</h2>
-            <p className="mt-2 text-sm leading-6 text-[#697468]">
-              PC 상태는 Agent 최근 신호로 확인합니다. 프로젝터·타석 장비는 실제 전원이 아니라 매장 제어기가 마지막으로 실행한 ON/OFF 명령을 표시합니다.
-            </p>
+            <h2 className="mt-1 text-xl font-extrabold">타석 운영 상태</h2>
           </div>
           <div className="grid gap-3 p-5 md:grid-cols-3">
             {status?.bays.map((bay) => (
@@ -511,13 +514,16 @@ export function AutomationClient() {
                     }`}
                   >
                     <span className={`size-2 rounded-full ${bay.agentOnline ? "bg-emerald-500" : "bg-gray-400"}`} />
-                    PC {bay.agentOnline ? "켜짐" : "확인 안 됨"}
+                    {pcConnectionLabels[bay.pcConnectionState]}
                   </span>
                 </div>
                 <p className="mt-3 min-h-5 text-xs font-semibold text-[#697468]">
                   {bay.lastSeenAt
                     ? `Agent 마지막 신호 ${new Date(bay.lastSeenAt).toLocaleString("ko-KR")}`
                     : "Agent 신호 기록 없음 · PC 전원 확인 필요"}
+                </p>
+                <p className="mt-2 text-sm font-bold">
+                  이용 상태 · {usageStateLabels[bay.usageState]}
                 </p>
                 {bay.inUse && !bay.agentOnline ? (
                   <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-extrabold text-amber-800">
@@ -527,7 +533,7 @@ export function AutomationClient() {
                 <BayControls
                   bay={bay}
                   pcDisabled={
-                    busy !== null || (!bay.agentOnline && (!controllerReady || !bay.canWake))
+                    busy !== null || bay.pcConnectionState === "shutdown_pending" || (!bay.agentOnline && (!controllerReady || !bay.canWake))
                   }
                   equipmentDisabled={busy !== null || !controllerReady || !bay.hasAutomation}
                   pcPending={busy === `pc:${bay.id}`}
@@ -538,7 +544,7 @@ export function AutomationClient() {
                       turnOn
                         ? bay.hasAutomation
                           ? `${bay.code} 프로젝터를 켜고 잠시 후 타석 PC를 부팅합니다. 진행할까요?`
-                          : `${bay.code} PC를 원격으로 켭니다(Wake-on-LAN). 1~2분 뒤 'PC 켜짐'으로 바뀝니다. 진행할까요?`
+                          : `${bay.code} PC를 원격으로 켭니다(Wake-on-LAN). Agent 신호 수신 후 'PC 연결됨'으로 표시합니다. 진행할까요?`
                         : bay.hasAutomation
                           ? `${bay.code} PC를 Windows 정상 종료합니다. 약 10초 후 종료되며 프로젝터는 별도 장비 OFF 버튼으로 끌 수 있습니다. 진행할까요?`
                           : `${bay.code} PC를 Windows 정상 종료합니다. 약 10초 후 종료됩니다. 진행할까요?`,

@@ -21,8 +21,8 @@ export default async function AdminDashboardPage() {
     getDashboardBays(currentStoreId),
     getDashboardOperationalRows(currentStoreId),
     getAutomationDeviceStatuses(currentStoreId),
-    // 공용 조명·냉난방의 현재 상태. 대시보드 조명 버튼이 ON/OFF 중 무엇을 보여줄지 결정한다.
-    getLatestScriptRuns(createSupabaseAdminClient(), currentStoreId).then((runs) =>
+    // Command history, not physical lighting/HVAC power feedback.
+    getLatestScriptRuns(createSupabaseAdminClient(), currentStoreId, true).then((runs) =>
       getPowerState(runs, commonAutomationScripts.on, commonAutomationScripts.off)
     )
   ]);

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { commonAutomationScripts, siheungBayAutomation } from "@/lib/automation/device-map";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import type { ShutdownRecord } from "@/lib/bay-operating-state";
 
 // 대시보드 "무인 장비 상태" 표에 쓰는 실제 실행 상태.
 //
@@ -33,9 +34,10 @@ type ControllerCommandRecord = {
   created_at: string;
   completed_at: string | null;
   response_payload: unknown;
+  payload?: unknown;
 };
 
-export type ScriptRun = { ok: boolean; at: string };
+export type ScriptRun = { ok: boolean; at: string; pending?: boolean };
 
 /** 스크립트 하나의 마지막 실행 결과로 본 마지막 제어 명령 */
 export type PowerState = {
@@ -44,6 +46,7 @@ export type PowerState = {
   /** 마지막 실행이 실패했는지 */
   failed: boolean;
   lastRunAt: string | null;
+  pending?: boolean;
 };
 
 function readSteps(payload: unknown): Array<{ script?: unknown; ok?: unknown }> {
@@ -58,11 +61,14 @@ function buildLatestRunsByScript(commands: ControllerCommandRecord[]) {
 
   for (const command of commands) {
     const at = command.completed_at ?? command.created_at;
+    const pending = command.status === "pending" || command.status === "processing";
+    const scripts = (command.payload as { scripts?: Array<{ script?: string; name?: string }> } | null)?.scripts;
+    const steps = pending ? (Array.isArray(scripts) ? scripts.map((script) => ({ script: script.script, ok: false })) : []) : readSteps(command.response_payload);
 
-    for (const step of readSteps(command.response_payload)) {
+    for (const step of steps) {
       if (typeof step.script !== "string" || step.script.length === 0) continue;
       if (latest.has(step.script)) continue;
-      latest.set(step.script, { ok: step.ok === true, at });
+      latest.set(step.script, { ok: step.ok === true, at, pending });
     }
   }
 
@@ -82,6 +88,8 @@ function resolveState(
     onRun && offRun ? (new Date(onRun.at) >= new Date(offRun.at) ? onRun : offRun) : onRun ?? offRun!;
   const isOnNewest = newest === onRun;
 
+  if (newest.pending) return { state: isOnNewest ? "ON 명령 요청 중" : "OFF 명령 요청 중", tone: "unknown", lastRunAt: newest.at };
+
   if (!newest.ok) {
     return {
       state: isOnNewest ? "마지막 ON 명령 실패" : "마지막 OFF 명령 실패",
@@ -91,7 +99,7 @@ function resolveState(
   }
 
   return {
-    state: isOnNewest ? "마지막 ON 명령 성공" : "마지막 OFF 명령 성공",
+    state: isOnNewest ? "ON 명령 실행 완료" : "OFF 명령 실행 완료",
     tone: isOnNewest ? "on" : "off",
     lastRunAt: newest.at
   };
@@ -108,13 +116,14 @@ function describeProvider(providers: string[]) {
  */
 export async function getLatestScriptRuns(
   supabase: SupabaseClient,
-  storeId: string
+  storeId: string,
+  includePending = false
 ): Promise<Map<string, ScriptRun>> {
   const { data, error } = await supabase
     .from("store_controller_commands")
-    .select("status, created_at, completed_at, response_payload")
+    .select("status, created_at, completed_at, response_payload, payload")
     .eq("store_id", storeId)
-    .in("status", ["succeeded", "failed"])
+    .in("status", includePending ? ["pending", "processing", "succeeded", "failed"] : ["succeeded", "failed"])
     .order("created_at", { ascending: false })
     .limit(COMMAND_SCAN_LIMIT);
 
@@ -137,12 +146,26 @@ export function getPowerState(
   const newest =
     onRun && offRun ? (new Date(onRun.at) >= new Date(offRun.at) ? onRun : offRun) : onRun ?? offRun!;
 
-  return { on: newest === onRun, failed: !newest.ok, lastRunAt: newest.at };
+  return { on: newest === onRun, failed: !newest.pending && !newest.ok, lastRunAt: newest.at, pending: newest.pending };
+}
+
+export async function getRecentShutdowns(supabase: SupabaseClient, storeId: string, now: number): Promise<Map<string, ShutdownRecord>> {
+  const { data, error } = await supabase.from("store_controller_commands")
+    .select("bay_id, status, created_at, completed_at")
+    .eq("store_id", storeId).eq("command_type", "shutdown_pc")
+    .gte("created_at", new Date(now - 300_000).toISOString())
+    .order("created_at", { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  const latest = new Map<string, ShutdownRecord>();
+  for (const row of (data ?? []) as ShutdownRecord[]) {
+    if (row.bay_id && !latest.has(row.bay_id)) latest.set(row.bay_id, row);
+  }
+  return latest;
 }
 
 export async function getAutomationDeviceStatuses(storeId: string): Promise<AutomationDeviceStatusRow[]> {
   const supabase = createSupabaseAdminClient();
-  const latest = await getLatestScriptRuns(supabase, storeId);
+  const latest = await getLatestScriptRuns(supabase, storeId, true);
 
   const commonState = resolveState(latest.get(commonAutomationScripts.on), latest.get(commonAutomationScripts.off));
   const rows: AutomationDeviceStatusRow[] = [

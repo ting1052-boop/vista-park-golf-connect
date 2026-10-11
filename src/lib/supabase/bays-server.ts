@@ -3,6 +3,8 @@ import { normalizeGameTelemetry, type GameTelemetry } from "@/lib/game-telemetry
 import { getBays } from "@/lib/supabase/bays";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { closeSingleSession } from "@/lib/session-cleanup";
+import { getPcConnectionState, getUsageState } from "@/lib/bay-operating-state";
+import { getRecentShutdowns } from "@/lib/supabase/automation-status";
 
 // 마지막 하트비트가 이 시간 안이면 PC가 켜진 것으로 본다(에이전트는 약 15초마다 신호).
 const PC_ONLINE_THRESHOLD_MS = 120_000;
@@ -147,7 +149,7 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   const now = new Date();
   const kstNow = new Date(now.getTime() + 9 * 60 * 60_000);
   const kstStartAsUtc = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate()) - 9 * 60 * 60_000;
-  const [bays, sessionResult, initialAgentResult, activityResult, usageResult] = await Promise.all([
+  const [bays, sessionResult, initialAgentResult, activityResult, usageResult, shutdowns] = await Promise.all([
     getBays(storeId),
     admin
       .from("access_sessions")
@@ -176,7 +178,8 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       .eq("event_type", "usage_started")
       .gte("occurred_at", new Date(kstStartAsUtc).toISOString())
       .order("occurred_at", { ascending: false })
-      .limit(500)
+      .limit(500),
+    getRecentShutdowns(admin, storeId, now.getTime())
   ]);
 
   if (sessionResult.error) {
@@ -277,7 +280,7 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     const usageStarts = usageStartsByBayId.get(bay.id) ?? [];
     const usage = pc?.gameTelemetry?.usage;
     const usageActive = Boolean(
-      usage?.state === "active" &&
+      pc?.online && usage?.state === "active" &&
       usage.endsAt &&
       Date.parse(usage.endsAt) > now.getTime() &&
       pc?.gameTelemetry &&
@@ -301,6 +304,8 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
     return {
       ...observedBase,
       pcOnline: pc?.online ?? false,
+      pcConnectionState: getPcConnectionState(pc?.online ?? false, pc?.lastSeenIso, shutdowns.get(bay.id), now.getTime()),
+      usageState: getUsageState(Boolean(session), pc?.online ?? false, pc?.gameTelemetry, now.getTime()),
       pcLastSeenIso: pc?.lastSeenIso,
       gameTelemetry: pc?.gameTelemetry,
       gameTelemetryReceivedAt: pc?.gameTelemetryReceivedAt,

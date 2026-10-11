@@ -16,7 +16,9 @@ import {
 import { getStoreAutomationSchedule } from "@/lib/store-automation-schedule";
 import { validateScheduleConfig } from "@/lib/automation/schedule-config";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
-import { getLatestScriptRuns, getPowerState } from "@/lib/supabase/automation-status";
+import { getLatestScriptRuns, getPowerState, getRecentShutdowns } from "@/lib/supabase/automation-status";
+import { getPcConnectionState, getUsageState } from "@/lib/bay-operating-state";
+import { normalizeGameTelemetry } from "@/lib/game-telemetry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 type ActiveSessionRow = {
@@ -45,6 +47,7 @@ type AgentRow = {
   pc_name: string | null;
   is_active: boolean | null;
   last_seen_at: string | null;
+  game_telemetry?: unknown;
 };
 
 const AGENT_ONLINE_THRESHOLD_MS = 120_000;
@@ -116,7 +119,7 @@ export async function GET() {
         .order("bay_code", { ascending: true }),
       supabase
         .from("agent_devices")
-        .select("bay_id, pc_name, is_active, last_seen_at")
+        .select("bay_id, pc_name, is_active, last_seen_at, game_telemetry")
         .eq("store_id", storeId)
     ]);
 
@@ -178,7 +181,8 @@ export async function GET() {
 
     // 타석별 마지막 장비 명령(제어기 실행 기록 기준)과 이용 중 여부.
     // 실제 PC 연결은 Agent 신호로 별도 표시하고, 이용 중인 타석을 실수로 끄지 않도록 쓰인다.
-    const latestRuns = await getLatestScriptRuns(supabase, storeId);
+    const latestRuns = await getLatestScriptRuns(supabase, storeId, true);
+    const shutdowns = await getRecentShutdowns(supabase, storeId, now);
     const activeBayIds = new Set(
       ((sessionsResult.data ?? []) as ActiveSessionRow[]).map((row) => row.bay_id).filter((id): id is string => Boolean(id))
     );
@@ -190,14 +194,17 @@ export async function GET() {
       const power = mapping
         ? getPowerState(latestRuns, mapping.enterScript, mapping.exitScript)
         : { on: null, failed: false, lastRunAt: null };
+      const agentOnline = agent?.is_active !== false && lastSeenMs > 0 && now - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS;
+      const usageState = getUsageState(activeBayIds.has(bay.id), agentOnline, normalizeGameTelemetry(agent?.game_telemetry), now);
 
       return {
         id: bay.id,
         code: bay.bay_code,
         name: bay.display_name ?? bay.bay_code,
         pcName: agent?.pc_name ?? null,
-        agentOnline:
-          agent?.is_active !== false && lastSeenMs > 0 && Date.now() - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS,
+        agentOnline,
+        pcConnectionState: getPcConnectionState(agentOnline, agent?.last_seen_at, shutdowns.get(bay.id), now),
+        usageState,
         lastSeenAt: agent?.last_seen_at ?? null,
         hasAutomation: Boolean(mapping),
         // PC 켜기 가능 여부. 장비표가 없는 매장(송도)도 켜기 전용 WOL 스크립트가 있으면 된다.
@@ -205,7 +212,8 @@ export async function GET() {
         powerOn: power.on,
         powerFailed: power.failed,
         powerLastRunAt: power.lastRunAt,
-        inUse: activeBayIds.has(bay.id)
+        powerPending: "pending" in power && power.pending === true,
+        inUse: usageState === "in_use"
       };
     });
 
@@ -213,6 +221,7 @@ export async function GET() {
     let scheduleAvailable = true;
     try {
       schedule = await getStoreAutomationSchedule(supabase, storeId);
+      scheduleAvailable = schedule.storageAvailable;
     } catch {
       scheduleAvailable = false;
     }
@@ -295,7 +304,12 @@ export async function POST(request: NextRequest) {
         },
         { onConflict: "store_id" }
       );
-      if (error) throw new Error(error.message);
+      if (error) {
+        if ((error.code === "42703" || error.code === "PGRST204") && error.message.includes("automation_schedule_config")) {
+          return NextResponse.json({ ok: false, message: "구역별 운영시간 저장을 위한 DB 설정이 아직 적용되지 않았습니다. 관리자에게 적용을 요청해주세요." }, { status: 503 });
+        }
+        throw new Error(error.message);
+      }
 
       return NextResponse.json({
         ok: true,
@@ -396,7 +410,7 @@ export async function POST(request: NextRequest) {
           });
           return NextResponse.json({
             ok: true,
-            message: `${bay.bay_code} PC 켜기 신호를 매장 제어기에 전달했습니다. 1~2분 안에 'PC 켜짐'으로 바뀝니다.`,
+            message: `${bay.bay_code} PC 켜기 신호를 매장 제어기에 전달했습니다. Agent 신호가 수신되면 'PC 연결됨'으로 표시합니다.`,
             command
           });
     }

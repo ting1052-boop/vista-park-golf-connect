@@ -49,6 +49,7 @@ import { subscribeToBays, updateBayStatus } from "@/lib/supabase/bays";
 import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib/supabase/dashboard";
 import { AdminQuickNav } from "@/components/admin-quick-nav";
 import { SONGDO_STORE_ID } from "@/lib/automation/device-map";
+import { pcConnectionLabels, usageStateLabels } from "@/lib/bay-operating-state";
 
 const VISTA_GREEN = "#4E8969";
 const RING_SIZE = 104;
@@ -883,14 +884,14 @@ export function DashboardClient({
                     )}
                   />
                   조명·냉난방{" "}
-                  {sharedPower.failed ? "제어 실패" : sharedPower.on === null ? "상태 기록 없음" : sharedPower.on ? "ON" : "OFF"}
+                  {sharedPower.pending ? "명령 요청 중" : sharedPower.failed ? "명령 실패" : sharedPower.on === null ? "명령 기록 없음" : sharedPower.on ? "ON 명령 실행 완료" : "OFF 명령 실행 완료"}
                 </span>
               </div>
 
               <div className={cn("grid grid-cols-2 gap-2 p-3 sm:gap-4 sm:p-5", !adminContext.limitedMenu && "lg:grid-cols-3")}>
                 {!adminContext.limitedMenu ? <button
                   type="button"
-                  disabled={isSyncing}
+                  disabled={isSyncing || sharedPower.pending}
                   onClick={() =>
                     void handleStoreControl(
                       sharedPower.on ? "shared_off" : "shared_on",
@@ -979,6 +980,7 @@ export function DashboardClient({
                         bay={bay}
                         limitedMenu={adminContext.limitedMenu}
                         storeMonitorOnly={adminContext.storeMonitorOnly}
+                        observationOnly={currentStoreId === SONGDO_STORE_ID}
                         onEndSession={handleEndSession}
                         onExtendTime={handleExtendTime}
                         onCheckIn={handleCheckIn}
@@ -1261,6 +1263,7 @@ function BayCard({
   bay,
   limitedMenu,
   storeMonitorOnly,
+  observationOnly,
   onEndSession,
   onExtendTime,
   onCheckIn,
@@ -1269,6 +1272,7 @@ function BayCard({
   bay: LiveBay;
   limitedMenu: boolean;
   storeMonitorOnly: boolean;
+  observationOnly: boolean;
   onEndSession: (bay: LiveBay) => void | Promise<void>;
   onExtendTime: (bay: LiveBay) => void | Promise<void>;
   onCheckIn: (bay: LiveBay) => void | Promise<void>;
@@ -1277,17 +1281,19 @@ function BayCard({
   const meta = statusMeta[bay.status];
   const StatusIcon = meta.icon;
   const usageText = getBayUsageText(bay);
-  const gameStatus = getGameStatusDisplay(bay, storeMonitorOnly);
-  const hideUnknownGameStatus = storeMonitorOnly && /^A-0[1-7]$/i.test(bay.name) &&
+  const gameStatus = getGameStatusDisplay(bay, storeMonitorOnly || observationOnly);
+  const hideUnknownGameStatus = !observationOnly && storeMonitorOnly && /^A-0[1-7]$/i.test(bay.name) &&
     (gameStatus.label === "게임 상태 확인 불가" || gameStatus.label === "게임 감지 미지원");
 
   return (
-    <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", meta.card)}>
+    <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", observationOnly
+      ? gameStatus.tone === "unknown" ? "border-amber-200" : gameStatus.tone === "active" ? "border-sky-200" : "border-[#dfe8dc]"
+      : meta.card)}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span className={cn("inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-extrabold", meta.badge)}>
+        {!observationOnly ? <span className={cn("inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-extrabold", meta.badge)}>
           <span className={cn("size-2 rounded-full", meta.dot)} />
-          {meta.label}
-        </span>
+          {storeMonitorOnly ? usageStateLabels[bay.usageState ?? "unknown"] : meta.label}
+        </span> : null}
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -1303,7 +1309,7 @@ function BayCard({
             }
           >
             <span className={cn("size-2 rounded-full", bay.pcOnline ? "bg-emerald-500" : "bg-gray-400")} />
-            PC {bay.pcOnline ? "켜짐" : "확인 안 됨"}
+            {pcConnectionLabels[bay.pcConnectionState ?? (bay.pcOnline ? "connected" : "no_signal")]}
           </span>
           <span className="rounded-md bg-white/80 px-2 py-1 text-xs font-extrabold text-[#697468]">{bay.zone}</span>
         </div>
@@ -1312,12 +1318,12 @@ function BayCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-2xl font-extrabold">{bay.name}</h4>
-          <p className="mt-1 text-sm font-bold text-[#5f6b5e]">{bay.mode}</p>
+          {!observationOnly ? <p className="mt-1 text-sm font-bold text-[#5f6b5e]">{storeMonitorOnly ? `이용 상태 · ${usageStateLabels[bay.usageState ?? "unknown"]}` : bay.mode}</p> : null}
           {usageText ? <p className="mt-1.5 text-base font-extrabold text-sky-800">{usageText}</p> : null}
         </div>
-        <div className={cn("grid size-11 shrink-0 place-items-center rounded-md", meta.iconBox)}>
+        {!observationOnly ? <div className={cn("grid size-11 shrink-0 place-items-center rounded-md", meta.iconBox)}>
           <StatusIcon size={23} aria-hidden="true" />
-        </div>
+        </div> : null}
       </div>
 
       {!hideUnknownGameStatus ? <details
@@ -1336,7 +1342,7 @@ function BayCard({
           <span className="text-xs font-extrabold opacity-75">
             {bay.gameActivity?.supported
               ? bay.gameActivity.todayUsageStarts !== undefined
-                ? `오늘 이용 ${bay.gameActivity.todayUsageStarts}회`
+                ? `오늘 이용${observationOnly ? " 감지" : ""} ${bay.gameActivity.todayUsageStarts}회`
                 : "오늘 이용 집계 미지원"
               : "이력 미지원"}
           </span>
@@ -1359,16 +1365,16 @@ function BayCard({
             ) : (
               <p className="mt-1">
                 {bay.gameActivity.todayUsageStarts !== undefined
-                  ? `오늘 이용 시작 ${bay.gameActivity.todayUsageStarts}회가 확인되었습니다.`
+                  ? `오늘 이용${observationOnly ? " 감지" : " 시작"} ${bay.gameActivity.todayUsageStarts}회가 확인되었습니다.`
                   : "오늘 확인된 일반 코스의 로비 복귀 기록이 없습니다."}
               </p>
             )
           ) : <p className="mt-1">게임 이력 DB 적용 전이거나 조회할 수 없습니다.</p>}
-          <p className="mt-1 opacity-75">로비 복귀는 18홀 완주·예약·결제 건수가 아닙니다.</p>
+          <p className="mt-1 opacity-75">{observationOnly ? "감지 횟수는 실제 이용자 수나 예약 건수가 아닙니다." : "로비 복귀는 18홀 완주·예약·결제 건수가 아닙니다."}</p>
         </div>
       </details> : null}
 
-      {bay.status === "in_use" ? (
+      {!observationOnly ? bay.status === "in_use" ? (
         <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
             <CircularTimer remainingMinutes={bay.remainingMinutes ?? 0} totalMinutes={bay.totalMinutes ?? 120} />
@@ -1384,15 +1390,15 @@ function BayCard({
         <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
           <p className="text-sm font-bold text-[#697468]">현재 상태</p>
           <p className="mt-2 text-xl font-extrabold">
-            {bay.status === "available" && "즉시 사용 가능"}
+            {bay.status === "available" && (storeMonitorOnly ? usageStateLabels[bay.usageState ?? "unknown"] : "즉시 사용 가능")}
             {bay.status === "waiting" && "예약자 입장 대기"}
             {bay.status === "maintenance" && "관리자 점검 필요"}
           </p>
         </div>
-      )}
+      ) : null}
 
-      <div className="mt-auto grid grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
-        {bay.status === "in_use" && !bay.observedUsage ? (
+      {!observationOnly || bay.status === "maintenance" ? <div className="mt-auto grid grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
+        {!observationOnly && bay.status === "in_use" && !bay.observedUsage ? (
           <>
             <button
               type="button"
@@ -1413,7 +1419,7 @@ function BayCard({
           </>
         ) : null}
 
-        {bay.status === "waiting" ? (
+        {!observationOnly && bay.status === "waiting" ? (
           <button
             type="button"
             onClick={() => onCheckIn(bay)}
@@ -1424,7 +1430,7 @@ function BayCard({
           </button>
         ) : null}
 
-        {bay.status === "available" ? (
+        {!observationOnly && bay.status === "available" ? (
           <button
             type="button"
             onClick={() => onCheckIn(bay)}
@@ -1445,7 +1451,7 @@ function BayCard({
             점검 완료 처리
           </button>
         ) : null}
-      </div>
+      </div> : null}
     </article>
   );
 }
