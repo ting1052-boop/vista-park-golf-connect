@@ -5,10 +5,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { closeSingleSession } from "@/lib/session-cleanup";
 import { getPcConnectionState, getUsageState } from "@/lib/bay-operating-state";
 import { getRecentShutdowns } from "@/lib/supabase/automation-status";
+import { getStoreObservationPolicy } from "@/lib/store-observation-policy";
 
-// 마지막 하트비트가 이 시간 안이면 PC가 켜진 것으로 본다(에이전트는 약 15초마다 신호).
-const PC_ONLINE_THRESHOLD_MS = 120_000;
-const GAME_TELEMETRY_STALE_MS = 45_000;
 // 종료시각이 지난 뒤 이 시간이 더 지나도록 방치된(에이전트/크론이 못 닫은) 세션만
 // 대시보드 조회 시 자동 정리한다. 정상 종료 흐름(에이전트 5분 대기)과 겹치지 않게 여유를 둔다.
 const SELF_HEAL_GRACE_MS = 10 * 60_000;
@@ -145,6 +143,7 @@ function clearStaleInUseBay(bay: LiveBay): LiveBay {
 }
 
 export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
+  const signalPolicy = getStoreObservationPolicy(storeId);
   const admin = createSupabaseAdminClient();
   const now = new Date();
   const kstNow = new Date(now.getTime() + 9 * 60 * 60_000);
@@ -228,7 +227,7 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
   for (const dev of agentRows) {
     if (!dev.bay_id) continue;
     const lastMs = dev.last_seen_at ? new Date(dev.last_seen_at).getTime() : 0;
-    const online = dev.is_active !== false && lastMs > 0 && now.getTime() - lastMs <= PC_ONLINE_THRESHOLD_MS;
+    const online = dev.is_active !== false && lastMs > 0 && now.getTime() - lastMs <= signalPolicy.pcSignalMaxAgeMs;
     const prev = pcByBayId.get(dev.bay_id);
     const isNewerAgent = !prev?.lastSeenIso || lastMs >= new Date(prev.lastSeenIso).getTime();
     pcByBayId.set(dev.bay_id, {
@@ -284,7 +283,7 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       usage.endsAt &&
       Date.parse(usage.endsAt) > now.getTime() &&
       pc?.gameTelemetry &&
-      now.getTime() - Date.parse(pc.gameTelemetry.observedAt) <= GAME_TELEMETRY_STALE_MS
+      now.getTime() - Date.parse(pc.gameTelemetry.observedAt) <= signalPolicy.telemetryMaxAgeMs
     );
     const activeUsage = usageActive ? usage : null;
     const observedBase = activeUsage && !session
@@ -305,12 +304,12 @@ export async function getDashboardBays(storeId: string): Promise<LiveBay[]> {
       ...observedBase,
       pcOnline: pc?.online ?? false,
       pcConnectionState: getPcConnectionState(pc?.online ?? false, pc?.lastSeenIso, shutdowns.get(bay.id), now.getTime()),
-      usageState: getUsageState(Boolean(session), pc?.online ?? false, pc?.gameTelemetry, now.getTime()),
+      usageState: getUsageState(Boolean(session), pc?.online ?? false, pc?.gameTelemetry, now.getTime(), signalPolicy.telemetryMaxAgeMs),
       pcLastSeenIso: pc?.lastSeenIso,
       gameTelemetry: pc?.gameTelemetry,
       gameTelemetryReceivedAt: pc?.gameTelemetryReceivedAt,
       gameTelemetryStale: pc?.gameTelemetry
-        ? now.getTime() - Date.parse(pc.gameTelemetry.observedAt) > GAME_TELEMETRY_STALE_MS
+        ? now.getTime() - Date.parse(pc.gameTelemetry.observedAt) > signalPolicy.telemetryMaxAgeMs
         : undefined,
       agentVersion: pc?.agentVersion,
       gameActivity: {

@@ -34,10 +34,10 @@ export function getPcConnectionState(online: boolean, lastSeenAt: string | null 
   return online ? "connected" : "no_signal";
 }
 
-export function getUsageState(hasSession: boolean, online: boolean, telemetry: GameTelemetry | null | undefined, now: number): UsageState {
+export function getUsageState(hasSession: boolean, online: boolean, telemetry: GameTelemetry | null | undefined, now: number, maxAgeMs = 45_000): UsageState {
   if (hasSession) return "in_use";
   const observedAt = Date.parse(telemetry?.observedAt ?? "");
-  if (!online || !telemetry || !Number.isFinite(observedAt) || now - observedAt > 45_000 || observedAt > now + 5_000) return "unknown";
+  if (!online || !telemetry || !Number.isFinite(observedAt) || now - observedAt > maxAgeMs || observedAt > now + 5_000) return "unknown";
   const usage = telemetry.usage;
   if (usage?.state === "active" && Date.parse(usage.endsAt ?? "") > now) return "in_use";
   if (usage?.state === "awaiting_input" || telemetry.gameRunning === false) return "idle";

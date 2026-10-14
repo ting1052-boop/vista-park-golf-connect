@@ -50,6 +50,7 @@ import type { DashboardReservationRow, DashboardReservationSummary } from "@/lib
 import { AdminQuickNav } from "@/components/admin-quick-nav";
 import { SONGDO_STORE_ID } from "@/lib/automation/device-map";
 import { pcConnectionLabels, usageStateLabels } from "@/lib/bay-operating-state";
+import { getStoreObservationPolicy } from "@/lib/store-observation-policy";
 
 const VISTA_GREEN = "#4E8969";
 const RING_SIZE = 104;
@@ -237,13 +238,13 @@ export function DashboardClient({
     const refresh = () => {
       if (document.visibilityState === "visible") router.refresh();
     };
-    const timer = window.setInterval(refresh, 15_000);
+    const timer = window.setInterval(refresh, getStoreObservationPolicy(currentStoreId).refreshIntervalMs);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [router]);
+  }, [router, currentStoreId]);
 
   useEffect(() => {
     if (!toast) return;

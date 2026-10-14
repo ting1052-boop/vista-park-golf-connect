@@ -54,6 +54,8 @@ type BayControlRow = {
 };
 
 type AutomationStatus = {
+  refreshIntervalMs?: number;
+  pcSignalMaxAgeMs?: number;
   controllerEnabled: boolean;
   controllerStalled: boolean;
   pendingCommandCount: number;
@@ -223,16 +225,21 @@ export function AutomationClient() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  const commandPending = Boolean(status?.pendingCommandCount || status?.bays.some((bay) => bay.powerPending || bay.pcConnectionState === "shutdown_pending"));
+  const refreshIntervalMs = commandPending ? 5_000 : status?.refreshIntervalMs ?? 15_000;
+  useEffect(() => {
     const refresh = () => {
       if (document.visibilityState === "visible") void load(false);
     };
-    const interval = window.setInterval(refresh, 15_000);
+    const interval = window.setInterval(refresh, refreshIntervalMs);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [load]);
+  }, [load, refreshIntervalMs]);
 
   async function run(
     action: "close_expired" | "shared_on" | "shared_off" | "store_close" | "store_prepare" | "bay_off" | "bay_on" | "pc_shutdown",
@@ -359,12 +366,12 @@ export function AutomationClient() {
                 {!status
                   ? "매장 제어기와 타석 PC의 최근 상태를 확인하고 있습니다."
                   : operationsHealthy
-                  ? "PC Agent와 장비 명령 기록, 이용시간을 15초마다 확인합니다."
+                  ? "PC Agent와 장비 명령 기록을 확인했습니다."
                   : "제어기 응답, 이용 중 PC 연결, 실패한 장비 명령과 종료 초과 이용을 확인해주세요."}
               </p>
             </div>
           </div>
-          <span className="shrink-0 text-xs font-bold opacity-70">자동 갱신 15초</span>
+          <span className="shrink-0 text-xs font-bold opacity-70">자동 갱신 {refreshIntervalMs / 1000}초</span>
         </section>
 
         <section className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4" aria-label="운영 상태 요약">
@@ -387,7 +394,7 @@ export function AutomationClient() {
               <div><p className="text-xs font-bold text-[#697468] sm:text-sm">PC Agent 연결</p><strong className="mt-2 block text-lg font-extrabold sm:text-xl">{status ? `${onlinePcCount} / ${status.bays.length}` : "-"}</strong></div>
               <span className="hidden size-10 place-items-center rounded-md bg-emerald-50 text-emerald-700 sm:grid"><Monitor size={20} /></span>
             </div>
-            <p className="mt-3 text-xs font-semibold text-[#697468]">최근 2분 신호 기준</p>
+            <p className="mt-3 text-xs font-semibold text-[#697468]">최근 {(status?.pcSignalMaxAgeMs ?? 120_000) / 60_000}분 신호 기준</p>
           </article>
           <article className="min-w-0 rounded-md border border-[#dfe8dc] bg-white p-3 shadow-soft-line sm:p-4">
             <div className="flex items-start justify-between gap-3">

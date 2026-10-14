@@ -19,6 +19,7 @@ import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { getLatestScriptRuns, getPowerState, getRecentShutdowns } from "@/lib/supabase/automation-status";
 import { getPcConnectionState, getUsageState } from "@/lib/bay-operating-state";
 import { normalizeGameTelemetry } from "@/lib/game-telemetry";
+import { getStoreObservationPolicy } from "@/lib/store-observation-policy";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 type ActiveSessionRow = {
@@ -50,7 +51,6 @@ type AgentRow = {
   game_telemetry?: unknown;
 };
 
-const AGENT_ONLINE_THRESHOLD_MS = 120_000;
 const CONTROLLER_STALLED_THRESHOLD_MS = 30_000;
 
 const commandTypeLabels: Record<string, string> = {
@@ -88,6 +88,7 @@ export async function GET() {
   const { context, denied } = await requireContext();
   if (denied) return denied;
   const storeId = context!.storeId;
+  const signalPolicy = getStoreObservationPolicy(storeId);
 
   try {
     const supabase = createSupabaseAdminClient();
@@ -194,8 +195,8 @@ export async function GET() {
       const power = mapping
         ? getPowerState(latestRuns, mapping.enterScript, mapping.exitScript)
         : { on: null, failed: false, lastRunAt: null };
-      const agentOnline = agent?.is_active !== false && lastSeenMs > 0 && now - lastSeenMs <= AGENT_ONLINE_THRESHOLD_MS;
-      const usageState = getUsageState(activeBayIds.has(bay.id), agentOnline, normalizeGameTelemetry(agent?.game_telemetry), now);
+      const agentOnline = agent?.is_active !== false && lastSeenMs > 0 && now - lastSeenMs <= signalPolicy.pcSignalMaxAgeMs;
+      const usageState = getUsageState(activeBayIds.has(bay.id), agentOnline, normalizeGameTelemetry(agent?.game_telemetry), now, signalPolicy.telemetryMaxAgeMs);
 
       return {
         id: bay.id,
@@ -229,6 +230,8 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       controllerEnabled,
+      refreshIntervalMs: signalPolicy.refreshIntervalMs,
+      pcSignalMaxAgeMs: signalPolicy.pcSignalMaxAgeMs,
       controllerStalled,
       pendingCommandCount: (queueResult.data ?? []).length,
       stalePendingCount: staleControllerCommands.length,
