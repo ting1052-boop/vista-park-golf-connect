@@ -4,6 +4,8 @@ import { normalizeAgentRoundEvents, storeAgentRoundEvents } from "@/lib/agent-ro
 import { normalizeAgentUsageEvents, storeAgentUsageEvents } from "@/lib/agent-usage-events";
 import { normalizeGameTelemetry } from "@/lib/game-telemetry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { claimShutdownCommand } from "@/lib/agent-commands";
+import { getAgentObserverPolicy } from "@/lib/agent-observer-protocol";
 
 type HeartbeatBody = {
   agentId?: unknown;
@@ -21,6 +23,7 @@ type HeartbeatBody = {
   gameTelemetry?: unknown;
   roundEvents?: unknown;
   usageEvents?: unknown;
+  observerProtocol?: unknown;
 };
 
 const MAX_HEARTBEAT_BYTES = 32 * 1024;
@@ -50,6 +53,7 @@ export async function POST(request: NextRequest) {
   const agentVersion = typeof body.agentVersion === "string" ? body.agentVersion : null;
 
   await touchAgent(supabase, agent, { pcName, agentVersion });
+  const observerPolicy = getAgentObserverPolicy(agent, body.observerProtocol);
 
   let gameTelemetryAccepted: boolean | null = null;
   if (body.gameTelemetry !== undefined) {
@@ -128,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (typeof body.accessSessionId === "string" && typeof body.remainingSeconds === "number") {
+  if (!observerPolicy && typeof body.accessSessionId === "string" && typeof body.remainingSeconds === "number") {
     const { data: matchingSession } = await supabase
       .from("access_sessions")
       .select("id")
@@ -148,7 +152,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  const response = {
     ok: true,
     receivedAt: nowIso,
     status: typeof body.status === "string" ? body.status : "unknown",
@@ -160,5 +164,23 @@ export async function POST(request: NextRequest) {
     usageEventAckIds,
     usageEventRejected,
     usageEventRetryable
-  });
+  };
+
+  if (observerPolicy) {
+    try {
+      const commands = await claimShutdownCommand(supabase, agent);
+      return NextResponse.json({ ...response, commands, observerPolicy });
+    } catch (error) {
+      // Preserve persisted outbox ACKs even when command delivery must retry.
+      return NextResponse.json({
+        ...response,
+        ok: false,
+        commands: [],
+        observerPolicy,
+        message: error instanceof Error ? error.message : "Agent 명령을 확인하지 못했습니다."
+      }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json(response);
 }
