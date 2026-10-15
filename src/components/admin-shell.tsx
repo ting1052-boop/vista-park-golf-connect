@@ -150,6 +150,7 @@ export function AdminShell({
               <div className="min-w-0 flex-1">
                 {adminContext?.isHeadAdmin ? (
                   <StoreSwitcher
+                    key={adminContext.storeId}
                     stores={stores}
                     currentStoreId={adminContext.storeId}
                     currentStoreName={adminContext.storeName}

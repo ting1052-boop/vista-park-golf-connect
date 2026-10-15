@@ -66,4 +66,6 @@ assert.notEqual(first.key, second.key, "Store changes must reset drafts, rows an
 const source = fs.readFileSync(new URL("../src/components/admin-crud-page.tsx", import.meta.url), "utf8");
 assert.doesNotMatch(source, /\.from\("reservations"\)/);
 assert.match(source, /setRows\(resource === "reservations" \? \[\] : initialRows\)/);
+const shell = fs.readFileSync(new URL("../src/components/admin-shell.tsx", import.meta.url), "utf8");
+assert.match(shell, /<StoreSwitcher\s+key=\{adminContext.storeId\}/, "Store change must reset the switcher's busy state");
 console.log("Reservation client store scope checks passed (no production requests).");
