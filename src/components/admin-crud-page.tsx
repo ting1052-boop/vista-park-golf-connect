@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, Pencil, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { toReservationErrorMessage } from "@/lib/supabase/reservation-errors";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -29,6 +28,7 @@ type AdminCrudPageProps = {
   resource: CrudResource;
   fields: CrudField[];
   initialRows: CrudRow[];
+  reservationStoreId?: string;
   /** 다른 표에서 끌어와 읽기 전용으로 덧붙이는 열. 편집 대상이 아니다. */
   extraColumns?: Array<{ key: string; label: string }>;
   /** 행 id -> { 열 key: 표시값 } */
@@ -117,15 +117,22 @@ function formatDateTimeLocal(value: string | null | undefined) {
 }
 
 function toIsoFromLocal(value: string) {
-  if (!value) return new Date().toISOString();
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  if (!value || Number.isNaN(date.getTime())) throw new Error("예약시간을 입력해주세요.");
+  return date.toISOString();
 }
 
-function addMinutes(value: string, minutes: number) {
-  const date = new Date(toIsoFromLocal(value));
-  date.setMinutes(date.getMinutes() + minutes);
-  return date.toISOString();
+async function reservationRequest(storeId: string | undefined, method = "GET", body?: Record<string, unknown>) {
+  if (!storeId) throw new Error("선택된 매장을 확인하지 못했습니다.");
+  const response = await fetch(`/api/admin/reservations?storeId=${encodeURIComponent(storeId)}`, {
+    method,
+    cache: "no-store",
+    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, storeId }) } : {})
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.message ?? "예약 요청에 실패했습니다.");
+  if (method === "GET" && data.storeId !== storeId) throw new Error("매장이 변경되었습니다. 다시 조회해주세요.");
+  return data;
 }
 
 function mapStore(record: StoreRecord): CrudRow {
@@ -193,23 +200,6 @@ function mapMember(record: MemberRecord): CrudRow {
     age_group: record.age_group ?? "",
     memo: record.memo ?? ""
   };
-}
-
-async function getBayIdByCode(bayCode: string) {
-  if (!bayCode.trim()) return null;
-
-  const supabase = createBrowserSupabaseClient();
-  const { data, error } = await supabase.from("bays").select("id").eq("bay_code", bayCode.trim()).maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data?.id ?? null;
-}
-
-function isApprovalRequired(value: string) {
-  return ["승인", "수동", "확인", "매장"].some((keyword) => value.includes(keyword));
 }
 
 function normalizeBayCount(value: string) {
@@ -305,6 +295,7 @@ export function AdminCrudPage({
   resource,
   fields,
   initialRows,
+  reservationStoreId,
   extraColumns = [],
   extraValues = {}
 }: AdminCrudPageProps) {
@@ -370,13 +361,8 @@ export function AdminCrudPage({
       }
 
       if (resource === "reservations") {
-        const { data, error: queryError } = await supabase
-          .from("reservations")
-          .select("id, starts_at, guest_name, party_size, channel, status, approval_required, memo, bays(bay_code)")
-          .order("starts_at", { ascending: false });
-
-        if (queryError) throw new Error(queryError.message);
-        setRows((data ?? []).map((record) => mapReservation(record as ReservationRecord)));
+        const data = await reservationRequest(reservationStoreId);
+        setRows((data.rows as ReservationRecord[]).map(mapReservation));
       }
 
       if (resource === "devices") {
@@ -400,7 +386,7 @@ export function AdminCrudPage({
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "목록을 불러오지 못했습니다.");
-      setRows(initialRows);
+      setRows(resource === "reservations" ? [] : initialRows);
     } finally {
       setIsLoading(false);
     }
@@ -409,7 +395,7 @@ export function AdminCrudPage({
   useEffect(() => {
     void loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resource, selectedStoreId]);
+  }, [resource, selectedStoreId, reservationStoreId]);
 
   useEffect(() => {
     if (resource !== "bays") return;
@@ -468,20 +454,10 @@ export function AdminCrudPage({
       }
 
       if (resource === "reservations") {
-        const bayId = await getBayIdByCode(draft.bay_code);
-        const { error: insertError } = await supabase.from("reservations").insert({
-          store_id: DEFAULT_STORE_ID,
-          bay_id: bayId,
-          guest_name: draft.guest_name.trim() || "현장 고객",
-          starts_at: toIsoFromLocal(draft.starts_at),
-          ends_at: addMinutes(draft.starts_at, 60),
-          party_size: Number(draft.party_size || 1),
-          channel: draft.channel.trim() || "admin",
-          status: draft.status.trim() || "requested",
-          approval_required: isApprovalRequired(draft.approval_policy),
-          memo: draft.memo.trim() || null
+        await reservationRequest(reservationStoreId, "POST", {
+          ...draft,
+          starts_at: toIsoFromLocal(draft.starts_at)
         });
-        if (insertError) throw new Error(toReservationErrorMessage(insertError));
       }
 
       if (resource === "devices") {
@@ -572,23 +548,11 @@ export function AdminCrudPage({
       }
 
       if (resource === "reservations") {
-        const bayId = await getBayIdByCode(editDraft.bay_code);
-        const { error: updateError } = await supabase
-          .from("reservations")
-          .update({
-            bay_id: bayId,
-            guest_name: editDraft.guest_name.trim() || "현장 고객",
-            starts_at: toIsoFromLocal(editDraft.starts_at),
-            ends_at: addMinutes(editDraft.starts_at, 60),
-            party_size: Number(editDraft.party_size || 1),
-            channel: editDraft.channel.trim() || "admin",
-            status: editDraft.status.trim() || "requested",
-            approval_required: isApprovalRequired(editDraft.approval_policy),
-            memo: editDraft.memo.trim() || null,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", editingId);
-        if (updateError) throw new Error(toReservationErrorMessage(updateError));
+        await reservationRequest(reservationStoreId, "PATCH", {
+          ...editDraft,
+          id: editingId,
+          starts_at: toIsoFromLocal(editDraft.starts_at)
+        });
       }
 
       if (resource === "devices") {
@@ -643,13 +607,17 @@ export function AdminCrudPage({
     setMessage(null);
 
     try {
-      const supabase = createBrowserSupabaseClient();
-      const { data: deletedRows, error: deleteError } = await supabase.from(resource).delete().eq("id", rowId).select("id");
+      if (resource === "reservations") {
+        await reservationRequest(reservationStoreId, "DELETE", { id: rowId });
+      } else {
+        const supabase = createBrowserSupabaseClient();
+        const { data: deletedRows, error: deleteError } = await supabase.from(resource).delete().eq("id", rowId).select("id");
 
-      if (deleteError) throw new Error(deleteError.message);
+        if (deleteError) throw new Error(deleteError.message);
 
-      if (!deletedRows || deletedRows.length === 0) {
-        throw new Error("삭제된 행이 없습니다. Supabase RLS 삭제 정책이 적용됐는지 확인해주세요.");
+        if (!deletedRows || deletedRows.length === 0) {
+          throw new Error("삭제된 행이 없습니다. Supabase RLS 삭제 정책이 적용됐는지 확인해주세요.");
+        }
       }
 
       if (resource === "bays") {
