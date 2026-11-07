@@ -33,8 +33,8 @@ type ControllerCommandRecord = {
   status: string | null;
   created_at: string;
   completed_at: string | null;
-  response_payload: unknown;
-  payload?: unknown;
+  response_steps: unknown;
+  payload_scripts: unknown;
 };
 
 export type ScriptRun = { ok: boolean; at: string; pending?: boolean };
@@ -49,9 +49,7 @@ export type PowerState = {
   pending?: boolean;
 };
 
-function readSteps(payload: unknown): Array<{ script?: unknown; ok?: unknown }> {
-  if (!payload || typeof payload !== "object") return [];
-  const steps = (payload as { steps?: unknown }).steps;
+function readSteps(steps: unknown): Array<{ script?: unknown; ok?: unknown }> {
   return Array.isArray(steps) ? (steps as Array<{ script?: unknown; ok?: unknown }>) : [];
 }
 
@@ -62,8 +60,8 @@ function buildLatestRunsByScript(commands: ControllerCommandRecord[]) {
   for (const command of commands) {
     const at = command.completed_at ?? command.created_at;
     const pending = command.status === "pending" || command.status === "processing";
-    const scripts = (command.payload as { scripts?: Array<{ script?: string; name?: string }> } | null)?.scripts;
-    const steps = pending ? (Array.isArray(scripts) ? scripts.map((script) => ({ script: script.script, ok: false })) : []) : readSteps(command.response_payload);
+    const scripts = command.payload_scripts;
+    const steps = pending ? (Array.isArray(scripts) ? scripts.map((script) => ({ script: script.script, ok: false })) : []) : readSteps(command.response_steps);
 
     for (const step of steps) {
       if (typeof step.script !== "string" || step.script.length === 0) continue;
@@ -121,7 +119,7 @@ export async function getLatestScriptRuns(
 ): Promise<Map<string, ScriptRun>> {
   const { data, error } = await supabase
     .from("store_controller_commands")
-    .select("status, created_at, completed_at, response_payload, payload")
+    .select("status, created_at, completed_at, response_steps:response_payload->steps, payload_scripts:payload->scripts")
     .eq("store_id", storeId)
     .in("status", includePending ? ["pending", "processing", "succeeded", "failed"] : ["succeeded", "failed"])
     .order("created_at", { ascending: false })

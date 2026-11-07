@@ -3,8 +3,6 @@ import type { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 type AgentCommandRow = {
   id: string;
-  command_type: "shutdown_pc";
-  payload: Record<string, unknown> | null;
   attempts: number;
 };
 
@@ -44,7 +42,7 @@ export async function claimShutdownCommand(
 
   const { data: pending, error: pendingError } = await supabase
     .from("store_controller_commands")
-    .select("id, command_type, payload, attempts")
+    .select("id, attempts")
     .eq("store_id", agent.store_id)
     .eq("bay_id", agent.bay_id)
     .eq("command_type", "shutdown_pc")

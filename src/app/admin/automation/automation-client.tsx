@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { pcConnectionLabels, usageStateLabels, type PcConnectionState, type UsageState } from "@/lib/bay-operating-state";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { automationHasFreshPending, createVisiblePoller } from "@/lib/visible-poller";
 import {
   Activity,
   AlertTriangle,
@@ -186,7 +187,7 @@ function BayControls({
   );
 }
 
-export function AutomationClient() {
+export function AutomationClient({ storeId }: { storeId: string }) {
   const [status, setStatus] = useState<AutomationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -197,49 +198,53 @@ export function AutomationClient() {
     { id: "store", name: "매장 전체", bayIds: null, enabled: false, openTime: DEFAULT_OPEN_TIME, closeTime: DEFAULT_CLOSE_TIME, timezone: "Asia/Seoul", lastOpenedOn: null, lastClosedOn: null }
   ]);
   const scheduleLoaded = useRef(false);
+  const poller = useRef<ReturnType<typeof createVisiblePoller<AutomationStatus>> | null>(null);
+  const [refreshIntervalMs, setRefreshIntervalMs] = useState(15_000);
 
-  const load = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/admin/automation", { cache: "no-store" });
-      const data = (await response.json()) as AutomationStatus & ApiResponse;
-      if (!response.ok || data.ok === false) throw new Error(data.message ?? "무인제어 현황을 불러오지 못했습니다.");
-      setStatus(data);
-      if (!scheduleLoaded.current && data.automation) {
-        setAutomationMode(data.automation.mode);
-        setSchedules(data.automation.schedules.map((schedule) => ({
-          ...schedule,
-          openTime: schedule.openTime ?? DEFAULT_OPEN_TIME,
-          closeTime: schedule.closeTime ?? DEFAULT_CLOSE_TIME,
-          timezone: "Asia/Seoul"
-        })));
-        scheduleLoaded.current = true;
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "무인제어 현황을 불러오지 못했습니다.");
-    } finally {
-      if (showLoading) setLoading(false);
-    }
+  const load = useCallback((showLoading = true) => {
+    return poller.current?.refresh(showLoading) ?? Promise.resolve();
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const commandPending = Boolean(status?.pendingCommandCount || status?.bays.some((bay) => bay.powerPending || bay.pcConnectionState === "shutdown_pending"));
-  const refreshIntervalMs = commandPending ? 5_000 : status?.refreshIntervalMs ?? 15_000;
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === "visible") void load(false);
-    };
-    const interval = window.setInterval(refresh, refreshIntervalMs);
-    document.addEventListener("visibilitychange", refresh);
+    let pendingSince: number | null = null;
+    scheduleLoaded.current = false;
+    const current = createVisiblePoller<AutomationStatus>({
+      read: async (signal) => {
+        const response = await fetch("/api/admin/automation", { cache: "no-store", signal });
+        const data = (await response.json()) as AutomationStatus & ApiResponse;
+        if (!response.ok || data.ok === false) throw new Error(data.message ?? "무인제어 현황을 불러오지 못했습니다.");
+        return data;
+      },
+      onData: (data) => {
+        setError(null);
+        setStatus(data);
+        if (!scheduleLoaded.current && data.automation) {
+          setAutomationMode(data.automation.mode);
+          setSchedules(data.automation.schedules.map((schedule) => ({
+            ...schedule,
+            openTime: schedule.openTime ?? DEFAULT_OPEN_TIME,
+            closeTime: schedule.closeTime ?? DEFAULT_CLOSE_TIME,
+            timezone: "Asia/Seoul"
+          })));
+          scheduleLoaded.current = true;
+        }
+        const now = Date.now();
+        const pending = automationHasFreshPending(data, now);
+        if (!pending) pendingSince = null;
+        else pendingSince ??= now;
+        const normalDelay = Math.max(15_000, data.refreshIntervalMs ?? 15_000);
+        return pendingSince !== null && now - pendingSince < 30_000 ? 5_000 : normalDelay;
+      },
+      onError: (caught) => setError(caught instanceof Error ? caught.message : "무인제어 현황을 불러오지 못했습니다."),
+      onLoading: setLoading,
+      onDelay: setRefreshIntervalMs
+    });
+    poller.current = current;
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", refresh);
+      current.dispose();
+      if (poller.current === current) poller.current = null;
     };
-  }, [load, refreshIntervalMs]);
+  }, [storeId]);
 
   async function run(
     action: "close_expired" | "shared_on" | "shared_off" | "store_close" | "store_prepare" | "bay_off" | "bay_on" | "pc_shutdown",
@@ -298,7 +303,7 @@ export function AutomationClient() {
       const data = (await response.json()) as ApiResponse;
       if (!response.ok || data.ok === false) throw new Error(data.message ?? "운영시간을 저장하지 못했습니다.");
       setMessage(data.message ?? "운영시간을 저장했습니다.");
-      await load(false);
+      await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "운영시간을 저장하지 못했습니다.");
     } finally {

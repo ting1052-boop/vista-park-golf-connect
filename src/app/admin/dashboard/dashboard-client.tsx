@@ -221,13 +221,19 @@ export function DashboardClient({
   }, [initialAlerts, initialBays, initialError, initialNoShows, initialReservations, initialTodayReservationSummary]);
 
   useEffect(() => {
+    let active = true;
     try {
-      return subscribeToBays(() => {
+      const unsubscribe = subscribeToBays(() => {
         // A bay status change does not contain enough information to identify
         // an active access session. Re-read the server-derived view instead.
+        if (!active || document.visibilityState !== "visible") return;
         router.refresh();
         setDataError(null);
       }, currentStoreId);
+      return () => {
+        active = false;
+        unsubscribe();
+      };
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "타석 실시간 구독을 시작하지 못했습니다.");
       return undefined;

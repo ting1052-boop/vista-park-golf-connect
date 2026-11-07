@@ -46,7 +46,9 @@ const records = [
 const db = { from() { return {
   select() { return this; }, eq() { return this; },
   in(_field, values) { selectedStatuses = values; return this; }, order() { return this; },
-  async limit() { return { data: records.filter((row) => selectedStatuses.includes(row.status)), error: null }; }
+  async limit() { return { data: records.filter((row) => selectedStatuses.includes(row.status)).map((row) => ({
+    ...row, response_steps: row.response_payload?.steps ?? null, payload_scripts: row.payload?.scripts ?? null
+  })), error: null }; }
 }; } };
 const completed = await automation.getLatestScriptRuns(db, "songdo");
 assert.equal(selectedStatuses.includes("pending"), false);

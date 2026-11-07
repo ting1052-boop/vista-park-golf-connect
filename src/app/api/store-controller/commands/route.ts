@@ -181,7 +181,7 @@ export async function GET(request: NextRequest) {
 
   const { data: pending, error: pendingError } = await supabase
     .from("store_controller_commands")
-    .select("id, store_id, bay_id, access_session_id, reservation_id, command_type, payload, attempts")
+    .select("id, attempts")
     .eq("status", "pending")
     .eq("store_id", storeId)
     .in("command_type", [...CONTROLLER_COMMAND_TYPES])
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
   if (pendingError) return NextResponse.json({ ok: false, message: pendingError.message }, { status: 500 });
 
   const claimed: CommandRow[] = [];
-  for (const candidate of (pending ?? []) as CommandRow[]) {
+  for (const candidate of (pending ?? []) as Pick<CommandRow, "id" | "attempts">[]) {
     const { data, error } = await supabase
       .from("store_controller_commands")
       .update({
