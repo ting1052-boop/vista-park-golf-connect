@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { getOptionalAdminContext } from "@/lib/admin-context";
 import { closeEnrollment, getEnrollmentState, openEnrollment } from "@/lib/pc-enrollment";
 import { parseRegisterPayload } from "@/lib/pc-registry-payload";
 import { registerBayPc } from "@/lib/pc-registry";
@@ -39,12 +39,23 @@ type HistoryRow = {
   change_source: string;
 };
 
-export async function GET(request: NextRequest) {
-  try {
-    await requireAdminUser();
-  } catch {
+// 전 매장 PC 의 AnyDesk ID·등록 창구를 다루므로 본사관리자 전용이다. 로그인만 확인하면
+// 공개 가입한 아무 계정이나 원격접속 정보를 보고 등록 창구를 열 수 있다.
+// 역할이 없으면 관리자가 아니므로 401, 매장관리자는 403.
+async function ensureHeadAdmin() {
+  const context = await getOptionalAdminContext();
+  if (!context) {
     return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
   }
+  if (!context.isHeadAdmin) {
+    return NextResponse.json({ ok: false, message: "본사관리자만 사용할 수 있습니다." }, { status: 403 });
+  }
+  return null;
+}
+
+export async function GET(request: NextRequest) {
+  const denied = await ensureHeadAdmin();
+  if (denied) return denied;
 
   let supabase;
   try {
@@ -164,11 +175,8 @@ export async function GET(request: NextRequest) {
  * 중복 검사·이력 기록은 세팅 도구와 같은 경로를 탄다.
  */
 export async function POST(request: NextRequest) {
-  try {
-    await requireAdminUser();
-  } catch {
-    return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
-  }
+  const denied = await ensureHeadAdmin();
+  if (denied) return denied;
 
   let body: Record<string, unknown>;
   try {

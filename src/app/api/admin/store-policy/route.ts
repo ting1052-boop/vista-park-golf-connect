@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { getOptionalAdminContext } from "@/lib/admin-context";
 import {
   getDefaultDurationOptions,
   getStoreDurationOptions,
@@ -9,13 +9,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 const CURRENT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
+// 요금표는 본사관리자만 바꾼다. 로그인만 확인하면 공개 가입한 아무 계정이나 매장 설정을
+// 바꿀 수 있다. 역할이 없으면 관리자가 아니므로 401, 매장관리자는 403.
 async function ensureAdmin() {
-  try {
-    await requireAdminUser();
-    return null;
-  } catch {
+  const context = await getOptionalAdminContext();
+  if (!context) {
     return NextResponse.json({ ok: false, message: "관리자 로그인이 필요합니다." }, { status: 401 });
   }
+  if (!context.isHeadAdmin) {
+    return NextResponse.json({ ok: false, message: "본사관리자만 사용할 수 있습니다." }, { status: 403 });
+  }
+  return null;
 }
 
 export async function GET() {
