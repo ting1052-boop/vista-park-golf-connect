@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import type { User } from "@supabase/supabase-js";
 import { requireAdminUser } from "@/lib/admin-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -29,11 +28,6 @@ export function isAdminRole(role: string | null | undefined): role is AdminRole 
   return role === "head_admin" || role === "store_manager" || role === "staff";
 }
 
-function metadataString(user: User, key: string) {
-  const value = user.app_metadata?.[key] ?? user.user_metadata?.[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 async function readHeadStoreCookie(): Promise<string | null> {
   try {
     const store = (await cookies()).get(HEAD_STORE_COOKIE)?.value?.trim();
@@ -58,7 +52,9 @@ export async function getAdminContext(): Promise<AdminContext> {
     throw new Error(`관리자 권한을 확인하지 못했습니다: ${userError.message}`);
   }
 
-  let role: string | null = (userRow as UserRoleRow | null)?.role ?? metadataString(user, "role");
+  // 역할은 public.users 에서만 읽는다. 사용자 메타데이터(user_metadata)는 계정 주인이 브라우저에서
+  // 직접 바꿀 수 있어, 여기서 역할을 읽으면 역할 행이 없는 계정이 스스로 본사가 된다.
+  let role: string | null = (userRow as UserRoleRow | null)?.role ?? null;
   let assignedStoreId: string | null = null;
 
   if (role === "store_manager" || role === "staff") {
@@ -115,7 +111,7 @@ export async function getAdminContext(): Promise<AdminContext> {
   if (storeResult.error || !store) {
     throw new Error("배정된 매장 정보를 확인하지 못했습니다.");
   }
-  const storeName = (store as StoreRow | null)?.name ?? metadataString(user, "store_name");
+  const storeName = (store as StoreRow | null)?.name ?? null;
 
   return {
     userId: user.id,

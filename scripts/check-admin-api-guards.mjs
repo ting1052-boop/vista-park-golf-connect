@@ -40,4 +40,14 @@ for (const file of files) {
   }
 }
 
-console.log(`Admin API guards: ${files.length} routes use role checks; ${headOnly.join(", ")} are head-office only.`);
+// 역할 판단의 근거는 public.users 뿐이어야 한다. user_metadata 는 계정 주인이 브라우저에서 바꿀 수 있어,
+// 여기서 역할을 읽으면 역할 행이 없는 계정이 스스로 본사가 된다(2026-11 발견).
+// 주석은 빼고 코드만 본다(설명 주석에 같은 낱말이 들어가도 오작동하지 않게).
+const context = fs
+  .readFileSync(new URL("../src/lib/admin-context.ts", import.meta.url), "utf8")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/\/\/.*$/gm, "");
+assert.ok(!/user_metadata|app_metadata|raw_user_meta_data/.test(context), "admin-context.ts: 역할을 사용자 메타데이터에서 읽으면 안 된다");
+assert.ok(/from\("users"\)/.test(context), "admin-context.ts: 역할을 public.users 에서 읽어야 한다");
+
+console.log(`Admin API guards: ${files.length} routes use role checks; ${headOnly.join(", ")} are head-office only; role source is public.users only.`);
