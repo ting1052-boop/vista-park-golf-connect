@@ -23,7 +23,7 @@ function query(values: Record<string, string>) {
 
 test("입력 검증: 매장·날짜 누락, 잘못된 날짜, 역전, 기간 초과는 거부", () => {
   const to = "2026-11-20T00:00:00.000Z";
-  const rejected = [
+  const rejected: Array<Record<string, string>> = [
     {},
     { from: FROM, to },
     { storeId: "not-a-uuid", from: FROM, to },
