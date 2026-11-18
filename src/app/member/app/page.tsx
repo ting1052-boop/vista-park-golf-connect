@@ -358,11 +358,17 @@ export default function MemberAppPage() {
           .gte("starts_at", new Date().toISOString())
           .order("starts_at", { ascending: true })
           .limit(5),
-        supabase
-          .from("reservations")
-          .select("bay_id, starts_at, ends_at, status")
-          .gte("ends_at", rangeStart.toISOString())
-          .lte("starts_at", rangeEnd.toISOString())
+        // 로그인 회원은 DB 권한상 다른 예약을 못 읽으므로 서버 API 로 시간대만 받는다.
+        fetch(
+          `/api/member/availability?from=${encodeURIComponent(rangeStart.toISOString())}&to=${encodeURIComponent(rangeEnd.toISOString())}`,
+          { cache: "no-store" }
+        )
+          .then(async (response) => {
+            const payload = (await response.json()) as { ok?: boolean; message?: string; reservations?: ActiveReservationRow[] };
+            return response.ok && payload.ok
+              ? { data: payload.reservations ?? [], error: null }
+              : { data: null, error: { message: payload.message ?? "예약 현황을 불러오지 못했습니다." } };
+          })
       ]);
 
       if (storeResult.error) throw new Error(storeResult.error.message);
