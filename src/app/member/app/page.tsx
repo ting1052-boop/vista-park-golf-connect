@@ -19,6 +19,14 @@ import { SocialLoginPanel } from "@/components/social-login-panel";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { toReservationErrorMessage } from "@/lib/supabase/reservation-errors";
 import { bonusMinutesByDuration, durationOptions, priceByDuration } from "@/lib/reservation-policy";
+import {
+  INACTIVE_RESERVATION_STATUSES,
+  availabilityForStore,
+  getBlockedBayIds as findBlockedBayIds,
+  isPublicReservationStore,
+  readAvailabilityPayload,
+  type AvailabilityRow
+} from "@/lib/reservation-availability";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 const STORE_TIME_ZONE = "Asia/Seoul";
@@ -74,14 +82,6 @@ type ReservationRow = {
   bays?: { bay_code?: string | null } | Array<{ bay_code?: string | null }> | null;
 };
 
-type ActiveReservationRow = {
-  bay_id: string | null;
-  starts_at: string;
-  ends_at: string;
-  status: string | null;
-};
-
-const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
 
 function getSeoulDateValue(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -205,7 +205,10 @@ export default function MemberAppPage() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [bays, setBays] = useState<BayRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
-  const [activeReservations, setActiveReservations] = useState<ActiveReservationRow[]>([]);
+  // 선택 매장의 예약 현황. 매장이 다르거나 아직/실패면 예약 가능 0 으로 본다.
+  const [loadedAvailability, setLoadedAvailability] = useState<{ storeId: string; rows: AvailabilityRow[] } | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [availabilityVersion, setAvailabilityVersion] = useState(0);
   const [selectedStoreId, setSelectedStoreId] = useState(DEFAULT_STORE_ID);
   const [selectedBayId, setSelectedBayId] = useState("auto");
   const [selectedDate, setSelectedDate] = useState(() => getNextAvailableSelection(getDateOptions(new Date()), new Date()).date);
@@ -239,25 +242,9 @@ export default function MemberAppPage() {
     [previewStartsAt, reservedMinutes]
   );
 
-  const getBlockedBayIds = (startsAt: Date, endsAt: Date) => {
-    const blocked = new Set<string>();
-    const previewStart = startsAt.getTime();
-    const previewEnd = endsAt.getTime();
-
-    for (const reservation of activeReservations) {
-      if (!reservation.bay_id) continue;
-      if (INACTIVE_RESERVATION_STATUSES.includes(reservation.status ?? "")) continue;
-
-      const existingStart = new Date(reservation.starts_at).getTime();
-      const existingEnd = new Date(reservation.ends_at).getTime();
-
-      if (previewStart < existingEnd && existingStart < previewEnd) {
-        blocked.add(reservation.bay_id);
-      }
-    }
-
-    return blocked;
-  };
+  const activeReservations = availabilityForStore(loadedAvailability, selectedStoreId);
+  const availabilityReady = activeReservations !== null;
+  const getBlockedBayIds = (startsAt: Date, endsAt: Date) => findBlockedBayIds(activeReservations ?? [], startsAt, endsAt);
 
   const timeSlotStates = useMemo(
     () =>
@@ -266,7 +253,7 @@ export default function MemberAppPage() {
         const endsAt = addMinutes(startsAt, reservedMinutes);
         const isClosed = isBeyondBusinessHours(selectedDate, startsAt, reservedMinutes);
         const blockedBayIds = getBlockedBayIds(startsAt, endsAt);
-        const availableCount = bookableStoreBays.filter((bay) => !blockedBayIds.has(bay.id)).length;
+        const availableCount = availabilityReady ? bookableStoreBays.filter((bay) => !blockedBayIds.has(bay.id)).length : 0;
 
         return {
           time,
@@ -277,7 +264,7 @@ export default function MemberAppPage() {
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeReservations, bookableStoreBays, now, reservedMinutes, selectedDate]
+    [activeReservations, availabilityReady, bookableStoreBays, now, reservedMinutes, selectedDate]
   );
 
   const availableTimeSlots = useMemo(
@@ -335,7 +322,10 @@ export default function MemberAppPage() {
     [activeReservations, previewEndsAt, previewStartsAt]
   );
 
-  const availableBays = bookableStoreBays.filter((bay) => !blockedBayIds.has(bay.id));
+  const availableBays = useMemo(
+    () => (availabilityReady ? bookableStoreBays.filter((bay) => !blockedBayIds.has(bay.id)) : []),
+    [availabilityReady, bookableStoreBays, blockedBayIds]
+  );
   const selectedBay = selectedBayId === "auto" ? availableBays[0] : availableBays.find((bay) => bay.id === selectedBayId);
   const estimatedPrice = priceByDuration[durationMinutes] ?? Math.round((durationMinutes / 30) * priceByDuration[30]);
 
@@ -345,11 +335,8 @@ export default function MemberAppPage() {
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const range = getDateOptions(new Date());
-      const rangeStart = toReservationDate(range[0], "00:00");
-      const rangeEnd = addMinutes(toReservationDate(range[range.length - 1], "23:59"), 120);
 
-      const [storeResult, bayResult, reservationResult, activeReservationResult] = await Promise.all([
+      const [storeResult, bayResult, reservationResult] = await Promise.all([
         supabase.from("stores").select("id, name, address, phone, status").order("name", { ascending: true }),
         supabase.from("bays").select("id, store_id, bay_code, display_name, status").order("bay_code", { ascending: true }),
         supabase
@@ -357,36 +344,25 @@ export default function MemberAppPage() {
           .select("id, starts_at, status, approval_required, bays(bay_code)")
           .gte("starts_at", new Date().toISOString())
           .order("starts_at", { ascending: true })
-          .limit(5),
-        // 로그인 회원은 DB 권한상 다른 예약을 못 읽으므로 서버 API 로 시간대만 받는다.
-        fetch(
-          `/api/member/availability?from=${encodeURIComponent(rangeStart.toISOString())}&to=${encodeURIComponent(rangeEnd.toISOString())}`,
-          { cache: "no-store" }
-        )
-          .then(async (response) => {
-            const payload = (await response.json()) as { ok?: boolean; message?: string; reservations?: ActiveReservationRow[] };
-            return response.ok && payload.ok
-              ? { data: payload.reservations ?? [], error: null }
-              : { data: null, error: { message: payload.message ?? "예약 현황을 불러오지 못했습니다." } };
-          })
+          .limit(5)
       ]);
 
       if (storeResult.error) throw new Error(storeResult.error.message);
       if (bayResult.error) throw new Error(bayResult.error.message);
       if (reservationResult.error) throw new Error(reservationResult.error.message);
-      if (activeReservationResult.error) throw new Error(activeReservationResult.error.message);
 
       const nextBays = (bayResult.data ?? []) as BayRow[];
       const storeIdsWithAvailableBays = new Set(
         nextBays.filter((bay) => bay.status !== "maintenance").map((bay) => bay.store_id)
       );
       const nextStores = ((storeResult.data ?? []) as StoreRow[]).filter(
-        (store) => store.status === "active" && storeIdsWithAvailableBays.has(store.id)
+        (store) => isPublicReservationStore(store) && storeIdsWithAvailableBays.has(store.id)
       );
       setStores(nextStores);
       setBays(nextBays);
       setReservations((reservationResult.data ?? []) as ReservationRow[]);
-      setActiveReservations((activeReservationResult.data ?? []) as ActiveReservationRow[]);
+      // 예약 현황은 아래 effect 가 선택 매장 기준으로 다시 읽는다.
+      setAvailabilityVersion((version) => version + 1);
 
       if (nextStores[0] && !nextStores.some((store) => store.id === selectedStoreId)) {
         setSelectedStoreId(nextStores[0].id);
@@ -415,6 +391,33 @@ export default function MemberAppPage() {
     // Initial reservation data is loaded once; later changes use explicit refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 로그인 회원은 DB 권한상 다른 예약을 못 읽으므로, 선택 매장의 예약 시간대만 서버 API 로 받는다.
+  useEffect(() => {
+    if (availabilityVersion === 0) return; // 매장 목록을 먼저 읽은 뒤 시작한다.
+
+    let ignore = false;
+    const range = getDateOptions(new Date());
+    const from = toReservationDate(range[0], "00:00").toISOString();
+    const to = addMinutes(toReservationDate(range[range.length - 1], "23:59"), 120).toISOString();
+    const params = new URLSearchParams({ storeId: selectedStoreId, from, to });
+
+    setAvailabilityError(null);
+    fetch(`/api/member/availability?${params.toString()}`, { cache: "no-store" })
+      .then(async (response) => readAvailabilityPayload(response.ok, await response.json().catch(() => null)))
+      .then((rows) => {
+        if (!ignore) setLoadedAvailability({ storeId: selectedStoreId, rows });
+      })
+      .catch((caughtError: unknown) => {
+        if (ignore) return;
+        setLoadedAvailability(null);
+        setAvailabilityError(caughtError instanceof Error ? caughtError.message : "예약 현황을 불러오지 못했습니다.");
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [availabilityVersion, selectedStoreId]);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -513,6 +516,11 @@ export default function MemberAppPage() {
 
     if (isBeyondBusinessHours(selectedDate, previewStartsAt, reservedMinutes)) {
       setError("운영시간은 오전 8시부터 오후 9시까지입니다. 종료 시간이 21:00을 넘지 않도록 선택해주세요.");
+      return false;
+    }
+
+    if (!availabilityReady) {
+      setError(availabilityError ?? "예약 현황을 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
       return false;
     }
 
@@ -698,7 +706,13 @@ export default function MemberAppPage() {
                 <p className="mt-1 text-xs font-bold text-[#4f5b50]">
                   운영시간 {BUSINESS_OPEN_TIME} ~ {BUSINESS_CLOSE_TIME}
                 </p>
-                <p className="mt-2 text-xs font-bold text-[#4f5b50]">예약 가능 타석 {availableBays.length}개</p>
+                {availabilityReady ? (
+                  <p className="mt-2 text-xs font-bold text-[#4f5b50]">예약 가능 타석 {availableBays.length}개</p>
+                ) : (
+                  <p className="mt-2 text-xs font-bold text-[#b42318]">
+                    {availabilityError ?? "예약 현황을 불러오는 중입니다."}
+                  </p>
+                )}
               </div>
             </div>
           </div>
