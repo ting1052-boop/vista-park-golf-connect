@@ -34,8 +34,11 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
   [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin -and -not $DryRun) {
   Write-Host "관리자 권한으로 다시 실행합니다..."
+  # 받은 매장 값을 그대로 넘긴다. 빠뜨리면 기본값(송도)으로 설치되어, 다른 매장 PC 가
+  # 송도 명령을 가져가 엉뚱한 매장 장비를 움직인다.
   Start-Process powershell -Verb RunAs -ArgumentList @(
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$($MyInvocation.MyCommand.Path)`""
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$($MyInvocation.MyCommand.Path)`"",
+    "-StoreId", $StoreId, "-ControllerId", $ControllerId, "-ApiBaseUrl", $ApiBaseUrl
   )
   exit 0
 }
