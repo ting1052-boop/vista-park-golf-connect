@@ -44,9 +44,11 @@ test("입력 검증: 매장·날짜 누락, 잘못된 날짜, 역전, 기간 초
   if (!("error" in ok)) assert.equal(ok.storeId, SIHEUNG);
 });
 
-test("공개 예약 대상 매장만 허용: 운영중 시흥 O, 송도·비운영·없음 X", () => {
+test("무인 예약 매장만 허용: 운영중 시흥 O, 송도·그 외 매장·비운영·없음 X", () => {
   assert.equal(isPublicReservationStore({ id: SIHEUNG, status: "active" }), true);
   assert.equal(isPublicReservationStore({ id: SONGDO_STORE_ID, status: "active" }), false);
+  // 새로 생긴 매장(예: 삼송)도 무인 예약 매장으로 지정되기 전에는 예약 화면·API 에 나오지 않는다.
+  assert.equal(isPublicReservationStore({ id: "22222222-2222-4222-8222-222222222222", status: "active" }), false);
   for (const status of ["paused", "inactive", "closed", null]) {
     assert.equal(isPublicReservationStore({ id: SIHEUNG, status }), false, `${status} 매장은 제외`);
   }

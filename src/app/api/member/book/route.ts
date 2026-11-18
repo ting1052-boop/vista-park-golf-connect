@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { isPublicReservationStore } from "@/lib/reservation-availability";
 import { getStoreDurationOptions } from "@/lib/reservation-policy-server";
 import { createServerSupabaseClient, createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -107,6 +108,12 @@ export async function POST(request: NextRequest) {
       { ok: false, message: error instanceof Error ? error.message : "서버 설정을 확인해주세요." },
       { status: 500 }
     );
+  }
+
+  // 예약 화면에 없는 매장(무인 예약 미적용·운영 중지)으로 직접 보내는 신청도 막는다.
+  const { data: store, error: storeError } = await admin.from("stores").select("id, status").eq("id", storeId).maybeSingle();
+  if (storeError || !isPublicReservationStore(store)) {
+    return NextResponse.json({ ok: false, message: "예약할 수 없는 매장입니다." }, { status: 409 });
   }
 
   const { data: bay, error: bayError } = await admin

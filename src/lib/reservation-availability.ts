@@ -1,12 +1,13 @@
 // 회원 예약 화면의 "예약 가능 시간" 계산용 공용 로직.
 // 서버 API(/api/member/availability)와 화면이 함께 쓰며, node --test 로 검사한다
 // (그래서 @/ 별칭 없이 상대경로 + .ts 확장자로만 가져온다).
-import { SONGDO_STORE_ID } from "./automation/device-map.ts";
+import { SIHEUNG_STORE_ID } from "./automation/device-map.ts";
 
 export const INACTIVE_RESERVATION_STATUSES = ["cancelled", "no_show", "completed"];
 
-// 관리자 예약 화면과 같은 기준: 송도는 VISTA 예약을 쓰지 않는다.
-const RESERVATION_DISABLED_STORE_IDS = new Set([SONGDO_STORE_ID]);
+// 고객 예약은 무인 운영 매장만 받는다(현재 시흥 VISTA 하나). 다른 매장은 예약 기능을 쓰지 않는다.
+// ponytail: 코드 목록. 무인 매장이 늘어 자주 바뀌면 store_settings 열 + 관리자 화면 토글로 옮긴다.
+const UNMANNED_RESERVATION_STORE_IDS = new Set([SIHEUNG_STORE_ID]);
 
 // 화면은 오늘~모레(+2시간)만 조회한다. 여유를 두되 넓은 범위 덤프는 막는다.
 export const MAX_RANGE_MS = 4 * 24 * 60 * 60 * 1000;
@@ -24,7 +25,7 @@ export type AvailabilityRow = {
 };
 
 export function isPublicReservationStore(store: { id: string; status: string | null } | null | undefined) {
-  return Boolean(store && store.status === "active" && !RESERVATION_DISABLED_STORE_IDS.has(store.id));
+  return Boolean(store && store.status === "active" && UNMANNED_RESERVATION_STORE_IDS.has(store.id));
 }
 
 export function parseAvailabilityQuery(params: URLSearchParams):
