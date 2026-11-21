@@ -987,7 +987,7 @@ export function DashboardClient({
                         bay={bay}
                         limitedMenu={adminContext.limitedMenu}
                         storeMonitorOnly={adminContext.storeMonitorOnly}
-                        observationOnly={currentStoreId === SONGDO_STORE_ID}
+                        observationOnly={currentStoreId === SONGDO_STORE_ID || (adminContext.storeRoundCounting && adminContext.storeMonitorOnly)}
                         onEndSession={handleEndSession}
                         onExtendTime={handleExtendTime}
                         onCheckIn={handleCheckIn}
@@ -1000,6 +1000,7 @@ export function DashboardClient({
                     </div>
                   )}
                 </div>
+                {adminContext.storeRoundCounting ? <RoundHistory /> : null}
               </div>
 
               <aside className="mt-6 rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
@@ -1234,6 +1235,59 @@ export function DashboardClient({
   );
 }
 
+type RoundHistoryResponse = {
+  ok: boolean;
+  message?: string;
+  bays?: Array<{ id: string; display_name: string; bay_code: string }>;
+  rows?: Array<{ day: string; bay_id: string; started: number; counted_games: number; partial: number; practice_count: number; practice_minutes: number }>;
+};
+
+function RoundHistory() {
+  const [data, setData] = useState<RoundHistoryResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    if (data || loading) return;
+    setLoading(true);
+    try {
+      const response = await fetch("/api/admin/round-counts", { cache: "no-store" });
+      const body = await response.json() as RoundHistoryResponse;
+      setData(response.ok ? body : { ok: false, message: body.message ?? "일별 게임 수를 불러오지 못했습니다." });
+    } catch {
+      setData({ ok: false, message: "일별 게임 수를 불러오지 못했습니다." });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const days = [...new Set((data?.rows ?? []).map((row) => row.day))].sort().reverse();
+  return <details className="mt-4 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line" onToggle={(event) => {
+    if (event.currentTarget.open) void load();
+  }}>
+    <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold">일별 게임 수 (최근 14일)</summary>
+    <div className="overflow-x-auto border-t border-[#edf2ea] p-4">
+      {loading ? <p className="text-sm text-[#697468]">불러오는 중...</p> : data?.ok === false ? <p className="text-sm font-bold text-rose-700">{data.message}</p> :
+        <table className="min-w-full text-left text-xs">
+          <thead><tr className="border-b border-[#dfe8dc]">
+            <th className="p-2">날짜</th>
+            {(data?.bays ?? []).map((bay) => <th key={bay.id} className="p-2">{bay.display_name || bay.bay_code}</th>)}
+            <th className="p-2">시작</th><th className="p-2">중도</th><th className="p-2">연습</th>
+          </tr></thead>
+          <tbody>{days.map((day) => {
+            const rows = (data?.rows ?? []).filter((row) => row.day === day);
+            return <tr key={day} className="border-b border-[#edf2ea]">
+              <td className="p-2 font-bold">{day}</td>
+              {(data?.bays ?? []).map((bay) => <td key={bay.id} className="p-2 font-extrabold">{rows.find((row) => row.bay_id === bay.id)?.counted_games ?? 0}</td>)}
+              <td className="p-2">{rows.reduce((sum, row) => sum + Number(row.started), 0)}</td>
+              <td className="p-2">{rows.reduce((sum, row) => sum + Number(row.partial), 0)}</td>
+              <td className="p-2">{rows.reduce((sum, row) => sum + Number(row.practice_count), 0)}회 · {rows.reduce((sum, row) => sum + Number(row.practice_minutes), 0)}분</td>
+            </tr>;
+          })}</tbody>
+        </table>}
+    </div>
+  </details>;
+}
+
 function WarningItem({
   title,
   description,
@@ -1381,6 +1435,18 @@ function BayCard({
         </div>
       </details> : null}
 
+      {bay.roundSummary ? <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-[#dfe8dc] bg-white/85 p-3 text-xs">
+        <MiniStatus label="오늘 시작" value={`${bay.roundSummary.todayStarted}회`} />
+        <MiniStatus label="어제 확정 게임" value={`${bay.roundSummary.yesterdayCounted}회`} />
+        <MiniStatus label="중도 종료" value={`${bay.roundSummary.yesterdayPartial}회`} />
+        <MiniStatus label="오늘 연습" value={`${bay.roundSummary.todayPracticeCount}회 · ${bay.roundSummary.todayPracticeMinutes}분`} />
+        <div className={cn("col-span-2 rounded-md border p-3", bay.roundSummary.pendingCount > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-[#e5ece1] bg-[#fbfcfa]") }>
+          <p className="font-bold">확인 대기</p>
+          <p className="mt-1 font-extrabold">{bay.roundSummary.pendingCount}건</p>
+          <p className="mt-1 opacity-75">코스 진입은 잠정값이며, 9홀 이상 종료가 확인된 판만 확정 게임으로 셉니다.</p>
+        </div>
+      </div> : null}
+
       {!observationOnly ? bay.status === "in_use" ? (
         <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
@@ -1465,6 +1531,13 @@ function BayCard({
 
 function getGameStatusDisplay(bay: LiveBay, storeMonitorOnly = false) {
   const compactUsage = storeMonitorOnly;
+  if (compactUsage && !bay.pcOnline) {
+    return {
+      label: bay.pcConnectionState === "shutdown_pending" ? "종료 확인 중" : "PC 미연결",
+      detail: "PC 연결 신호가 없어 이용 감지를 쉬고 있습니다. 전원 종료 또는 네트워크 연결 상태를 확인할 수 있습니다.",
+      tone: "idle" as const
+    };
+  }
   const telemetry = bay.gameTelemetry;
   if (!telemetry) {
     return {

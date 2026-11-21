@@ -46,7 +46,8 @@ export async function GET(request: NextRequest) {
   const agentVersion = request.headers.get("x-vista-agent-version");
   await touchAgent(supabase, agent, { agentVersion });
 
-  const observerPolicy = getAgentObserverPolicy(
+  const observerPolicy = await getAgentObserverPolicy(
+    supabase,
     agent,
     request.headers.get("x-vista-observer-protocol") === "1" ? 1 : null
   );

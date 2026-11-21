@@ -36,6 +36,17 @@ export type LiveBay = {
   agentVersion?: string;
   gameActivity?: GameActivitySummary;
   observedUsage?: boolean;
+  roundSummary?: RoundSummary;
+};
+
+export type RoundSummary = {
+  todayStarted: number;
+  yesterdayCounted: number;
+  yesterdayPartial: number;
+  todayPracticeCount: number;
+  todayPracticeMinutes: number;
+  pendingCount: number;
+  oldestPendingDate?: string;
 };
 
 export type GameRoundEventSummary = {

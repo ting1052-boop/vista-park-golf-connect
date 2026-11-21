@@ -6,6 +6,7 @@ import { normalizeGameTelemetry } from "@/lib/game-telemetry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { claimShutdownCommand } from "@/lib/agent-commands";
 import { getAgentObserverPolicy } from "@/lib/agent-observer-protocol";
+import { normalizeAgentRoundReports, storeAgentRoundReports } from "@/lib/agent-round-reports";
 
 type HeartbeatBody = {
   agentId?: unknown;
@@ -24,6 +25,7 @@ type HeartbeatBody = {
   roundEvents?: unknown;
   usageEvents?: unknown;
   observerProtocol?: unknown;
+  roundReports?: unknown;
 };
 
 const MAX_HEARTBEAT_BYTES = 32 * 1024;
@@ -53,7 +55,7 @@ export async function POST(request: NextRequest) {
   const agentVersion = typeof body.agentVersion === "string" ? body.agentVersion : null;
 
   await touchAgent(supabase, agent, { pcName, agentVersion });
-  const observerPolicy = getAgentObserverPolicy(agent, body.observerProtocol);
+  const observerPolicy = await getAgentObserverPolicy(supabase, agent, body.observerProtocol);
 
   let gameTelemetryAccepted: boolean | null = null;
   if (body.gameTelemetry !== undefined) {
@@ -132,6 +134,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const roundReportAcks: Array<{ roundId: string; revision: number }> = [];
+  let roundReportRejected: Array<{ roundId: string | null; revision: number | null; code: string }> = [];
+  let roundReportRetryable = false;
+  if (body.roundReports !== undefined) {
+    const normalized = normalizeAgentRoundReports(body.roundReports);
+    if (!normalized) {
+      roundReportRejected = [{ roundId: null, revision: null, code: "invalid_batch" }];
+    } else {
+      const valid = normalized.filter((report): report is NonNullable<typeof report> => report !== null);
+      roundReportRejected = normalized.flatMap((report, index) => report ? [] : [{ roundId: null, revision: null, code: `invalid_report_${index}` }]);
+      if (valid.length > 0) {
+        try {
+          const stored = await storeAgentRoundReports(supabase, agent, valid);
+          roundReportAcks.push(...stored.acknowledgements);
+          roundReportRejected.push(...stored.rejected);
+          roundReportRetryable = stored.retryable;
+        } catch (error) {
+          console.warn("Agent round reports were not stored", { agentId: agent.id, error: error instanceof Error ? error.message : "unknown" });
+          roundReportRetryable = true;
+        }
+      }
+    }
+  }
+
   if (!observerPolicy && typeof body.accessSessionId === "string" && typeof body.remainingSeconds === "number") {
     const { data: matchingSession } = await supabase
       .from("access_sessions")
@@ -163,7 +189,10 @@ export async function POST(request: NextRequest) {
     roundEventRetryable,
     usageEventAckIds,
     usageEventRejected,
-    usageEventRetryable
+    usageEventRetryable,
+    roundReportAcks,
+    roundReportRejected,
+    roundReportRetryable
   };
 
   if (observerPolicy) {

@@ -14,6 +14,9 @@ const { createScreenHoleDetector } = require("./screen-hole-detector");
 const { createRoundEventOutbox } = require("./round-event-outbox");
 const { resolveGolfUsageConfig, createGolfUsageMonitor, createWindowsInputReader } = require("./golf-usage-monitor");
 const { createUsageWindowMonitor } = require("./usage-window-monitor");
+const { createObserverTransport } = require("./observer-transport");
+const { createRoundLedger } = require("./round-ledger");
+const { createRoundReportOutbox } = require("./round-report-outbox");
 
 const ROOT = __dirname; // bundled, read-only when packaged (asar)
 const BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.json");
@@ -22,7 +25,7 @@ const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
 // account that logs in reads the same bay and token, so an install done under an
 // admin account still works for the bay's everyday account.
 const MACHINE_CONFIG_DIR = path.join(process.env.ProgramData || "C:\\ProgramData", "VISTA", "agent");
-const VERSION = "0.9.8";
+const VERSION = "0.10.0";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
@@ -37,6 +40,8 @@ let USER_DATA = ROOT;
 let USER_CONFIG_PATH = path.join(ROOT, "agent.config.json");
 let LOG_DIR = path.join(ROOT, "logs");
 let ROUND_OUTBOX_PATH = path.join(ROOT, "round-event-outbox.json");
+let ROUND_LEDGER_PATH = path.join(ROOT, "round-ledger-v1.json");
+let ROUND_REPORT_OUTBOX_PATH = path.join(ROOT, "round-report-outbox-v1.json");
 
 let mainWindow = null;
 let setupWindow = null;
@@ -61,8 +66,12 @@ let golfUsageMonitor = null;
 let usageWindowMonitor = null;
 let screenHoleDetector = null;
 let roundEventOutbox = null;
+let roundLedger = null;
+let roundReportOutbox = null;
 let lastHeartbeatIssueKey = null;
 let lastHeartbeatIssueLoggedAt = 0;
+let agentTransport = null;
+let cachedSession = null;
 
 app.on("second-instance", () => {
   const window = setupWindow && !setupWindow.isDestroyed() ? setupWindow : mainWindow;
@@ -207,9 +216,12 @@ function loadConfig() {
     extensionPrice: Number(merged.extensionPrice || 6000),
     offlineMode: process.env.VISTA_AGENT_OFFLINE === "1",
     golfUsageMonitoringEnabled: golfUsage.enabled,
-    usageMonitoringProfile: merged.usageMonitoringProfile || golfUsage.profile,
+    usageMonitoringProfile: golfUsage.enabled
+      ? (merged.usageMonitoringProfile || golfUsage.profile)
+      : (merged.usageMonitoringEnabled === true ? merged.usageMonitoringProfile : null),
     usageWindowPolicy: merged.usageWindowPolicy === "clock_hour" ? "clock_hour" : "rolling_60",
     gameMonitoringEnabled: golfUsage.enabled || merged.gameMonitoringEnabled === true,
+    roundCountingEnabled: merged.roundCountingEnabled === true,
     gameProcessNames: golfUsage.enabled ? golfUsage.processNames : Array.isArray(merged.gameProcessNames) ? merged.gameProcessNames : [],
     gameStateLogFile:
       typeof merged.gameStateLogFile === "string"
@@ -278,10 +290,12 @@ async function loadServerSession() {
   const baseUrl = String(config.apiBaseUrl).replace(/\/$/, "");
   const url = `${baseUrl}/api/agent/session?agentId=${encodeURIComponent(config.agentId)}`;
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
     headers: {
       Authorization: `Bearer ${config.agentToken}`,
       "x-vista-agent-id": config.agentId,
-      "x-vista-agent-version": VERSION
+      "x-vista-agent-version": VERSION,
+      ...agentTransport.sessionHeaders()
     }
   });
 
@@ -290,6 +304,7 @@ async function loadServerSession() {
   }
 
   const data = await response.json();
+  agentTransport.acceptSession(data);
   for (const command of Array.isArray(data.commands) ? data.commands : []) {
     await processAgentCommand(command);
   }
@@ -300,6 +315,7 @@ async function reportAgentCommand(commandId, ok, errorMessage = null) {
   const baseUrl = String(config.apiBaseUrl).replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/api/agent/command-result`, {
     method: "POST",
+    signal: AbortSignal.timeout(15_000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.agentToken}`,
@@ -342,11 +358,12 @@ async function processAgentCommand(command) {
   }
 }
 
-async function loadSession() {
+async function loadSession({ propagateServerError = false } = {}) {
   if (config.sessionSource === "server") {
     try {
       return await loadServerSession();
     } catch (error) {
+      if (propagateServerError) throw error;
       log("Server session fetch failed, falling back to local session", { error: error.message });
     }
   }
@@ -614,6 +631,13 @@ function refreshGameTelemetry() {
   gameTelemetryRefreshPromise = collectGameTelemetry()
     .then((telemetry) => {
       latestGameTelemetry = telemetry;
+      if (roundLedger) {
+        try {
+          roundLedger.observe(telemetry);
+        } catch (error) {
+          log("Round ledger update failed", { error: error.message });
+        }
+      }
       return telemetry;
     })
     .catch((error) => {
@@ -630,8 +654,17 @@ function refreshGameTelemetry() {
     })
     .finally(() => {
       gameTelemetryRefreshPromise = null;
+      observeTransportChanges();
     });
   return gameTelemetryRefreshPromise;
+}
+
+function observeTransportChanges() {
+  agentTransport?.observe(latestGameTelemetry, [
+    ...(roundEventOutbox?.list(20) ?? []),
+    ...(usageWindowMonitor?.listEvents(20) ?? []),
+    ...(roundReportOutbox?.list(10) ?? [])
+  ]);
 }
 
 function determineMode(session, remainingSeconds) {
@@ -747,6 +780,7 @@ async function postHeartbeat(payload) {
   const baseUrl = String(config.apiBaseUrl).replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/api/agent/heartbeat`, {
     method: "POST",
+    signal: AbortSignal.timeout(15_000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.agentToken}`,
@@ -760,6 +794,8 @@ async function postHeartbeat(payload) {
   return {
     ok: response.ok,
     status: response.status,
+    observerPolicy: responseBody?.observerPolicy,
+    commands: Array.isArray(responseBody?.commands) ? responseBody.commands : [],
     gameTelemetryAccepted:
       responseBody && typeof responseBody.gameTelemetryAccepted === "boolean"
         ? responseBody.gameTelemetryAccepted
@@ -769,6 +805,8 @@ async function postHeartbeat(payload) {
       : [],
     roundEventAckIds: Array.isArray(responseBody?.roundEventAckIds) ? responseBody.roundEventAckIds : [],
     roundEventRejected: Array.isArray(responseBody?.roundEventRejected) ? responseBody.roundEventRejected : [],
+    roundReportAcks: Array.isArray(responseBody?.roundReportAcks) ? responseBody.roundReportAcks : [],
+    roundReportRejected: Array.isArray(responseBody?.roundReportRejected) ? responseBody.roundReportRejected : [],
     usageEventAckIds: Array.isArray(responseBody?.usageEventAckIds) ? responseBody.usageEventAckIds : [],
     usageEventRejected: Array.isArray(responseBody?.usageEventRejected) ? responseBody.usageEventRejected : []
   };
@@ -796,8 +834,7 @@ function recordHeartbeatResult(result) {
   lastHeartbeatIssueKey = null;
 }
 
-async function tick() {
-  let session = await loadSession();
+function updateAgentState(session) {
   let remainingSeconds = getRemainingSeconds(session);
   // OCR runs on its own loop. Session warnings and shutdown must never wait for it.
   if (!latestGameTelemetry) void refreshGameTelemetry();
@@ -887,34 +924,54 @@ async function tick() {
     mainWindow.webContents.send("agent-state", state);
   }
 
-  try {
-    const heartbeatResult = await postHeartbeat({
-      agentId: config.agentId,
-      storeId: config.storeId,
-      bayId: config.bayId,
-      bayCode: config.bayCode,
-      pcName: config.pcName,
-      agentVersion: VERSION,
-      status: session ? (remainingSeconds === 0 ? "expired" : "playing") : "idle",
-      accessSessionId: session?.accessSessionId ?? null,
-      remainingSeconds,
-      gameAppRunning,
-      ...(config.gameMonitoringEnabled ? { gameTelemetry } : {}),
-      ...(roundEventOutbox ? { roundEvents: roundEventOutbox.list(20) } : {}),
-      ...(usageWindowMonitor ? { usageEvents: usageWindowMonitor.listEvents(20) } : {}),
-      screenLocked: config.showsCustomerUi && mode === "lock",
-      lastSeenAt: nowIso()
-    });
-    if (heartbeatResult.ok && roundEventOutbox) {
-      roundEventOutbox.applyServerResult(heartbeatResult.roundEventAckIds, heartbeatResult.roundEventRejected);
-    }
-    if (heartbeatResult.ok && usageWindowMonitor) {
-      usageWindowMonitor.applyServerResult(heartbeatResult.usageEventAckIds, heartbeatResult.usageEventRejected);
-    }
-    recordHeartbeatResult(heartbeatResult);
-  } catch (error) {
-    log("Heartbeat failed", { error: error.message });
+  return {
+    agentId: config.agentId,
+    storeId: config.storeId,
+    bayId: config.bayId,
+    bayCode: config.bayCode,
+    pcName: config.pcName,
+    agentVersion: VERSION,
+    status: session ? (remainingSeconds === 0 ? "expired" : "playing") : "idle",
+    accessSessionId: session?.accessSessionId ?? null,
+    remainingSeconds,
+    gameAppRunning,
+    ...(config.gameMonitoringEnabled ? { gameTelemetry } : {}),
+    ...(roundEventOutbox ? { roundEvents: roundEventOutbox.list(20) } : {}),
+    ...(roundReportOutbox ? { roundReports: roundReportOutbox.list(10) } : {}),
+    ...(usageWindowMonitor ? { usageEvents: usageWindowMonitor.listEvents(20) } : {}),
+    screenLocked: config.showsCustomerUi && mode === "lock",
+    lastSeenAt: nowIso()
+  };
+}
+
+async function syncAgentTransport() {
+  cachedSession = agentTransport.isObserver()
+    ? null
+    : await loadSession({ propagateServerError: agentTransport.isEligible() });
+  const payload = updateAgentState(cachedSession);
+  if (agentTransport.isObserver()) payload.observerProtocol = 1;
+  const heartbeatResult = await postHeartbeat(payload);
+  // Event persistence can succeed even when command claiming returns HTTP 500.
+  if (roundEventOutbox) {
+    roundEventOutbox.applyServerResult(heartbeatResult.roundEventAckIds, heartbeatResult.roundEventRejected);
   }
+  if (usageWindowMonitor) {
+    usageWindowMonitor.applyServerResult(heartbeatResult.usageEventAckIds, heartbeatResult.usageEventRejected);
+  }
+  if (roundReportOutbox) {
+    roundReportOutbox.applyServerResult(heartbeatResult.roundReportAcks, heartbeatResult.roundReportRejected);
+  }
+  if (heartbeatResult.ok) {
+    for (const command of heartbeatResult.commands ?? []) await processAgentCommand(command);
+  }
+  agentTransport.acceptHeartbeat(heartbeatResult);
+  recordHeartbeatResult(heartbeatResult);
+  if (!heartbeatResult.ok && !heartbeatResult.skipped) throw new Error(`heartbeat ${heartbeatResult.status}`);
+}
+
+async function tick() {
+  await agentTransport.poll();
+  updateAgentState(cachedSession);
 }
 
 async function requestExtension(requestedMinutes) {
@@ -1040,6 +1097,9 @@ ipcMain.handle("select-bay", (_event, bayCode) => {
 });
 
 async function startAgentLoop() {
+  agentTransport?.stop();
+  cachedSession = null;
+  agentTransport = createObserverTransport({ config, run: syncAgentTransport, onError: (error) => log("Agent transport failed", { error: error.message }) });
   golfUsageMonitor = null;
   usageWindowMonitor = config.usageMonitoringProfile
     ? createUsageWindowMonitor({
@@ -1063,6 +1123,19 @@ async function startAgentLoop() {
     }
   }
   roundEventOutbox = createRoundEventOutbox({ filePath: ROUND_OUTBOX_PATH, bayCode: config.bayCode });
+  roundReportOutbox = config.roundCountingEnabled
+    ? createRoundReportOutbox({ filePath: ROUND_REPORT_OUTBOX_PATH, bayCode: config.bayCode })
+    : null;
+  roundLedger = config.roundCountingEnabled
+    ? createRoundLedger({
+        filePath: ROUND_LEDGER_PATH,
+        agentVersion: VERSION,
+        onReport: (report) => {
+          roundReportOutbox.enqueue(report);
+          observeTransportChanges();
+        }
+      })
+    : null;
   screenGolfMonitor = createScreenGolfMonitor({
     logFile: config.gameStateLogFile,
     locator: createGameLogLocator({
@@ -1073,6 +1146,7 @@ async function startAgentLoop() {
     onRoundEnded: (event) => {
       try {
         roundEventOutbox.enqueue({ ...event, agentVersion: VERSION });
+        observeTransportChanges();
         log("Regular game returned to lobby", { eventId: event.eventId, roundId: event.roundId });
       } catch (error) {
         log("Round event could not be persisted", { error: error.message });
@@ -1113,6 +1187,8 @@ app.whenReady().then(async () => {
   USER_CONFIG_PATH = path.join(USER_DATA, "agent.config.json");
   LOG_DIR = path.join(USER_DATA, "logs");
   ROUND_OUTBOX_PATH = path.join(USER_DATA, "round-event-outbox-v1.json");
+  ROUND_LEDGER_PATH = path.join(USER_DATA, "round-ledger-v1.json");
+  ROUND_REPORT_OUTBOX_PATH = path.join(USER_DATA, "round-report-outbox-v1.json");
 
   baysConfig = loadBaysConfig();
   config = loadConfig();
@@ -1142,6 +1218,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  agentTransport?.stop();
   if (pollTimer) clearInterval(pollTimer);
   if (gameLogProbeTimer) clearInterval(gameLogProbeTimer);
   if (gameTelemetryTimer) clearInterval(gameTelemetryTimer);

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { buildAgentInstallFiles } from "./agent-bay-config";
+import { buildAgentInstallFiles } from "./agent-bay-config.ts";
 
 // 서버가 만든 파일을 Agent 의 실제 병합·정책 코드에 그대로 넣어 본다.
 // 서버와 Agent 사이의 약속이 깨지면(키 이름, 병합 방식) 여기서 걸린다.
@@ -30,6 +30,8 @@ test("apartment store installs as monitor-only with the issued token", () => {
     bayCode: "A-01",
     bayDisplayName: "골프 1번",
     monitorOnly: true,
+    pcType: "range",
+    roundCountingStore: false,
     agentToken: "issuedTokenExample0123456789abcdefghij"
   });
   const { effective, policy, tokenUsable } = installOnAgent(files);
@@ -54,6 +56,8 @@ test("a store bay code that also exists in the shipped config does not inherit i
       bayCode: "A-01",
       bayDisplayName: null,
       monitorOnly: storeCode === "VISTA-XII",
+      pcType: "range",
+      roundCountingStore: false,
       agentToken: "issuedTokenExample0123456789abcdefghij"
     });
     const { effective } = installOnAgent(files);
@@ -69,6 +73,8 @@ test("regular store keeps the customer overlay and shared game monitoring", () =
     bayCode: "A-02",
     bayDisplayName: "2번 타석",
     monitorOnly: false,
+    pcType: "range",
+    roundCountingStore: false,
     agentToken: "issuedTokenExample0123456789abcdefghij"
   });
   const { effective, policy, tokenUsable } = installOnAgent(files);
@@ -88,6 +94,8 @@ test("label falls back to the bay code when there is no display name", () => {
     bayCode: "P-02",
     bayDisplayName: "   ",
     monitorOnly: true,
+    pcType: "park",
+    roundCountingStore: false,
     agentToken: "t".repeat(40)
   });
   assert.equal(files["bays.config.local.json"].bays[0].label, "송도파크자이 · P-02");
@@ -95,4 +103,57 @@ test("label falls back to the bay code when there is no display name", () => {
   assert.equal(files["bays.config.local.json"].bays[0].gameMonitoringEnabled, true);
   assert.equal(files["bays.config.local.json"].bays[0].gameProcessNames?.[0], "ScreenGolf.exe");
   assert.equal(files["bays.config.local.json"].bays[0].usageMonitoringProfile, "park_log");
+});
+
+test("commercial round counting only adds the counting switch", () => {
+  const files = buildAgentInstallFiles({
+    storeCode: "VISTA-SH",
+    storeName: "비스타파크골프 시흥점",
+    bayCode: "A-02",
+    bayDisplayName: "2번 타석",
+    monitorOnly: false,
+    pcType: "park",
+    roundCountingStore: true,
+    agentToken: "t".repeat(40)
+  });
+  const entry = files["bays.config.local.json"].bays[0];
+  assert.equal(entry.roundCountingEnabled, true);
+  assert.equal(entry.monitorOnly, undefined);
+  assert.equal(entry.observerTransport, undefined);
+  assert.equal(entry.usageMonitoringEnabled, undefined);
+});
+
+test("monitor-only round counting uses observer transport without usage windows", () => {
+  const files = buildAgentInstallFiles({
+    storeCode: "VISTA-SS",
+    storeName: "하나로마트 삼송점",
+    bayCode: "A-01",
+    bayDisplayName: "1번",
+    monitorOnly: true,
+    pcType: "park",
+    roundCountingStore: true,
+    agentToken: "t".repeat(40)
+  });
+  const entry = files["bays.config.local.json"].bays[0];
+  assert.equal(entry.roundCountingEnabled, true);
+  assert.equal(entry.observerTransport, true);
+  assert.equal(entry.gameMonitoringEnabled, true);
+  assert.deepEqual(entry.gameProcessNames, ["ScreenGolf.exe"]);
+  assert.equal(entry.usageMonitoringEnabled, false);
+});
+
+test("round-counting store keeps range bays on time monitoring only", () => {
+  const files = buildAgentInstallFiles({
+    storeCode: "VISTA-XII",
+    storeName: "송도파크자이",
+    bayCode: "A-02",
+    bayDisplayName: "골프 2번",
+    monitorOnly: true,
+    pcType: "range",
+    roundCountingStore: true,
+    agentToken: "t".repeat(40)
+  });
+  const entry = files["bays.config.local.json"].bays[0];
+  assert.equal(entry.roundCountingEnabled, undefined);
+  assert.equal(entry.usageMonitoringProfile, "golf_input");
 });

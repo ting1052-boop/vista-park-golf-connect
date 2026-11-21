@@ -6,6 +6,7 @@ import { getDashboardOperationalRows } from "@/lib/supabase/dashboard";
 import { redirect } from "next/navigation";
 import { getOptionalAdminContext, listAdminStores } from "@/lib/admin-context";
 import { DashboardClient } from "./dashboard-client";
+import { getAgentRoundSummaries } from "@/lib/agent-round-summary";
 
 // Always derive the dashboard from current sessions, never a static build snapshot.
 export const dynamic = "force-dynamic";
@@ -17,16 +18,23 @@ export default async function AdminDashboardPage() {
   if (!adminContext) redirect("/admin/login");
   const currentStoreId = adminContext.storeId;
   const stores = await listAdminStores(adminContext);
-  const [bayResult, dashboardResult, automationResult, sharedPowerResult] = await Promise.allSettled([
+  const [bayResult, dashboardResult, automationResult, sharedPowerResult, roundResult] = await Promise.allSettled([
     getDashboardBays(currentStoreId),
     getDashboardOperationalRows(currentStoreId),
     getAutomationDeviceStatuses(currentStoreId),
     // Command history, not physical lighting/HVAC power feedback.
     getLatestScriptRuns(createSupabaseAdminClient(), currentStoreId, true).then((runs) =>
       getPowerState(runs, commonAutomationScripts.on, commonAutomationScripts.off)
-    )
+    ),
+    adminContext.storeRoundCounting
+      ? getAgentRoundSummaries(createSupabaseAdminClient(), currentStoreId)
+      : Promise.resolve(new Map())
   ]);
-  const bays = bayResult.status === "fulfilled" ? bayResult.value : [];
+  const roundSummaries = roundResult.status === "fulfilled" ? roundResult.value : new Map();
+  const bays = (bayResult.status === "fulfilled" ? bayResult.value : []).map((bay) => ({
+    ...bay,
+    ...(roundSummaries.has(bay.id) ? { roundSummary: roundSummaries.get(bay.id) } : {})
+  }));
   const automationDevices = automationResult.status === "fulfilled" ? automationResult.value : [];
   const sharedPower =
     sharedPowerResult.status === "fulfilled"
@@ -50,6 +58,9 @@ export default async function AdminDashboardPage() {
       : null,
     automationResult.status === "rejected"
       ? `장비 상태를 불러오지 못했습니다: ${automationResult.reason instanceof Error ? automationResult.reason.message : "알 수 없는 오류"}`
+      : null,
+    roundResult.status === "rejected"
+      ? `파크골프 게임 수를 불러오지 못했습니다: ${roundResult.reason instanceof Error ? roundResult.reason.message : "알 수 없는 오류"}`
       : null
   ].filter(Boolean);
 

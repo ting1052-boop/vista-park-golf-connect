@@ -6,7 +6,7 @@ import {
   buildAgentInstallFiles,
   type AgentInstallFiles
 } from "@/lib/agent-bay-config";
-import { AGENT_RELEASE } from "@/lib/agent-release";
+import { getAgentRelease, type AgentRelease } from "@/lib/agent-release";
 import { hashAgentToken } from "@/lib/agent-server";
 import { consumeEnrollmentSlot, getEnrollmentState, type EnrollmentState } from "@/lib/pc-enrollment";
 import type { RegisterPayload } from "@/lib/pc-registry-payload";
@@ -73,11 +73,29 @@ export type RegisterSuccess = {
 };
 
 export type AgentInstall = {
-  release: typeof AGENT_RELEASE;
+  release: AgentRelease;
   installDir: string;
   configDir: string;
   files: AgentInstallFiles;
 };
+
+function parseAgentVersion(value: string) {
+  if (!/^\d+(?:\.\d+){1,3}$/.test(value)) return null;
+  return value.split(".").map(Number);
+}
+
+export function isAgentReleaseOlderThanInstalled(installedVersion: string | null, releaseVersion: string) {
+  if (!installedVersion) return false;
+  const installed = parseAgentVersion(installedVersion);
+  const release = parseAgentVersion(releaseVersion);
+  if (!installed || !release) return true;
+  const length = Math.max(installed.length, release.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (release[index] ?? 0) - (installed[index] ?? 0);
+    if (difference !== 0) return difference < 0;
+  }
+  return false;
+}
 
 export type RegisterResult = { ok: true; result: RegisterSuccess } | { ok: false; error: RegisterFailure };
 
@@ -158,6 +176,18 @@ export async function registerBayPc(
     enrollment = state;
   }
 
+  const { data: existingRow, error: existingError } = await supabase
+    .from("bay_pc_registry")
+    .select("id, device_id, store_id, bay_id, pc_type, computer_name, anydesk_id, windows_edition, windows_version, activation_status, setup_tool_version, wol_mac_address, mac_addresses, ipv4_address, network_prefix_length, wol_broadcast_address, wake_on_lan_status, power_control_method, network_collected_at, registered_at, updated_at")
+    .eq("device_id", payload.deviceId)
+    .maybeSingle();
+  if (existingError) return fail(500, "server_error", existingError.message);
+  const existing = existingRow as RegistryRow | null;
+
+  if (auth.kind === "device" && (!existing || existing.store_id !== store.id || existing.bay_id !== bay.id)) {
+    return fail(403, "device_mismatch", "이 토큰은 기존 매장과 타석의 장비 정보만 수정할 수 있습니다.");
+  }
+
   // AnyDesk ID 는 한 장비에 하나뿐이다. replace 로도 넘어갈 수 없는 하드 에러다.
   const { data: anydeskOwner, error: anydeskError } = await supabase
     .from("bay_pc_registry")
@@ -185,6 +215,9 @@ export async function registerBayPc(
   if (occupantError) return fail(500, "server_error", occupantError.message);
 
   const occupant = occupantRow as Pick<RegistryRow, "device_id" | "computer_name" | "anydesk_id"> | null;
+  if (occupant && auth.kind === "device") {
+    return fail(403, "device_mismatch", "이 토큰은 다른 장비를 교체할 수 없습니다.");
+  }
   if (occupant && !payload.replace) {
     return fail(409, "slot_occupied", `${bay.bay_code} 타석에는 이미 다른 PC(${occupant.computer_name})가 등록되어 있습니다.`, {
       deviceId: occupant.device_id,
@@ -193,14 +226,6 @@ export async function registerBayPc(
       bayCode: bay.bay_code
     });
   }
-
-  const { data: existingRow, error: existingError } = await supabase
-    .from("bay_pc_registry")
-    .select("id, device_id, store_id, bay_id, pc_type, computer_name, anydesk_id, windows_edition, windows_version, activation_status, setup_tool_version, wol_mac_address, mac_addresses, ipv4_address, network_prefix_length, wol_broadcast_address, wake_on_lan_status, power_control_method, network_collected_at, registered_at, updated_at")
-    .eq("device_id", payload.deviceId)
-    .maybeSingle();
-  if (existingError) return fail(500, "server_error", existingError.message);
-  const existing = existingRow as RegistryRow | null;
 
   let replacedDeviceId: string | null = null;
   if (occupant && payload.replace) {
@@ -230,15 +255,8 @@ export async function registerBayPc(
     windows_edition: payload.windowsEdition,
     windows_version: payload.windowsVersion,
     activation_status: payload.activationStatus,
-    setup_tool_version: payload.setupToolVersion
-    ,wol_mac_address: payload.wolMacAddress
-    ,mac_addresses: payload.macAddresses
-    ,ipv4_address: payload.ipv4Address
-    ,network_prefix_length: payload.networkPrefixLength
-    ,wol_broadcast_address: payload.wolBroadcastAddress
-    ,wake_on_lan_status: payload.wakeOnLanStatus
-    ,power_control_method: payload.powerControlMethod
-    ,network_collected_at: payload.networkCollectedAt
+    setup_tool_version: payload.setupToolVersion,
+    ...networkFacts(payload, existing)
   };
 
   // 전역 토큰으로 들어온 등록에는 장비 토큰을 새로 발급한다. 현장에서 장비
@@ -330,7 +348,9 @@ export async function registerBayPc(
       const issued = await issueAgentInstall(supabase, {
         storeId: store.id,
         bay,
-        computerName: payload.computerName
+        computerName: payload.computerName,
+        pcType: payload.pcType,
+        installedAgentVersion: payload.installedAgentVersion
       });
       if (issued.ok) agent = issued.agent;
       else agentError = issued.error;
@@ -355,6 +375,36 @@ export async function registerBayPc(
   };
 }
 
+function networkFacts(payload: RegisterPayload, existing: RegistryRow | null) {
+  const incoming = {
+    wol_mac_address: payload.wolMacAddress,
+    mac_addresses: payload.macAddresses,
+    ipv4_address: payload.ipv4Address,
+    network_prefix_length: payload.networkPrefixLength,
+    wol_broadcast_address: payload.wolBroadcastAddress,
+    wake_on_lan_status: payload.wakeOnLanStatus,
+    power_control_method: payload.powerControlMethod,
+    network_collected_at: payload.networkCollectedAt
+  };
+  if (!existing) return incoming;
+
+  // Undated clients cannot establish freshness against a known snapshot.
+  if (existing.network_collected_at && (!payload.networkCollectedAt ||
+    Date.parse(payload.networkCollectedAt) < Date.parse(existing.network_collected_at))) {
+    return {};
+  }
+
+  // A partial adapter list must not orphan the retained WOL MAC.
+  const wolMacAddress = payload.wolMacAddress ?? existing.wol_mac_address;
+  const canUpdateMacAddresses = !wolMacAddress || payload.macAddresses.some((row) => row.address === wolMacAddress);
+
+  // Parser defaults mean "not collected", never an instruction to erase facts.
+  return Object.fromEntries(Object.entries(incoming).filter(([key, value]) =>
+    value !== null && value !== "unknown" && (!Array.isArray(value) || value.length > 0) &&
+    (key !== "mac_addresses" || canUpdateMacAddresses)
+  ));
+}
+
 async function findStore(supabase: SupabaseClient, payload: RegisterPayload) {
   const query = supabase.from("stores").select("id, code");
   const { data } = payload.storeId
@@ -375,11 +425,17 @@ async function findBay(supabase: SupabaseClient, storeId: string, payload: Regis
 // 매장별 동작(monitor-only)은 stores.agent_monitor_only 로 정한다.
 async function issueAgentInstall(
   supabase: SupabaseClient,
-  args: { storeId: string; bay: { id: string; bay_code: string; display_name: string | null }; computerName: string }
+  args: {
+    storeId: string;
+    bay: { id: string; bay_code: string; display_name: string | null };
+    computerName: string;
+    pcType: "range" | "park";
+    installedAgentVersion: string | null;
+  }
 ): Promise<{ ok: true; agent: AgentInstall } | { ok: false; error: { code: string; message: string } }> {
   const { data: store, error: storeError } = await supabase
     .from("stores")
-    .select("code, name, agent_monitor_only")
+    .select("code, name, agent_monitor_only, agent_round_counting")
     .eq("id", args.storeId)
     .maybeSingle();
 
@@ -389,6 +445,31 @@ async function issueAgentInstall(
       error: {
         code: "agent_profile_unavailable",
         message: "매장 Agent 설정을 읽지 못했습니다. 서버 migration 적용 여부를 확인해주세요."
+      }
+    };
+  }
+
+  const row = store as {
+    code: string;
+    name: string;
+    agent_monitor_only: boolean | null;
+    agent_round_counting: boolean | null;
+  };
+  const roundCountingStore = row.agent_round_counting === true;
+  const roundCounting = roundCountingStore && args.pcType === "park";
+  const release = getAgentRelease(roundCounting);
+  if (!release) {
+    return {
+      ok: false,
+      error: { code: "agent_release_unavailable", message: "게임 수 집계 Agent가 아직 현장 검증 전입니다." }
+    };
+  }
+  if (isAgentReleaseOlderThanInstalled(args.installedAgentVersion, release.version)) {
+    return {
+      ok: false,
+      error: {
+        code: "agent_release_older",
+        message: `서버 Agent v${release.version}은 현재 PC의 v${args.installedAgentVersion}보다 낮아 설치하지 않았습니다.`
       }
     };
   }
@@ -412,11 +493,10 @@ async function issueAgentInstall(
     return { ok: false, error: { code: "agent_issue_failed", message: upsertError.message } };
   }
 
-  const row = store as { code: string; name: string; agent_monitor_only: boolean | null };
   return {
     ok: true,
     agent: {
-      release: AGENT_RELEASE,
+      release,
       installDir: AGENT_INSTALL_DIR,
       configDir: AGENT_MACHINE_CONFIG_DIR,
       files: buildAgentInstallFiles({
@@ -425,6 +505,8 @@ async function issueAgentInstall(
         bayCode: args.bay.bay_code,
         bayDisplayName: args.bay.display_name,
         monitorOnly: row.agent_monitor_only === true,
+        pcType: args.pcType,
+        roundCountingStore,
         agentToken
       })
     }

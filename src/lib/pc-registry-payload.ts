@@ -29,6 +29,8 @@ export type RegisterPayload = {
   // true 면 이 타석의 Agent 토큰을 새로 발급하고 설치 정보를 함께 돌려준다.
   // 요청할 때만 준다. 발급하면 그 타석의 기존 Agent 토큰이 무효가 되기 때문이다.
   installAgent: boolean;
+  // 명시적 설치·재설치 때만 현재 PC에서 확인한 버전을 보낸다. 서버는 토큰 교체 전에 다운그레이드를 차단한다.
+  installedAgentVersion: string | null;
 };
 
 export type PayloadRejection = { code: "invalid_payload" | "forbidden_field"; field: string; message: string };
@@ -53,6 +55,7 @@ const PC_TYPES: PcType[] = ["range", "park"];
 const ACTIVATION_STATUSES: ActivationStatus[] = ["licensed", "unlicensed", "unknown"];
 const MAC = /^[0-9a-f]{12}$/i;
 const IPV4 = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+const AGENT_VERSION = /^\d+(?:\.\d+){1,3}$/;
 
 function reject(field: string, message: string, code: PayloadRejection["code"] = "invalid_payload"): PayloadResult {
   return { ok: false, error: { code, field, message } };
@@ -146,6 +149,16 @@ export function parseRegisterPayload(body: unknown): PayloadResult {
   if (raw.replace !== undefined && typeof raw.replace !== "boolean") {
     return reject("replace", "replace 는 true 또는 false 여야 합니다.");
   }
+  const installedAgentVersion = raw.installedAgentVersion === undefined || raw.installedAgentVersion === null
+    ? null
+    : text(raw.installedAgentVersion, 40);
+  if (raw.installedAgentVersion !== undefined && raw.installedAgentVersion !== null &&
+      (!installedAgentVersion || !AGENT_VERSION.test(installedAgentVersion))) {
+    return reject("installedAgentVersion", "installedAgentVersion은 점으로 구분한 숫자 버전이어야 합니다.");
+  }
+  if (installedAgentVersion && raw.installAgent !== true) {
+    return reject("installedAgentVersion", "installedAgentVersion은 installAgent=true 요청에서만 사용할 수 있습니다.");
+  }
 
   let macAddresses: RegisterPayload["macAddresses"] = [];
   if (raw.macAddresses !== undefined) {
@@ -219,7 +232,8 @@ export function parseRegisterPayload(body: unknown): PayloadResult {
       wakeOnLanStatus: wakeOnLanStatus as RegisterPayload["wakeOnLanStatus"],
       powerControlMethod: powerControlMethod as RegisterPayload["powerControlMethod"],
       networkCollectedAt,
-      installAgent: raw.installAgent === true
+      installAgent: raw.installAgent === true,
+      installedAgentVersion
     }
   };
 }

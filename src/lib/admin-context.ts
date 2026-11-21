@@ -13,12 +13,13 @@ export type AdminContext = {
   roleLabel: string;
   limitedMenu: boolean;
   storeMonitorOnly: boolean;
+  storeRoundCounting: boolean;
   isHeadAdmin: boolean;
 };
 
 type UserRoleRow = { role: string | null };
 type StoreAssignmentRow = { store_id: string; role: string | null };
-type StoreRow = { id: string; name: string; agent_monitor_only?: boolean | null };
+type StoreRow = { id: string; name: string; agent_monitor_only?: boolean | null; agent_round_counting?: boolean | null };
 
 type AdminRole = "head_admin" | "store_manager" | "staff";
 
@@ -101,7 +102,7 @@ export async function getAdminContext(): Promise<AdminContext> {
 
   const detailedStore = await supabase
     .from("stores")
-    .select("id, name, agent_monitor_only")
+    .select("id, name, agent_monitor_only, agent_round_counting")
     .eq("id", storeId)
     .maybeSingle();
   const storeResult = detailedStore.error
@@ -120,6 +121,7 @@ export async function getAdminContext(): Promise<AdminContext> {
     roleLabel: limitedMenu ? "매장관리자" : "본사관리자",
     limitedMenu,
     storeMonitorOnly: (store as StoreRow | null)?.agent_monitor_only === true,
+    storeRoundCounting: (store as StoreRow | null)?.agent_round_counting === true,
     isHeadAdmin
   };
 }

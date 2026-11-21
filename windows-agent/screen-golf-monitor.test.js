@@ -156,6 +156,28 @@ test("startup backfill restores state without creating a usage start signal", as
   }
 });
 
+test("startup restores the latest state from an active log after a long idle period", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "vista-backfill-active-"));
+  const logFile = path.join(directory, "ScreenGolf.log");
+  try {
+    await fs.writeFile(
+      logFile,
+      logLine(45, "LogNet: Browse: /Game/ScreenGolf/Interface/map/UIMap?Name=Player") +
+        logLine(1, "LogStats: Stats thread is still running"),
+      "utf8"
+    );
+
+    const monitor = createScreenGolfMonitor({ logFile });
+    const state = await monitor.observe(true);
+
+    assert.ok(state, "활성 로그의 마지막 화면 상태를 되살려야 한다");
+    assert.equal(state.gameState, "menu");
+    assert.equal(state.usageStartSignal, false, "재시작 복구는 이용 시작으로 세면 안 된다");
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 function logLine(minutesAgo, body) {
   const at = new Date(Date.now() - minutesAgo * 60_000);
   const p = (n, w = 2) => String(n).padStart(w, "0");

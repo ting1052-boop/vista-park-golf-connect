@@ -268,8 +268,15 @@ function createScreenGolfMonitor(options = {}) {
         const lastNewline = Math.max(combined.lastIndexOf("\n"), combined.lastIndexOf("\r"));
         const complete = lastNewline >= 0 ? combined.slice(0, lastNewline + 1) : "";
         carry = lastNewline >= 0 ? combined.slice(lastNewline + 1).slice(-4_096) : combined.slice(-4_096);
-        const usable = backfilling ? selectRecentLines(complete) : complete;
-        const events = parseScreenGolfEvents(usable);
+        const recent = backfilling ? selectRecentLines(complete) : complete;
+        let events = parseScreenGolfEvents(recent);
+        // The active log can stay on one screen longer than the short backfill window.
+        // Restore that last state after restart without creating a usage signal.
+        const hasLogTimestamps = complete.split(/\r?\n/).some((line) => parseLogTimestamp(line) !== null);
+        if (backfilling && events.length === 0 && hasLogTimestamps) {
+          const historicalEvents = parseScreenGolfEvents(complete);
+          if (historicalEvents.length > 0) events = historicalEvents;
+        }
         const observedAt = new Date().toISOString();
         const stateBeforeEvents = state;
         if (!backfilling) {

@@ -53,6 +53,15 @@ for (const status of ["available", "waiting", "in_use"]) {
 assert(render(true, "available", "unknown").includes("상태 확인 불가"));
 assert(render(true, "in_use", "active").includes(">이용 중<"));
 assert(render(true, "available", "unknown", false).includes("신호 없음"));
+for (const usage of ["unknown", "active", "awaiting_input"]) {
+  const offline = render(true, "available", usage, false);
+  assert(offline.includes("PC 미연결"));
+  assert(!offline.includes("상태 확인 불가"));
+  assert(!offline.includes("border-amber-200"));
+  assert(!offline.includes(">이용 중<"));
+  assert(offline.includes("오늘 이용 감지 0회"));
+}
+assert(render(false, "available", "unknown", false).includes("상태 확인 불가"));
 assert(render(true, "maintenance").includes("점검 완료 처리"));
 assert(render(false).includes("관리자 입장 시작"));
 assert(render(false).includes("즉시 사용 가능"));

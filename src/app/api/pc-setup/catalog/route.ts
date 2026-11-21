@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBearerToken } from "@/lib/agent-server";
+import { AGENT_RELEASES } from "@/lib/agent-release";
 import { listOpenEnrollmentStoreIds } from "@/lib/pc-enrollment";
 import { matchesGlobalSetupToken } from "@/lib/pc-registry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -94,5 +95,12 @@ export async function GET(request: NextRequest) {
       })
     }));
 
-  return NextResponse.json({ ok: true, stores });
+  // 설치 버튼이 Agent 토큰 발급 전에 다운그레이드 여부를 확인할 수 있게 버전만 공개한다.
+  // The setup tool only uses this as a downgrade guard. The register endpoint
+  // selects the actual default/park release after it knows the PC type.
+  return NextResponse.json({
+    ok: true,
+    stores,
+    agentReleaseVersion: AGENT_RELEASES.roundCounting?.version ?? AGENT_RELEASES.default.version
+  });
 }

@@ -19,6 +19,8 @@ export type AgentBayEntry = {
   usageMonitoringEnabled?: boolean;
   usageMonitoringProfile?: "golf_input" | "park_log";
   usageWindowPolicy?: "rolling_60" | "clock_hour";
+  roundCountingEnabled?: true;
+  observerTransport?: true;
 };
 
 export type AgentInstallFiles = {
@@ -32,6 +34,8 @@ export function buildAgentInstallFiles(args: {
   bayCode: string;
   bayDisplayName: string | null;
   monitorOnly: boolean;
+  pcType: "range" | "park";
+  roundCountingStore: boolean;
   agentToken: string;
 }): AgentInstallFiles {
   // Agent 안에 내장된 bays.config.json 의 "A-01"(시흥) 과 겹치지 않게 매장 코드를 붙인다.
@@ -61,6 +65,17 @@ export function buildAgentInstallFiles(args: {
         entry.usageMonitoringProfile = "golf_input";
         entry.usageWindowPolicy = "clock_hour";
       }
+    }
+  }
+
+  if (args.roundCountingStore && args.pcType === "park") {
+    entry.roundCountingEnabled = true;
+    if (args.monitorOnly) {
+      entry.observerTransport = true;
+      entry.gameMonitoringEnabled = true;
+      entry.gameProcessNames = ["ScreenGolf.exe"];
+      entry.gameLogDiagnosticsEnabled = false;
+      entry.usageMonitoringEnabled = false;
     }
   }
 
