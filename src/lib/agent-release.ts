@@ -21,9 +21,9 @@ export const AGENT_RELEASE = {
 export const AGENT_RELEASES: { default: AgentRelease; roundCounting: AgentRelease | null } = {
   default: AGENT_RELEASE,
   roundCounting: {
-    version: "0.10.0",
-    url: "https://github.com/ting1052-boop/vista-park-golf-connect/releases/download/agent-v0.10.0/VISTA-Bay-Agent.exe",
-    sha256: "31B06623B6FABDD846B2F14D0823732899E77894EEA704B4694FE975AAEEE185"
+    version: "0.10.1",
+    url: "https://github.com/ting1052-boop/vista-park-golf-connect/releases/download/agent-v0.10.1/VISTA-Bay-Agent.exe",
+    sha256: "F93BD2ABED873C66A6C86618251ACB0B8A68EA8264DEE154272A4A76EAB55410"
   }
 };
 
