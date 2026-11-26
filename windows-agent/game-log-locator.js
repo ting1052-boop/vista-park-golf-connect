@@ -106,6 +106,30 @@ function sharedDepthWithRunning(candidatePath, exePaths) {
   }
 }
 
+/**
+ * 실행 중인 exe 경로에서 설치 루트를 찾아 그 루트의 ScreenGolf.log 후보를 만든다.
+ * exe 가 루트(런처)에 있든 ScreenGolf\Binaries\Win64 에 있든 위로 올라가며 모두 후보로 둔다.
+ * 없는 후보는 resolve() 의 존재 확인에서 걸러진다.
+ */
+function logCandidatesFromExes(exePaths) {
+  const found = [];
+  for (const exe of exePaths) {
+    let directory = path.dirname(path.resolve(exe));
+    for (;;) {
+      found.push(path.join(directory, "ScreenGolf", "Saved", "Logs", "ScreenGolf.log"));
+      const parent = path.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  return found;
+}
+
+/** <루트>\ScreenGolf\Saved\Logs\ScreenGolf.log → <루트>. 홀 로그도 같은 루트 기준으로 찾는다. */
+function installRootOf(logFile) {
+  return path.resolve(logFile, "..", "..", "..", "..");
+}
+
 function createGameLogLocator(options = {}) {
   const explicit = [options.logFile, ...(Array.isArray(options.logFiles) ? options.logFiles : [])]
     .filter((value) => typeof value === "string" && value.trim().length > 0)
@@ -152,20 +176,31 @@ function createGameLogLocator(options = {}) {
    */
   async function resolve() {
     const found = [];
-
-    for (const candidate of await candidates()) {
-      try {
-        const stat = await fs.stat(candidate);
-        if (stat.isFile()) found.push({ path: candidate, mtimeMs: stat.mtimeMs });
-      } catch {
-        // 없는 후보는 건너뛴다. 재설치 전 폴더가 남아 있을 수 있다.
+    const seen = new Set();
+    const collect = async (list) => {
+      for (const candidate of list) {
+        const key = path.resolve(candidate).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        try {
+          const stat = await fs.stat(candidate);
+          if (stat.isFile()) found.push({ path: candidate, mtimeMs: stat.mtimeMs });
+        } catch {
+          // 없는 후보는 건너뛴다. 재설치 전 폴더나 ScreenGolf 가 없는 PARK_* 폴더(센서 백업 등)일 수 있다.
+        }
       }
-    }
+    };
 
+    await collect(await candidates());
+    // 후보가 하나뿐이면 그대로 쓴다(프로세스 조회를 아낀다).
+    if (found.length === 1) return found[0].path;
+
+    // 0개거나 여러 개면 실행 중인 게임 위치를 본다. 폴더 이름 규칙이 또 바뀌어도 실행 경로에서 루트를 찾는다.
+    const exePaths = await runningRoots();
+    await collect(logCandidatesFromExes(exePaths));
     if (found.length === 0) return null;
     if (found.length === 1) return found[0].path;
 
-    const exePaths = await runningRoots();
     const scored = found.map((entry) => ({ ...entry, depth: sharedDepthWithRunning(entry.path, exePaths) }));
     const deepest = Math.max(...scored.map((entry) => entry.depth));
 
@@ -178,4 +213,4 @@ function createGameLogLocator(options = {}) {
   return { resolve, candidates };
 }
 
-module.exports = { createGameLogLocator, expandPattern };
+module.exports = { createGameLogLocator, expandPattern, installRootOf };

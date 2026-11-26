@@ -158,7 +158,11 @@ type DashboardClientProps = {
   initialAutomationDevices?: AutomationDeviceStatusRow[];
   initialSharedPower?: PowerState;
   initialError?: string | null;
+  openRounds?: Record<string, OpenRound>;
 };
+
+// 서버(agent_rounds)가 준 열린 코스 판. 카드의 "N분째"에만 쓴다.
+export type OpenRound = { courseId: string | null; startedAt: string };
 
 type NoShowRow = {
   id: string;
@@ -185,7 +189,8 @@ export function DashboardClient({
   initialTodayReservationSummary = emptyTodayReservationSummary,
   initialAutomationDevices = [],
   initialSharedPower = { on: null, failed: false, lastRunAt: null },
-  initialError = null
+  initialError = null,
+  openRounds = {}
 }: DashboardClientProps) {
   const router = useRouter();
   const [bays, setBays] = useState<LiveBay[]>(initialBays);
@@ -985,6 +990,7 @@ export function DashboardClient({
                       <BayCard
                         key={bay.id}
                         bay={bay}
+                        openRound={openRounds[bay.id]}
                         limitedMenu={adminContext.limitedMenu}
                         storeMonitorOnly={adminContext.storeMonitorOnly}
                         observationOnly={currentStoreId === SONGDO_STORE_ID || (adminContext.storeRoundCounting && adminContext.storeMonitorOnly)}
@@ -1000,7 +1006,6 @@ export function DashboardClient({
                     </div>
                   )}
                 </div>
-                {adminContext.storeRoundCounting ? <RoundHistory /> : null}
               </div>
 
               <aside className="mt-6 rounded-md border border-[#dfe8dc] bg-white p-5 shadow-soft-line">
@@ -1235,59 +1240,6 @@ export function DashboardClient({
   );
 }
 
-type RoundHistoryResponse = {
-  ok: boolean;
-  message?: string;
-  bays?: Array<{ id: string; display_name: string; bay_code: string }>;
-  rows?: Array<{ day: string; bay_id: string; started: number; counted_games: number; partial: number; practice_count: number; practice_minutes: number }>;
-};
-
-function RoundHistory() {
-  const [data, setData] = useState<RoundHistoryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function load() {
-    if (data || loading) return;
-    setLoading(true);
-    try {
-      const response = await fetch("/api/admin/round-counts", { cache: "no-store" });
-      const body = await response.json() as RoundHistoryResponse;
-      setData(response.ok ? body : { ok: false, message: body.message ?? "일별 게임 수를 불러오지 못했습니다." });
-    } catch {
-      setData({ ok: false, message: "일별 게임 수를 불러오지 못했습니다." });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const days = [...new Set((data?.rows ?? []).map((row) => row.day))].sort().reverse();
-  return <details className="mt-4 rounded-md border border-[#dfe8dc] bg-white shadow-soft-line" onToggle={(event) => {
-    if (event.currentTarget.open) void load();
-  }}>
-    <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold">일별 게임 수 (최근 14일)</summary>
-    <div className="overflow-x-auto border-t border-[#edf2ea] p-4">
-      {loading ? <p className="text-sm text-[#697468]">불러오는 중...</p> : data?.ok === false ? <p className="text-sm font-bold text-rose-700">{data.message}</p> :
-        <table className="min-w-full text-left text-xs">
-          <thead><tr className="border-b border-[#dfe8dc]">
-            <th className="p-2">날짜</th>
-            {(data?.bays ?? []).map((bay) => <th key={bay.id} className="p-2">{bay.display_name || bay.bay_code}</th>)}
-            <th className="p-2">시작</th><th className="p-2">중도</th><th className="p-2">연습</th>
-          </tr></thead>
-          <tbody>{days.map((day) => {
-            const rows = (data?.rows ?? []).filter((row) => row.day === day);
-            return <tr key={day} className="border-b border-[#edf2ea]">
-              <td className="p-2 font-bold">{day}</td>
-              {(data?.bays ?? []).map((bay) => <td key={bay.id} className="p-2 font-extrabold">{rows.find((row) => row.bay_id === bay.id)?.counted_games ?? 0}</td>)}
-              <td className="p-2">{rows.reduce((sum, row) => sum + Number(row.started), 0)}</td>
-              <td className="p-2">{rows.reduce((sum, row) => sum + Number(row.partial), 0)}</td>
-              <td className="p-2">{rows.reduce((sum, row) => sum + Number(row.practice_count), 0)}회 · {rows.reduce((sum, row) => sum + Number(row.practice_minutes), 0)}분</td>
-            </tr>;
-          })}</tbody>
-        </table>}
-    </div>
-  </details>;
-}
-
 function WarningItem({
   title,
   description,
@@ -1322,6 +1274,7 @@ function WarningItem({
 
 function BayCard({
   bay,
+  openRound,
   limitedMenu,
   storeMonitorOnly,
   observationOnly,
@@ -1331,6 +1284,7 @@ function BayCard({
   onMaintenanceDone
 }: {
   bay: LiveBay;
+  openRound?: OpenRound;
   limitedMenu: boolean;
   storeMonitorOnly: boolean;
   observationOnly: boolean;
@@ -1342,9 +1296,8 @@ function BayCard({
   const meta = statusMeta[bay.status];
   const StatusIcon = meta.icon;
   const usageText = getBayUsageText(bay);
-  const gameStatus = getGameStatusDisplay(bay, storeMonitorOnly || observationOnly);
-  const hideUnknownGameStatus = !observationOnly && storeMonitorOnly && /^A-0[1-7]$/i.test(bay.name) &&
-    (gameStatus.label === "게임 상태 확인 불가" || gameStatus.label === "게임 감지 미지원");
+  const gameStatus = getGameStatusDisplay(bay, storeMonitorOnly || observationOnly, openRound);
+  const hideUnknownGameStatus = !observationOnly && storeMonitorOnly && /^A-0[1-7]$/i.test(bay.name) && gameStatus.hideable;
 
   return (
     <article className={cn("flex h-full flex-col rounded-md border bg-white p-4 shadow-soft-line", observationOnly
@@ -1387,9 +1340,10 @@ function BayCard({
         </div> : null}
       </div>
 
-      {!hideUnknownGameStatus ? <details
+      {!hideUnknownGameStatus ? <p
+        title={`${gameStatus.detail} · Agent ${bay.agentVersion ?? "버전 확인 불가"}`}
         className={cn(
-          "group mt-3 rounded-md border px-4 py-2.5 text-base font-bold",
+          "mt-3 flex items-center gap-2.5 rounded-md border px-4 py-2.5 text-base font-bold",
           gameStatus.tone === "active"
             ? "border-sky-200 bg-sky-50 text-sky-800"
             : gameStatus.tone === "idle"
@@ -1397,55 +1351,9 @@ function BayCard({
               : "border-amber-200 bg-amber-50 text-amber-800"
         )}
       >
-        <summary className="flex cursor-pointer list-none items-center gap-2.5">
-          <Activity size={20} aria-hidden="true" />
-          <span className="min-w-0 flex-1">{gameStatus.label}</span>
-          <span className="text-xs font-extrabold opacity-75">
-            {bay.gameActivity?.supported
-              ? bay.gameActivity.todayUsageStarts !== undefined
-                ? `오늘 이용${observationOnly ? " 감지" : ""} ${bay.gameActivity.todayUsageStarts}회`
-                : "오늘 이용 집계 미지원"
-              : "이력 미지원"}
-          </span>
-        </summary>
-        <div className="mt-2 border-t border-current/15 pt-2 text-xs font-semibold leading-5 opacity-90">
-          <p>{gameStatus.detail}</p>
-          <p>Agent {bay.agentVersion ?? "버전 확인 불가"}</p>
-          {bay.gameActivity?.supported ? (
-            bay.gameActivity.recentEvents.length > 0 ? (
-              <ul className="mt-2 space-y-1">
-                {bay.gameActivity.recentEvents.slice(0, 3).map((event) => (
-                  <li key={event.eventId}>
-                    {new Date(event.occurredAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
-                    {event.courseId ? ` · ${event.courseId}` : ""}
-                    {event.lastKnownHole ? ` · 마지막 ${event.lastKnownHole}번 홀` : " · 마지막 홀 확인 불가"}
-                    {event.delayed ? " · 지연 수신" : ""}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1">
-                {bay.gameActivity.todayUsageStarts !== undefined
-                  ? `오늘 이용${observationOnly ? " 감지" : " 시작"} ${bay.gameActivity.todayUsageStarts}회가 확인되었습니다.`
-                  : "오늘 확인된 일반 코스의 로비 복귀 기록이 없습니다."}
-              </p>
-            )
-          ) : <p className="mt-1">게임 이력 DB 적용 전이거나 조회할 수 없습니다.</p>}
-          <p className="mt-1 opacity-75">{observationOnly ? "감지 횟수는 실제 이용자 수나 예약 건수가 아닙니다." : "로비 복귀는 18홀 완주·예약·결제 건수가 아닙니다."}</p>
-        </div>
-      </details> : null}
-
-      {bay.roundSummary ? <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-[#dfe8dc] bg-white/85 p-3 text-xs">
-        <MiniStatus label="오늘 시작" value={`${bay.roundSummary.todayStarted}회`} />
-        <MiniStatus label="어제 확정 게임" value={`${bay.roundSummary.yesterdayCounted}회`} />
-        <MiniStatus label="중도 종료" value={`${bay.roundSummary.yesterdayPartial}회`} />
-        <MiniStatus label="오늘 연습" value={`${bay.roundSummary.todayPracticeCount}회 · ${bay.roundSummary.todayPracticeMinutes}분`} />
-        <div className={cn("col-span-2 rounded-md border p-3", bay.roundSummary.pendingCount > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-[#e5ece1] bg-[#fbfcfa]") }>
-          <p className="font-bold">확인 대기</p>
-          <p className="mt-1 font-extrabold">{bay.roundSummary.pendingCount}건</p>
-          <p className="mt-1 opacity-75">코스 진입은 잠정값이며, 9홀 이상 종료가 확인된 판만 확정 게임으로 셉니다.</p>
-        </div>
-      </div> : null}
+        <Activity size={20} aria-hidden="true" className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{gameStatus.label}</span>
+      </p> : null}
 
       {!observationOnly ? bay.status === "in_use" ? (
         <div className="mt-4 rounded-md border border-white bg-white/80 p-3">
@@ -1529,46 +1437,33 @@ function BayCard({
   );
 }
 
-function getGameStatusDisplay(bay: LiveBay, storeMonitorOnly = false) {
-  const compactUsage = storeMonitorOnly;
+// 카드의 게임 상태 한 줄. 파크: "게임 중 · 코스 · N분째" / "대기(로비)" / "프로그램 꺼짐" / "상태 확인 불가".
+// 골프연습장·송도(60분 이용창 신호)와 관찰 매장의 PC 미연결 문구는 기존대로 둔다. 홀 번호는 실시간 근거가 없어 표시하지 않는다.
+function getGameStatusDisplay(bay: LiveBay, compactUsage = false, openRound?: OpenRound): {
+  label: string;
+  detail: string;
+  tone: "active" | "idle" | "unknown";
+  hideable?: boolean;
+} {
   if (compactUsage && !bay.pcOnline) {
     return {
       label: bay.pcConnectionState === "shutdown_pending" ? "종료 확인 중" : "PC 미연결",
       detail: "PC 연결 신호가 없어 이용 감지를 쉬고 있습니다. 전원 종료 또는 네트워크 연결 상태를 확인할 수 있습니다.",
-      tone: "idle" as const
+      tone: "idle"
     };
   }
   const telemetry = bay.gameTelemetry;
   if (!telemetry) {
-    return {
-      label: compactUsage ? "상태 확인 불가" : bay.pcOnline ? "게임 감지 미지원" : "게임 상태 확인 불가",
-      detail: compactUsage ? "이 타석의 이용 신호를 아직 받지 못했습니다." : "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.",
-      tone: "unknown" as const
-    };
+    return { label: "상태 확인 불가", detail: "이 타석 Agent에서 게임 상태 정보가 아직 수신되지 않았습니다.", tone: "unknown" };
   }
-
   if (bay.gameTelemetryStale) {
-    return {
-      label: compactUsage ? "상태 확인 불가" : "게임 상태 확인 불가",
-      detail: compactUsage ? `이용 신호가 오래되었습니다 · 마지막 확인 ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}` : `마지막 게임 관측: ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
-      tone: "unknown" as const
-    };
+    return { label: "상태 확인 불가", detail: `마지막 게임 관측 ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`, tone: "unknown" };
   }
-
   if (telemetry.gameRunning === false) {
-    return {
-      label: compactUsage ? "대기 중" : "골프 프로그램 미실행",
-      detail: compactUsage ? "게임 시작 신호를 기다립니다." : `프로세스 확인 · ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`,
-      tone: "idle" as const
-    };
+    return { label: "프로그램 꺼짐", detail: `프로세스 확인 ${new Date(telemetry.observedAt).toLocaleString("ko-KR")}`, tone: "idle" };
   }
-
   if (telemetry.gameRunning !== true) {
-    return {
-      label: "게임 상태 확인 불가",
-      detail: `사유: ${telemetry.reasonCode ?? "unknown"}`,
-      tone: "unknown" as const
-    };
+    return { label: "상태 확인 불가", detail: `사유: ${telemetry.reasonCode ?? "unknown"}`, tone: "unknown", hideable: true };
   }
 
   if (telemetry.usage) {
@@ -1579,84 +1474,35 @@ function getGameStatusDisplay(bay: LiveBay, storeMonitorOnly = false) {
         detail: compactUsage
           ? "골프 화면 사용 신호가 확인되었습니다."
           : `골프 화면 입력 기준 · ${Math.max(1, Math.ceil((Date.parse(usage.endsAt) - Date.now()) / 60_000))}분 남음 · 실제 타구 여부는 확인하지 않습니다.`,
-        tone: "active" as const
+        tone: "active"
       };
     }
-    return {
-      label: usage.state === "unknown" ? "상태 확인 불가" : "대기 중",
-      detail: usage.state === "unknown"
-        ? "사용 입력을 확인하지 못했습니다."
-        : "새 사용 신호를 기다립니다.",
-      tone: usage.state === "unknown" ? "unknown" as const : "idle" as const
-    };
-  }
-
-  if (compactUsage && (telemetry.gameState === "playing" || telemetry.gameState === "practice")) {
-    return {
-      label: "이용 중",
-      detail: "게임 시작 신호가 확인되었습니다.",
-      tone: "active" as const
-    };
+    return usage.state === "unknown"
+      ? { label: "상태 확인 불가", detail: "사용 입력을 확인하지 못했습니다.", tone: "unknown" }
+      : { label: "대기 중", detail: "새 사용 신호를 기다립니다.", tone: "idle" };
   }
 
   if (telemetry.gameState === "practice" || telemetry.gameMode === "practice") {
-    return { label: "연습장", detail: "연습장 이용은 일반 코스 복귀 횟수에 포함하지 않습니다.", tone: "active" as const };
+    return { label: "게임 중 · 연습장", detail: "연습장 이용 중입니다.", tone: "active" };
   }
-
-  if (telemetry.gameState === "exiting") {
-    return { label: "골프 프로그램 종료 중", detail: telemetry.roundStatus === "aborted" ? "라운드 중단이 감지되었습니다." : "프로그램 종료가 감지되었습니다.", tone: "unknown" as const };
-  }
-
   if (telemetry.gameState === "playing") {
-    if (compactUsage && telemetry.gameMode === "regular") {
-      return {
-        label: "일반 코스",
-        detail: "게임 진행 상태가 확인되었습니다.",
-        tone: "active" as const
-      };
-    }
-
-    if (telemetry.schemaVersion === 1) {
-      return {
-        label: "라운드 진행 · 홀 확인 불가",
-        detail: `이전 Agent가 라운드 진행을 감지했습니다. 홀 번호는 지원하지 않습니다. · 출처 ${telemetry.stateSource}`,
-        tone: "active" as const
-      };
-    }
-
-    const holeObservedMs = telemetry.holeObservedAt ? Date.parse(telemetry.holeObservedAt) : 0;
-    const holeFresh = telemetry.schemaVersion === 2 && telemetry.holeStatus === "confirmed" && holeObservedMs > 0 && Date.now() - holeObservedMs <= 35_000;
-    const holeLabel = holeFresh && telemetry.currentHole ? `${telemetry.currentHole}번 홀` : telemetry.holeStatus === "transitioning" ? "홀 확인 중" : "홀 확인 불가";
+    const course = telemetry.courseId ?? null;
+    // 같은 코스의 열린 판(서버 기록)이 있을 때만 경과 분을 붙인다.
+    const startedMs = course && openRound?.courseId === course ? Date.parse(openRound.startedAt) : Number.NaN;
+    const minutes = Number.isFinite(startedMs) ? `${Math.max(1, Math.floor((Date.now() - startedMs) / 60_000))}분째` : null;
     return {
-      label: `${telemetry.gameMode === "regular" ? "일반 코스" : "게임 화면"} · ${holeLabel}`,
-      detail: telemetry.holeObservedAt
-        ? `최근 홀 관측 ${new Date(telemetry.holeObservedAt).toLocaleString("ko-KR")} · 출처 ${telemetry.stateSource}`
-        : `홀 번호 근거 없음 · 출처 ${telemetry.stateSource}`,
-      tone: "active" as const
+      label: ["게임 중", course, minutes].filter(Boolean).join(" · "),
+      detail: minutes ? `코스 진입 ${new Date(startedMs).toLocaleString("ko-KR")}` : "코스 진입 시각 기록 없음",
+      tone: "active"
     };
   }
-
-  if (telemetry.gameState === "menu") {
-    return {
-      label: compactUsage ? "대기 중" : "메뉴·대기 화면",
-      detail: compactUsage ? "게임 시작 신호를 기다립니다." : telemetry.reasonCode === "returned_to_lobby" ? "일반 코스에서 로비로 돌아온 기록입니다. 완주 여부는 확인하지 않습니다." : `출처: ${telemetry.stateSource}`,
-      tone: "idle" as const
-    };
+  if (telemetry.gameState === "menu" || telemetry.gameState === "results" || telemetry.roundStatus === "completed") {
+    return { label: "대기(로비)", detail: "게임 프로그램이 로비·메뉴 화면입니다.", tone: "idle" };
   }
-
-  if (telemetry.roundStatus === "completed" || telemetry.gameState === "results") {
-    return { label: "이전 Agent 종료 신호", detail: "정상 18홀 완주로 집계하지 않는 이전 형식의 신호입니다.", tone: "idle" as const };
+  if (telemetry.gameState === "exiting") {
+    return { label: "프로그램 꺼짐", detail: "프로그램 종료가 감지되었습니다.", tone: "idle" };
   }
-
-  if (compactUsage) {
-    return { label: "상태 확인 불가", detail: "게임 실행은 확인했지만 이용 상태를 판정할 신호가 없습니다.", tone: "unknown" as const };
-  }
-
-  return {
-    label: "골프 프로그램 실행 · 플레이 확인 불가",
-    detail: `출처: ${telemetry.stateSource} · ${telemetry.reasonCode ?? "상세 상태 없음"}`,
-    tone: "active" as const
-  };
+  return { label: "상태 확인 불가", detail: `출처: ${telemetry.stateSource} · ${telemetry.reasonCode ?? "상세 상태 없음"}`, tone: "unknown" };
 }
 
 function getBayUsageText(bay: LiveBay) {

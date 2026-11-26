@@ -23,7 +23,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = '1.0.0'
+$CollectorVersion = '1.0.1'
 $MaxEventsPerFile = 4000   # 핵심 신호(코스·로비·게임모드·종료요청·홀진입·홀종료)
 $MaxNoisePerFile = 1000    # 홀 번호만 있는 줄·Result/Score/Finish/Round 키워드 줄
 $CoreSigs = @{ course_entered = 1; lobby_entered = 1; game_mode_seen = 1; exit_requested = 1; ended_hole = 1; enter_new_hole = 1 }
@@ -324,9 +324,17 @@ try {
   $screen = $null
   try { Add-Type -AssemblyName System.Windows.Forms; $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $screen = '{0}x{1}' -f $b.Width, $b.Height } catch {}
 
+  # 게임 업데이트마다 폴더 이름이 바뀐다(PARK_260713-VISTA → PARK_261001-KD_VISTA).
+  # 이름 끝을 가정하지 않고 ScreenGolf 폴더가 있는 PARK_* 전부 + 실행 중인 게임의 설치 폴더를 본다.
+  $rootPaths = @(Get-ChildItem -LiteralPath $SearchRoot -Directory -Filter 'PARK_*' -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ScreenGolf') } | ForEach-Object { $_.FullName })
+  foreach ($pp in $procPaths) {
+    if ($pp -match '(?i)^(.+?)\\ScreenGolf\\Binaries\\Win64\\[^\\]+$' -and -not ($rootPaths -contains $Matches[1])) { $rootPaths += $Matches[1] }
+  }
+
   $roots = @()
-  foreach ($d in @(Get-ChildItem -LiteralPath $SearchRoot -Directory -Filter 'PARK_*-VISTA' -ErrorAction SilentlyContinue)) {
-    $rootPath = $d.FullName
+  foreach ($rootPath in $rootPaths) {
+    $d = Get-Item -LiteralPath $rootPath
     $running = [bool](@($procPaths | Where-Object { $_.StartsWith($rootPath + '\', [StringComparison]::OrdinalIgnoreCase) }).Count)
     $exes = @()
     foreach ($exeDir in @($rootPath, (Join-Path $rootPath 'ScreenGolf\Binaries\Win64'))) {
@@ -395,7 +403,7 @@ try {
   # ---- 화면 요약 ----
   Write-Host ''
   Write-Host ('게임 실행 중: ' + $(if ($record.gameRunning) { '예' } else { '아니오' }))
-  if ($roots.Count -eq 0) { Write-Host "게임 설치 폴더(PARK_*-VISTA)를 $SearchRoot 에서 찾지 못했습니다." }
+  if ($roots.Count -eq 0) { Write-Host "게임 설치 폴더(PARK_*)를 $SearchRoot 에서 찾지 못했습니다." }
   foreach ($r in $roots) {
     Write-Host ("[{0}]{1}" -f $r.root, $(if ($r.gameRunningFromHere) { ' (지금 실행 중인 게임)' } else { '' }))
     foreach ($f in $r.folders) {

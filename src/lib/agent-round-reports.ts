@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentDevice } from "./agent-server.ts";
-import { classifyRound, type RoundHoleRun } from "./round-classify.ts";
+import { classifyRound, holeCounts, type RoundHoleRun } from "./round-classify.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MASK_MAX = 262143;
@@ -23,6 +23,13 @@ export type AgentRoundReport = {
 
 function text(value: unknown, max: number) {
   return typeof value === "string" && value.length > 0 && value.length <= max ? value : null;
+}
+
+/** 거절 응답용: 원본에서 읽히는 roundId·revision. Agent outbox 는 이 둘이 있어야 영구 거절 보고를 지운다. */
+export function rawRoundReportKey(raw: unknown): { roundId: string | null; revision: number | null } {
+  const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const revision = Number(row.revision);
+  return { roundId: text(row.roundId, 36), revision: Number.isInteger(revision) ? revision : null };
 }
 
 export function normalizeAgentRoundReports(value: unknown, now = Date.now()): Array<AgentRoundReport | null> | null {
@@ -82,7 +89,9 @@ export async function storeAgentRoundReports(supabase: SupabaseClient, agent: Ag
       p_agent_device_id: agent.id, p_round_id: report.roundId, p_store_id: agent.store_id, p_bay_id: agent.bay_id,
       p_revision: report.revision, p_status: report.status, p_kind: report.kind, p_course_id: report.courseId,
       p_started_at: report.startedAt, p_ended_at: report.endedAt, p_time_basis: report.timeBasis,
-      p_end_kind: report.endKind, p_hole_source: report.holeSource, p_hole_runs: report.runs,
+      p_end_kind: report.endKind, p_hole_source: report.holeSource,
+      // 나중에 걸러보기용: 진행한 홀·직접 끝낸(홀아웃) 홀 수를 묶음 JSON 에 같이 저장한다(열 추가 없음).
+      p_hole_runs: report.runs.map((run) => ({ ...run, ...holeCounts(run) })),
       p_counted_games: classification.countedGames, p_completion: classification.completion,
       p_agent_version: report.agentVersion
     });

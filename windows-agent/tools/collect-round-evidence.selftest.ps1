@@ -20,7 +20,7 @@ $collector = Join-Path $toolDir 'collect-round-evidence.ps1'
 $root = Join-Path $drive 'PARK_260713-VISTA'
 $saved = Join-Path $root 'ScreenGolf\Saved\Logs'
 $main = Join-Path $root 'ScreenGolf\Binaries\Win64\Logs'
-New-Item -ItemType Directory -Force -Path $saved, $main, (Join-Path $drive 'PARK_260529-VISTA\ScreenGolf\Saved\Logs') | Out-Null
+New-Item -ItemType Directory -Force -Path $saved, $main, (Join-Path $drive 'PARK_261001-KD_VISTA\ScreenGolf\Saved\Logs'), (Join-Path $drive 'Park_NVSensor_Backup') | Out-Null
 
 # 심어 둔 개인정보: 결과 어디에도 나오면 안 된다
 $planted = @('홍길동', 'HongGildong', 'kimminsu', 'user1234')
@@ -62,7 +62,7 @@ $sg = @(
   ((Stamp) + 'LogExit: FPlatformMisc::RequestExit(0)')
 )
 [IO.File]::WriteAllLines((Join-Path $saved 'ScreenGolf.log'), $sg, $utf8)
-[IO.File]::WriteAllLines((Join-Path $drive 'PARK_260529-VISTA\ScreenGolf\Saved\Logs\ScreenGolf.log'), $sg[0..1], $utf8)
+[IO.File]::WriteAllLines((Join-Path $drive 'PARK_261001-KD_VISTA\ScreenGolf\Saved\Logs\ScreenGolf.log'), $sg[0..1], $utf8)
 
 $m1 = @((RoundLines 18 $true 200) + (RoundLines 9 $true) + (RoundLines 5 $true))   # 18홀 판에 잡음 3600줄
 [IO.File]::WriteAllLines((Join-Path $main 'main_1.log'), $m1, $utf8)
@@ -98,7 +98,7 @@ Check (-not $raw.Contains('Course_A/01hole') -and -not $raw.Contains('[2026.11.2
 
 $rec = $lines[-1] | ConvertFrom-Json
 Check ($rec.schema -eq 'vista-round-evidence/1') 'schema'
-Check (@($rec.roots).Count -eq 2) '설치 폴더 2개 모두 찾음'
+Check (@($rec.roots).Count -eq 2) '설치 폴더 2개(이름 끝이 _VISTA 인 업데이트 폴더 포함) 찾고 ScreenGolf 없는 Park_ 폴더는 제외'
 $r = @($rec.roots | Where-Object { $_.root -eq 'PARK_260713-VISTA' })[0]
 $mainFolder = @($r.folders | Where-Object { $_.path -eq 'ScreenGolf\Binaries\Win64\Logs' })[0]
 $savedFolder = @($r.folders | Where-Object { $_.path -eq 'ScreenGolf\Saved\Logs' })[0]

@@ -9,7 +9,8 @@ const { execFile } = require("node:child_process");
 const { mergeBaysConfig, resolveBayPolicy, parseConfigText } = require("./agent-config");
 const { createGameLogProbe } = require("./game-log-probe");
 const { createScreenGolfMonitor } = require("./screen-golf-monitor");
-const { createGameLogLocator } = require("./game-log-locator");
+const { createGameLogLocator, expandPattern, installRootOf } = require("./game-log-locator");
+const { reconcileHoleLogs } = require("./native-hole-log");
 const { createScreenHoleDetector } = require("./screen-hole-detector");
 const { createRoundEventOutbox } = require("./round-event-outbox");
 const { resolveGolfUsageConfig, createGolfUsageMonitor, createWindowsInputReader } = require("./golf-usage-monitor");
@@ -68,6 +69,10 @@ let screenHoleDetector = null;
 let roundEventOutbox = null;
 let roundLedger = null;
 let roundReportOutbox = null;
+let gameLogLocator = null;
+let holeReconcilePromise = null;
+let holeReconcileAt = 0;
+let holeReconcileGameRunning = null;
 let lastHeartbeatIssueKey = null;
 let lastHeartbeatIssueLoggedAt = 0;
 let agentTransport = null;
@@ -125,8 +130,10 @@ async function startGameLogDiagnostics() {
   gameLogProbeTimer = null;
   if (!config.gameLogDiagnosticsEnabled || config.gameLogDirectories.length === 0) return;
 
+  // C:\PARK_*\... 처럼 설치 폴더 이름이 바뀌어도 따라가도록 패턴을 펼친다.
+  const directories = (await Promise.all(config.gameLogDirectories.map((item) => expandPattern(String(item))))).flat();
   const probe = createGameLogProbe({
-    directories: config.gameLogDirectories,
+    directories,
     onDiagnostic: writeGameDiagnostic
   });
   await probe.scan().catch((error) => {
@@ -231,11 +238,11 @@ function loadConfig() {
     // 조용히 어긋나므로, 후보를 패턴으로 찾아 가장 최근에 쓰인 로그를 따라간다.
     gameStateLogPatterns: Array.isArray(merged.gameStateLogPatterns)
       ? merged.gameStateLogPatterns
-      : ["C:\\PARK_*-VISTA\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log"],
+      : ["C:\\PARK_*\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log"],
     gameLogDiagnosticsEnabled: merged.gameLogDiagnosticsEnabled !== false,
     gameLogDirectories: Array.isArray(merged.gameLogDirectories)
       ? merged.gameLogDirectories
-      : ["C:\\PARK_260713-VISTA\\Launch\\Logs"],
+      : ["C:\\PARK_*\\Launch\\Logs"],
     gameLogProbeIntervalSeconds: Math.max(5, Number(merged.gameLogProbeIntervalSeconds || 10)),
     gameTelemetryIntervalSeconds: Math.max(golfUsage.enabled ? 5 : 1, Number(merged.gameTelemetryIntervalSeconds || 2)),
     gameHoleDetectionEnabled: merged.gameHoleDetectionEnabled === true,
@@ -637,6 +644,7 @@ function refreshGameTelemetry() {
         } catch (error) {
           log("Round ledger update failed", { error: error.message });
         }
+        maybeReconcileHoleLogs(telemetry.gameRunning);
       }
       return telemetry;
     })
@@ -657,6 +665,30 @@ function refreshGameTelemetry() {
       observeTransportChanges();
     });
   return gameTelemetryRefreshPromise;
+}
+
+// main 로그 홀 대조(설계서 §6.4): Agent 시작 직후, 게임이 꺼진 것을 본 직후, 그 밖에는 10분마다.
+// 게임 실행 중에는 파일이 잠겨 있어 열기만 시도하고 건너뛴다.
+function maybeReconcileHoleLogs(gameRunning) {
+  const stopped = gameRunning === false && holeReconcileGameRunning !== false;
+  holeReconcileGameRunning = gameRunning;
+  if (holeReconcilePromise || !roundLedger || !gameLogLocator) return;
+  if (!stopped && Date.now() - holeReconcileAt < 10 * 60_000) return;
+  if (roundLedger.pendingHoleRounds().length === 0) return;
+  holeReconcileAt = Date.now();
+  holeReconcilePromise = gameLogLocator.resolve()
+    .then((logFile) => logFile && reconcileHoleLogs({
+      ledger: roundLedger,
+      logDirectory: path.join(installRootOf(logFile), "ScreenGolf", "Binaries", "Win64", "Logs")
+    }))
+    .then((result) => {
+      if (result?.completed || result?.locked) writeGameDiagnostic({ event: "hole_log_reconciled", ...result, observedAt: nowIso() });
+    })
+    .catch((error) => log("Hole log reconcile failed", { error: error.message }))
+    .finally(() => {
+      holeReconcilePromise = null;
+      observeTransportChanges();
+    });
 }
 
 function observeTransportChanges() {
@@ -1136,12 +1168,13 @@ async function startAgentLoop() {
         }
       })
     : null;
+  gameLogLocator = createGameLogLocator({
+    logFile: config.gameStateLogFile,
+    patterns: config.gameStateLogPatterns
+  });
   screenGolfMonitor = createScreenGolfMonitor({
     logFile: config.gameStateLogFile,
-    locator: createGameLogLocator({
-      logFile: config.gameStateLogFile,
-      patterns: config.gameStateLogPatterns
-    }),
+    locator: gameLogLocator,
     onDiagnostic: writeGameDiagnostic,
     onRoundEnded: (event) => {
       try {

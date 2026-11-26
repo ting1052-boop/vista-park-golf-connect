@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { createGameLogLocator, expandPattern } = require("./game-log-locator");
+const { createGameLogLocator, expandPattern, installRootOf } = require("./game-log-locator");
 const { createScreenGolfMonitor } = require("./screen-golf-monitor");
 
 async function makeInstall(root, folder, contents) {
@@ -115,6 +115,43 @@ test("monitor follows the game when it moves to another install", async () => {
     assert.ok(state, "활성 설치본의 로그를 읽어 상태가 생겨야 한다");
     assert.equal(state.gameState, "playing");
     assert.equal(state.courseId, "Yecheon_AB");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("PARK_* 패턴은 이름 끝이 바뀐 설치본(PARK_261001-KD_VISTA)을 잡고 ScreenGolf 없는 폴더는 버린다", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "vista-locator-kd-"));
+  try {
+    const old = await makeInstall(root, "PARK_260713-VISTA", "old\n");
+    const current = await makeInstall(root, "PARK_261001-KD_VISTA", "current\n");
+    await fs.mkdir(path.join(root, "Park_NVSensor_Backup", "data"), { recursive: true });
+    await fs.utimes(current, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+    const pattern = path.join(root, "PARK_*", "ScreenGolf", "Saved", "Logs", "ScreenGolf.log");
+
+    const locator = createGameLogLocator({
+      logFile: old,
+      patterns: [pattern],
+      readRunningPaths: async () => [path.join(root, "PARK_261001-KD_VISTA", "ScreenGolf", "Binaries", "Win64", "ScreenGolf.exe")]
+    });
+    assert.equal(await locator.resolve(), current, "실행 중인 KD_VISTA 설치본을 골라야 한다");
+    assert.ok((await locator.candidates()).some((p) => p.includes("Park_NVSensor_Backup")), "패턴 후보에는 잡히지만");
+    assert.ok(!(await locator.resolve()).includes("Park_NVSensor_Backup"), "ScreenGolf.log 가 없어 선택되지 않는다");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("패턴에 안 맞는 폴더라도 실행 중 exe(루트 런처)에서 설치 루트를 찾는다", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "vista-locator-exe-"));
+  try {
+    const current = await makeInstall(root, "GOLF_2027", "current\n");
+    const locator = createGameLogLocator({
+      patterns: [path.join(root, "PARK_*", "ScreenGolf", "Saved", "Logs", "ScreenGolf.log")],
+      readRunningPaths: async () => [path.join(root, "GOLF_2027", "ScreenGolf.exe")]
+    });
+    assert.equal(await locator.resolve(), current);
+    assert.equal(installRootOf(current), path.join(root, "GOLF_2027"));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

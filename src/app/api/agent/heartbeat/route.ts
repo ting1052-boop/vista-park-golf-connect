@@ -6,7 +6,7 @@ import { normalizeGameTelemetry } from "@/lib/game-telemetry";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { claimShutdownCommand } from "@/lib/agent-commands";
 import { getAgentObserverPolicy } from "@/lib/agent-observer-protocol";
-import { normalizeAgentRoundReports, storeAgentRoundReports } from "@/lib/agent-round-reports";
+import { normalizeAgentRoundReports, rawRoundReportKey, storeAgentRoundReports } from "@/lib/agent-round-reports";
 
 type HeartbeatBody = {
   agentId?: unknown;
@@ -143,7 +143,9 @@ export async function POST(request: NextRequest) {
       roundReportRejected = [{ roundId: null, revision: null, code: "invalid_batch" }];
     } else {
       const valid = normalized.filter((report): report is NonNullable<typeof report> => report !== null);
-      roundReportRejected = normalized.flatMap((report, index) => report ? [] : [{ roundId: null, revision: null, code: `invalid_report_${index}` }]);
+      const rawReports = body.roundReports as unknown[];
+      // roundId·revision 을 돌려줘야 Agent 가 고칠 수 없는 보고(7일 초과·31일 지남 등)를 outbox 에서 지운다.
+      roundReportRejected = normalized.flatMap((report, index) => report ? [] : [{ ...rawRoundReportKey(rawReports[index]), code: `invalid_report_${index}` }]);
       if (valid.length > 0) {
         try {
           const stored = await storeAgentRoundReports(supabase, agent, valid);

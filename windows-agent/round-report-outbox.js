@@ -1,24 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const fs = require("node:fs");
-const path = require("node:path");
+const { loadJsonState, writeJsonState } = require("./round-ledger");
 
 function createRoundReportOutbox({ filePath, bayCode, maxPending = 100 }) {
-  let state = { version: 1, bayCode, pending: [] };
-  let corrupt = false;
-  if (fs.existsSync(filePath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      if (parsed?.version === 1 && parsed?.bayCode === bayCode && Array.isArray(parsed.pending)) state = parsed;
-      else corrupt = true;
-    } catch { corrupt = true; }
-  }
+  // 읽을 수 없거나 다른 타석의 파일이면 옆으로 치우고 새로 시작한다(영구 정지보다 낫다).
+  const state = loadJsonState(filePath, (parsed) =>
+    parsed?.version === 1 && parsed?.bayCode === bayCode && Array.isArray(parsed.pending)) ?? { version: 1, bayCode, pending: [] };
 
   function persist() {
-    if (corrupt) throw new Error("round_report_outbox_corrupt");
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const temp = `${filePath}.${process.pid}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify(state, null, 2), "utf8");
-    fs.renameSync(temp, filePath);
+    writeJsonState(filePath, state);
   }
 
   function enqueue(report) {

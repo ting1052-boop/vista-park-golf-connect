@@ -14,8 +14,8 @@
     "gameStateLogFile": "C:\\PARK_260713-VISTA\\ScreenGolf\\Saved\\Logs\\ScreenGolf.log",
     "gameLogDiagnosticsEnabled": true,
     "gameLogDirectories": [
-      "C:\\PARK_260713-VISTA\\ScreenGolf\\Saved\\Logs",
-      "C:\\PARK_260713-VISTA\\ScreenGolf\\Binaries\\Win64\\Logs"
+      "C:\\PARK_*\\ScreenGolf\\Saved\\Logs",
+      "C:\\PARK_*\\ScreenGolf\\Binaries\\Win64\\Logs"
     ],
     "gameLogProbeIntervalSeconds": 10,
     "gameTelemetryIntervalSeconds": 2,
