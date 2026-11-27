@@ -31,6 +31,13 @@ test("pattern expansion finds every dated install folder", async () => {
   }
 });
 
+test("pattern at a drive root reads the root, not the current folder", { skip: process.platform !== "win32" }, async () => {
+  // 2026-11-27 시흥 A-02: "C:\PARK_*" 가 C:\VISTA(작업 폴더)를 읽어 후보 0개 → 10월에 멈춘 옛 로그를 따라갔다.
+  const drive = path.parse(process.cwd()).root.slice(0, 2);
+  const found = await expandPattern(`${drive}\\Window*`);
+  assert.ok(found.some((p) => p.toLowerCase() === `${drive}\\windows`.toLowerCase()), JSON.stringify(found));
+});
+
 test("locator picks the install that was written most recently", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "vista-locator-pick-"));
   try {

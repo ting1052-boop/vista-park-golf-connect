@@ -61,7 +61,9 @@ async function expandPattern(pattern) {
   const parentEnd = Math.max(before.lastIndexOf("\\"), before.lastIndexOf("/"));
   if (parentEnd < 0) return [];
 
-  const parent = before.slice(0, parentEnd);
+  // "C:\PARK_*" 의 부모는 "C:" 가 아니라 "C:\" 다. "C:" 만 주면 그 드라이브의 현재 폴더(Agent 는 C:\VISTA)를 읽는다.
+  let parent = before.slice(0, parentEnd) || before.slice(0, 1);
+  if (/^[A-Za-z]:$/u.test(parent)) parent += "\\";
   const prefix = before.slice(parentEnd + 1);
   const restStart = after.search(/[\\/]/u);
   const suffix = restStart < 0 ? after : after.slice(0, restStart);
