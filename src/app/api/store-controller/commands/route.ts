@@ -7,6 +7,7 @@ import { prepareDueReservations } from "@/lib/reservation-prepare";
 import { closeExpiredSessions } from "@/lib/session-cleanup";
 import { processStoreAutomationSchedule } from "@/lib/store-automation-schedule";
 import { runPollMaintenance } from "@/lib/poll-maintenance";
+import { planControllerPoll, QUEUED_COMMAND_COLUMNS, type QueuedCommand } from "@/lib/command-maintenance";
 
 const DEFAULT_STORE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -118,82 +119,85 @@ export async function GET(request: NextRequest) {
 
   // 제어기가 장시간 꺼졌다가 다시 켜져도 과거 ON/OFF 명령을 실행하지 않는다.
   // 운영 장비 명령은 생성 후 15분이 지나면 안전하게 폐기한다.
-  const { error: stalePendingError } = await supabase
+  // 대기열은 거의 비어 있으므로 한 번 읽고, 정리할 것이 있을 때만 예전과 같은 조건으로 쓴다.
+  const { data: queued, error: queueError } = await supabase
     .from("store_controller_commands")
-    .update({
-      status: "cancelled",
-      completed_at: nowIso,
-      lease_expires_at: null,
-      error_message: "명령 유효시간(15분)이 지나 자동 취소되었습니다."
-    })
+    .select(QUEUED_COMMAND_COLUMNS)
     .eq("store_id", storeId)
-    .eq("status", "pending")
-    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
-    .lt("created_at", staleBeforeIso);
-
-  if (stalePendingError) {
-    return NextResponse.json({ ok: false, message: stalePendingError.message }, { status: 500 });
-  }
-
-  const { error: staleProcessingError } = await supabase
-    .from("store_controller_commands")
-    .update({
-      status: "cancelled",
-      completed_at: nowIso,
-      lease_expires_at: null,
-      error_message: "처리 중 응답이 끊겼고 명령 유효시간이 지나 자동 취소되었습니다."
-    })
-    .eq("store_id", storeId)
-    .eq("status", "processing")
-    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
-    .lt("lease_expires_at", nowIso)
-    .lt("created_at", staleBeforeIso);
-
-  if (staleProcessingError) {
-    return NextResponse.json({ ok: false, message: staleProcessingError.message }, { status: 500 });
-  }
-
-  const { error: exhaustedError } = await supabase
-    .from("store_controller_commands")
-    .update({
-      status: "failed",
-      completed_at: nowIso,
-      lease_expires_at: null,
-      error_message: "제어기 재시도 한도를 초과했습니다."
-    })
-    .eq("store_id", storeId)
-    .eq("status", "pending")
-    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
-    .gte("attempts", COMMAND_MAX_ATTEMPTS);
-
-  if (exhaustedError) {
-    return NextResponse.json({ ok: false, message: exhaustedError.message }, { status: 500 });
-  }
-
-  const { error: recoverError } = await supabase
-    .from("store_controller_commands")
-    .update({ status: "pending", controller_id: null, lease_expires_at: null })
-    .eq("store_id", storeId)
-    .eq("status", "processing")
-    .lt("lease_expires_at", nowIso);
-
-  if (recoverError) return NextResponse.json({ ok: false, message: recoverError.message }, { status: 500 });
-
-  const { data: pending, error: pendingError } = await supabase
-    .from("store_controller_commands")
-    .select("id, attempts")
-    .eq("status", "pending")
-    .eq("store_id", storeId)
-    .in("command_type", [...CONTROLLER_COMMAND_TYPES])
-    .gte("created_at", staleBeforeIso)
-    .lt("attempts", COMMAND_MAX_ATTEMPTS)
+    .in("status", ["pending", "processing"])
+    // 예전 쿼리가 건드리던 행만 읽는다: 처리 중은 종류 무관(복구), 대기는 제어기 명령만.
+    // 다른 종류의 대기 명령(Agent 종료)이 쌓여도 제어기 명령이 200개 한도 밖으로 밀리지 않게 한다.
+    .or(`status.eq.processing,command_type.in.(${CONTROLLER_COMMAND_TYPES.join(",")})`)
     .order("created_at", { ascending: true })
-    .limit(parseLimit(request.nextUrl.searchParams.get("limit")));
+    .limit(200);
 
-  if (pendingError) return NextResponse.json({ ok: false, message: pendingError.message }, { status: 500 });
+  if (queueError) return NextResponse.json({ ok: false, message: queueError.message }, { status: 500 });
+
+  const plan = planControllerPoll((queued ?? []) as QueuedCommand[], now.getTime(), {
+    types: CONTROLLER_COMMAND_TYPES,
+    maxAgeMs: COMMAND_MAX_AGE_MS,
+    maxAttempts: COMMAND_MAX_ATTEMPTS,
+    limit: parseLimit(request.nextUrl.searchParams.get("limit"))
+  });
+
+  if (plan.cancelPendingIds.length > 0) {
+    const { error } = await supabase
+      .from("store_controller_commands")
+      .update({
+        status: "cancelled",
+        completed_at: nowIso,
+        lease_expires_at: null,
+        error_message: "명령 유효시간(15분)이 지나 자동 취소되었습니다."
+      })
+      .in("id", plan.cancelPendingIds)
+      .eq("status", "pending")
+      .lt("created_at", staleBeforeIso);
+    if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  }
+
+  if (plan.cancelProcessingIds.length > 0) {
+    const { error } = await supabase
+      .from("store_controller_commands")
+      .update({
+        status: "cancelled",
+        completed_at: nowIso,
+        lease_expires_at: null,
+        error_message: "처리 중 응답이 끊겼고 명령 유효시간이 지나 자동 취소되었습니다."
+      })
+      .in("id", plan.cancelProcessingIds)
+      .eq("status", "processing")
+      .lt("lease_expires_at", nowIso)
+      .lt("created_at", staleBeforeIso);
+    if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  }
+
+  if (plan.exhaustedIds.length > 0) {
+    const { error } = await supabase
+      .from("store_controller_commands")
+      .update({
+        status: "failed",
+        completed_at: nowIso,
+        lease_expires_at: null,
+        error_message: "제어기 재시도 한도를 초과했습니다."
+      })
+      .in("id", plan.exhaustedIds)
+      .eq("status", "pending")
+      .gte("attempts", COMMAND_MAX_ATTEMPTS);
+    if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  }
+
+  if (plan.recoverIds.length > 0) {
+    const { error } = await supabase
+      .from("store_controller_commands")
+      .update({ status: "pending", controller_id: null, lease_expires_at: null })
+      .in("id", plan.recoverIds)
+      .eq("status", "processing")
+      .lt("lease_expires_at", nowIso);
+    if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+  }
 
   const claimed: CommandRow[] = [];
-  for (const candidate of (pending ?? []) as Pick<CommandRow, "id" | "attempts">[]) {
+  for (const candidate of plan.candidates) {
     const { data, error } = await supabase
       .from("store_controller_commands")
       .update({

@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { isGameTelemetryNewer, normalizeGameTelemetry, type GameTelemetry } from "@/lib/game-telemetry";
+import { needsAgentTouch } from "@/lib/command-maintenance";
 
 export type AgentDevice = {
   id: string;
@@ -10,6 +11,8 @@ export type AgentDevice = {
   label: string;
   is_active: boolean;
   pc_name: string | null;
+  last_seen_at?: string | null;
+  agent_version?: string | null;
 };
 
 export type StoreExtensionSettings = {
@@ -47,7 +50,7 @@ export async function getAgentByToken(
 
   const { data, error } = await supabase
     .from("agent_devices")
-    .select("id, store_id, bay_id, label, is_active, pc_name")
+    .select("id, store_id, bay_id, label, is_active, pc_name, last_seen_at, agent_version")
     .eq("token_hash", hashAgentToken(token))
     .eq("is_active", true)
     .maybeSingle();
@@ -68,6 +71,7 @@ export async function touchAgent(
   agent: AgentDevice,
   args: { agentVersion?: string | null; pcName?: string | null } = {}
 ) {
+  if (!needsAgentTouch(agent, args, Date.now())) return;
   await supabase
     .from("agent_devices")
     .update({
@@ -122,10 +126,23 @@ export async function storeAgentGameTelemetry(
   return { stored: true, reason: null };
 }
 
+// Agent 가 3초마다 같은 매장 설정을 다시 읽던 요청을 줄인다. 설정 변경은 최대 1분 뒤 반영된다.
+// ponytail: 서버 인스턴스별 메모리 캐시. 인스턴스가 여러 개면 각자 1분에 한 번 읽는다.
+const SETTINGS_CACHE_MS = 60_000;
+const settingsCache = new Map<string, { at: number; value: StoreExtensionSettings }>();
+
 export async function getStoreExtensionSettings(
   supabase: SupabaseClient,
   storeId: string
 ): Promise<StoreExtensionSettings> {
+  const cached = settingsCache.get(storeId);
+  if (cached && Date.now() - cached.at < SETTINGS_CACHE_MS) return cached.value;
+  const value = await readStoreExtensionSettings(supabase, storeId);
+  settingsCache.set(storeId, { at: Date.now(), value });
+  return value;
+}
+
+export async function readStoreExtensionSettings(supabase: SupabaseClient, storeId: string): Promise<StoreExtensionSettings> {
   const { data, error } = await supabase
     .from("store_settings")
     .select(

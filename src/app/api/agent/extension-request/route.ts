@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   addMinutes,
   getAgentByToken,
-  getStoreExtensionSettings,
+  readStoreExtensionSettings,
   touchAgent,
   type StoreExtensionSettings
 } from "@/lib/agent-server";
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
 
   await touchAgent(supabase, agent, { agentVersion: request.headers.get("x-vista-agent-version") });
 
-  const settings = await getStoreExtensionSettings(supabase, agent.store_id);
+  const settings = await readStoreExtensionSettings(supabase, agent.store_id);
   const requestedMinutes = getRequestedMinutes(body, settings);
   const priceAmount = getPriceAmount(body, settings);
 
