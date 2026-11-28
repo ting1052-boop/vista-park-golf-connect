@@ -26,7 +26,7 @@ const LOCAL_BAYS_CONFIG_PATH = path.join(ROOT, "bays.config.local.json");
 // account that logs in reads the same bay and token, so an install done under an
 // admin account still works for the bay's everyday account.
 const MACHINE_CONFIG_DIR = path.join(process.env.ProgramData || "C:\\ProgramData", "VISTA", "agent");
-const VERSION = "0.10.2";
+const VERSION = "0.10.3";
 
 if (process.env.VISTA_AGENT_OFFLINE === "1" && process.env.VISTA_AGENT_PROFILE_DIR) {
   app.setPath("userData", path.resolve(process.env.VISTA_AGENT_PROFILE_DIR));
